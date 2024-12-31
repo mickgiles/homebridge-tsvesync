@@ -1,7 +1,7 @@
 import { API, DynamicPlatformPlugin, Logger, PlatformAccessory, PlatformConfig, Service, Characteristic } from 'homebridge';
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings';
 import { TSVESyncAccessory } from './platformAccessory';
-import { TSVESync, Device } from 'tsvesync';
+import { VeSync } from 'tsvesync/dist/src/lib/vesync';
 
 export class TSVESyncPlatform implements DynamicPlatformPlugin {
   public readonly Service: typeof Service = this.api.hap.Service;
@@ -10,8 +10,10 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
   // this is used to track restored cached accessories
   public readonly accessories: PlatformAccessory[] = [];
   
-  private readonly client: TSVESync;
+  private client!: VeSync;
   private deviceUpdateInterval?: NodeJS.Timeout;
+  private readonly updateInterval!: number;
+  private readonly debug!: boolean;
 
   constructor(
     public readonly log: Logger,
@@ -24,24 +26,41 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
       return;
     }
 
-    // Initialize TSVESync client
-    this.client = new TSVESync({
-      username: config.username,
-      password: config.password,
-    });
+    // Get config values with defaults
+    this.updateInterval = config.updateInterval || 30;
+    this.debug = config.debug || false;
 
-    this.log.debug('Finished initializing platform:', this.config.name);
+    // Initialize VeSync client
+    this.client = new VeSync(
+      config.username,
+      config.password,
+      Intl.DateTimeFormat().resolvedOptions().timeZone,
+      this.debug
+    );
+
+    if (this.debug) {
+      this.log.debug('Initialized platform with config:', {
+        name: config.name,
+        username: config.username,
+        updateInterval: this.updateInterval,
+        debug: this.debug,
+      });
+    }
+
+    this.log.info('Finished initializing platform:', this.config.name);
 
     // When this event is fired it means Homebridge has restored all cached accessories from disk.
     this.api.on('didFinishLaunching', () => {
-      log.debug('Executed didFinishLaunching callback');
+      if (this.debug) {
+        this.log.debug('Executed didFinishLaunching callback');
+      }
       // run the method to discover / register your devices as accessories
       this.discoverDevices();
       
-      // Set up periodic device updates (every 30 seconds)
+      // Set up periodic device updates
       this.deviceUpdateInterval = setInterval(() => {
         this.updateDeviceStates();
-      }, 30000);
+      }, this.updateInterval * 1000); // Convert to milliseconds
     });
 
     // Clean up when shutting down
@@ -61,37 +80,69 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
   }
 
   /**
-   * Discover TSVESync devices and register them as accessories
+   * Get all devices from all categories
+   */
+  private getAllDevices() {
+    return [
+      ...this.client.fans,
+      ...this.client.outlets,
+      ...this.client.switches,
+      ...this.client.bulbs,
+    ];
+  }
+
+  /**
+   * Discover VeSync devices and register them as accessories
    */
   async discoverDevices() {
     try {
+      if (this.debug) {
+        this.log.debug('Starting device discovery');
+      }
+
       // Login and get devices
       await this.client.login();
-      const devices = await this.client.getDevices();
+      const success = await this.client.getDevices();
+
+      if (!success) {
+        this.log.error('Failed to get devices');
+        return;
+      }
+
+      const devices = this.getAllDevices();
+
+      if (this.debug) {
+        this.log.debug('Found devices:', devices.length);
+      }
 
       // Loop over the discovered devices and register each one
       for (const device of devices) {
-        const uuid = this.api.hap.uuid.generate(device.id);
+        const uuid = this.api.hap.uuid.generate(device.cid);
         const existingAccessory = this.accessories.find(accessory => accessory.UUID === uuid);
 
         if (existingAccessory) {
-          this.log.info('Restoring existing accessory from cache:', existingAccessory.displayName);
+          if (this.debug) {
+            this.log.debug('Restoring existing accessory from cache:', existingAccessory.displayName);
+          }
           existingAccessory.context.device = device;
-          new TSVESyncAccessory(this, existingAccessory, this.client);
+          new TSVESyncAccessory(this, existingAccessory, device);
           
         } else {
-          this.log.info('Adding new accessory:', device.name);
-          const accessory = new this.api.platformAccessory(device.name, uuid);
+          this.log.info('Adding new accessory:', device.deviceName);
+          const accessory = new this.api.platformAccessory(device.deviceName, uuid);
           accessory.context.device = device;
-          new TSVESyncAccessory(this, accessory, this.client);
+          new TSVESyncAccessory(this, accessory, device);
           this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
         }
       }
 
       // Remove accessories that are no longer present
       this.accessories.forEach(accessory => {
-        const device = devices.find(device => this.api.hap.uuid.generate(device.id) === accessory.UUID);
+        const device = devices.find(device => this.api.hap.uuid.generate(device.cid) === accessory.UUID);
         if (!device) {
+          if (this.debug) {
+            this.log.debug('Removing accessory no longer present:', accessory.displayName);
+          }
           this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
         }
       });
@@ -106,12 +157,26 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
    */
   private async updateDeviceStates() {
     try {
+      if (this.debug) {
+        this.log.debug('Updating device states');
+      }
+
       await this.client.login();
-      const devices = await this.client.getDevices();
+      const success = await this.client.getDevices();
+      
+      if (!success) {
+        this.log.error('Failed to get devices');
+        return;
+      }
+
+      const devices = this.getAllDevices();
       
       this.accessories.forEach(accessory => {
-        const device = devices.find(d => this.api.hap.uuid.generate(d.id) === accessory.UUID);
+        const device = devices.find(d => this.api.hap.uuid.generate(d.cid) === accessory.UUID);
         if (device) {
+          if (this.debug) {
+            this.log.debug('Updated state for device:', accessory.displayName);
+          }
           accessory.context.device = device;
         }
       });

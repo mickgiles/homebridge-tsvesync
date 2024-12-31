@@ -1,0 +1,77 @@
+{
+  "pluginAlias": "TSVESyncPlatform",
+  "pluginType": "platform",
+  "singular": true,
+  "headerDisplay": "Homebridge plugin for VeSync devices including Levoit air purifiers, humidifiers, and Etekcity smart outlets.",
+  "footerDisplay": "For help please visit the [GitHub repository](https://github.com/mickgiles/homebridge-tsvesync).",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "title": "Name",
+        "type": "string",
+        "required": true,
+        "default": "TSVESync"
+      },
+      "username": {
+        "title": "Email",
+        "type": "string",
+        "required": true,
+        "description": "Your VeSync account email address"
+      },
+      "password": {
+        "title": "Password",
+        "type": "string",
+        "required": true,
+        "description": "Your VeSync account password",
+        "typeahead": {
+          "source": []
+        }
+      },
+      "updateInterval": {
+        "title": "Update Interval",
+        "type": "integer",
+        "minimum": 10,
+        "maximum": 600,
+        "default": 30,
+        "required": false,
+        "description": "How often to update device states (in seconds). Default is 30 seconds."
+      },
+      "debug": {
+        "title": "Debug Logging",
+        "type": "boolean",
+        "required": false,
+        "default": false,
+        "description": "Enable debug logging"
+      }
+    }
+  },
+  "layout": [
+    {
+      "type": "flex",
+      "flex-flow": "row wrap",
+      "items": [
+        {
+          "type": "flex",
+          "flex-flow": "column",
+          "items": [
+            "name",
+            "username",
+            {
+              "key": "password",
+              "type": "password"
+            }
+          ]
+        },
+        {
+          "type": "flex",
+          "flex-flow": "column",
+          "items": [
+            "updateInterval",
+            "debug"
+          ]
+        }
+      ]
+    }
+  ]
+} 

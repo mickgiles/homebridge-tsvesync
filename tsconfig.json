@@ -6,7 +6,8 @@
       "ES2015",
       "ES2016",
       "ES2017",
-      "ES2018"
+      "ES2018",
+      "DOM"
     ],
     "declaration": true,
     "declarationMap": true,
@@ -15,7 +16,8 @@
     "rootDir": "./src",
     "strict": true,
     "esModuleInterop": true,
-    "noImplicitAny": false
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
   },
   "include": [
     "src"
