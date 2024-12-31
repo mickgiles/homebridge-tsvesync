@@ -110,7 +110,8 @@ export class TSVESyncAccessory {
   async getOn(): Promise<CharacteristicValue> {
     try {
       const device = this.device as VeSyncDeviceWithPower;
-      return device.deviceStatus === 'on';
+      const deviceContext = this.accessory.context.device;
+      return deviceContext.deviceStatus === 'on';
     } catch (error) {
       this.platform.log.error('Failed to get power state:', error);
       throw error;
@@ -130,8 +131,8 @@ export class TSVESyncAccessory {
 
   async getBrightness(): Promise<CharacteristicValue> {
     try {
-      const device = this.device as VeSyncDeviceWithBrightness;
-      return device.brightness || 100;
+      const deviceContext = this.accessory.context.device;
+      return deviceContext.details.brightness || 100;
     } catch (error) {
       this.platform.log.error('Failed to get brightness:', error);
       throw error;
@@ -153,9 +154,10 @@ export class TSVESyncAccessory {
 
   async getFanSpeed(): Promise<CharacteristicValue> {
     try {
-      const device = this.device as VeSyncDeviceWithSpeed;
+      const deviceContext = this.accessory.context.device;
+      const maxSpeed = (this.device as VeSyncDeviceWithSpeed).maxSpeed;
       // Convert device speed levels to HomeKit 0-100
-      return (device.speed || 0) * (100 / device.maxSpeed);
+      return (deviceContext.details.speed || 0) * (100 / maxSpeed);
     } catch (error) {
       this.platform.log.error('Failed to get fan speed:', error);
       throw error;

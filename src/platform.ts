@@ -92,6 +92,26 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
   }
 
   /**
+   * Create a serializable device context
+   */
+  private createDeviceContext(device: any) {
+    return {
+      cid: device.cid,
+      deviceName: device.deviceName,
+      deviceStatus: device.deviceStatus,
+      deviceType: device.deviceType,
+      deviceRegion: device.deviceRegion,
+      uuid: device.uuid,
+      configModule: device.configModule,
+      macId: device.macId,
+      deviceCategory: device.deviceCategory,
+      connectionStatus: device.connectionStatus,
+      details: device.details || {},
+      config: device.config || {}
+    };
+  }
+
+  /**
    * Discover VeSync devices and register them as accessories
    */
   async discoverDevices() {
@@ -124,13 +144,13 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
           if (this.debug) {
             this.log.debug('Restoring existing accessory from cache:', existingAccessory.displayName);
           }
-          existingAccessory.context.device = device;
+          existingAccessory.context.device = this.createDeviceContext(device);
           new TSVESyncAccessory(this, existingAccessory, device);
           
         } else {
           this.log.info('Adding new accessory:', device.deviceName);
           const accessory = new this.api.platformAccessory(device.deviceName, uuid);
-          accessory.context.device = device;
+          accessory.context.device = this.createDeviceContext(device);
           new TSVESyncAccessory(this, accessory, device);
           this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
         }
@@ -177,7 +197,7 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
           if (this.debug) {
             this.log.debug('Updated state for device:', accessory.displayName);
           }
-          accessory.context.device = device;
+          accessory.context.device = this.createDeviceContext(device);
         }
       });
     } catch (error) {
