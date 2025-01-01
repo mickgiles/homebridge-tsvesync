@@ -178,11 +178,19 @@ export abstract class BaseAccessory {
         this.platform.log.debug(`[${this.accessory.displayName}] Retrying previous failed operation`);
       }
       
-      const details = await this.device.getDetails();
-      this.needsRetry = false; // Clear retry flag on success
-      
-      // Update the device state
-      await this.updateDeviceSpecificStates(details);
+      await this.withRetry(
+        async () => {
+          // First try to get device details
+          const details = await this.device.getDetails();
+          
+          // Then update device state with the details
+          await this.updateDeviceSpecificStates(details);
+          
+          // Clear retry flag on success
+          this.needsRetry = false;
+        },
+        'sync device state'
+      );
     } catch (error) {
       await this.handleDeviceError(
         'Failed to sync device state',
@@ -314,10 +322,13 @@ export abstract class BaseAccessory {
     const errorObj = error instanceof Error ? error : new Error(String(error));
     const errorDetails = errorObj as any;
     const errorCode = errorDetails?.error?.code || errorDetails?.code;
-    const errorMsg = errorDetails?.error?.msg || errorDetails?.msg;
+    const errorMsg = errorDetails?.error?.msg || errorDetails?.msg || errorObj.message;
     
     // Log the error with context
-    this.platform.log.error(`[${this.accessory.displayName}] ${operation}: ${JSON.stringify(errorDetails)}`);
+    this.platform.log.error(
+      `[${this.accessory.displayName}] ${operation}: ${errorMsg}`,
+      errorDetails?.error || errorDetails || errorObj
+    );
 
     // Handle specific error codes
     switch (errorCode) {
@@ -327,12 +338,14 @@ export abstract class BaseAccessory {
         break;
       case -11102086: // Internal error
         this.platform.log.warn(`[${this.accessory.displayName}] VeSync API internal error, will retry later`);
-        // Mark device for retry on next update cycle
         this.markForRetry();
         break;
       default:
-        if (errorMsg?.includes('not found')) {
+        if (errorMsg?.includes('not found') || errorMsg?.includes('undefined') || !errorMsg) {
+          this.platform.log.warn(`[${this.accessory.displayName}] Connection issue detected, attempting to reconnect`);
           await this.attemptReconnection();
+        } else {
+          this.markForRetry();
         }
     }
   }
