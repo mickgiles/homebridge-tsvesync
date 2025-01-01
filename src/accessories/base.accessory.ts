@@ -340,8 +340,21 @@ export abstract class BaseAccessory {
         this.platform.log.warn(`[${this.accessory.displayName}] VeSync API internal error, will retry later`);
         this.markForRetry();
         break;
+      case 'ECONNRESET':
+      case 'ETIMEDOUT':
+        this.platform.log.warn(`[${this.accessory.displayName}] Network error (${errorCode}), will retry with backoff`);
+        await this.handleNetworkError();
+        break;
       default:
-        if (errorMsg?.includes('not found') || errorMsg?.includes('undefined') || !errorMsg) {
+        if (errorMsg?.includes('rate limit')) {
+          this.platform.log.warn(`[${this.accessory.displayName}] Hit API rate limit, will retry later`);
+          await this.handleRateLimitError();
+        } else if (
+          errorMsg?.includes('not found') || 
+          errorMsg?.includes('undefined') || 
+          !errorMsg ||
+          errorMsg?.includes('Cannot read properties of undefined')
+        ) {
           this.platform.log.warn(`[${this.accessory.displayName}] Connection issue detected, attempting to reconnect`);
           await this.attemptReconnection();
         } else {
@@ -351,15 +364,44 @@ export abstract class BaseAccessory {
   }
 
   /**
+   * Handle network-related errors with exponential backoff
+   */
+  private async handleNetworkError(): Promise<void> {
+    const backoffTime = Math.min(Math.pow(2, this.retryManager.getRetryCount()) * 1000, 300000); // Max 5 minutes
+    this.platform.log.debug(`[${this.accessory.displayName}] Waiting ${backoffTime}ms before retry`);
+    await new Promise(resolve => setTimeout(resolve, backoffTime));
+    this.markForRetry();
+  }
+
+  /**
+   * Handle rate limit errors with longer backoff
+   */
+  private async handleRateLimitError(): Promise<void> {
+    const backoffTime = Math.max(60000, Math.pow(2, this.retryManager.getRetryCount()) * 1000); // At least 1 minute
+    this.platform.log.debug(`[${this.accessory.displayName}] Rate limited, waiting ${backoffTime}ms before retry`);
+    await new Promise(resolve => setTimeout(resolve, backoffTime));
+    this.markForRetry();
+  }
+
+  /**
    * Attempt to reconnect to the device by triggering device discovery
    */
   private async attemptReconnection(): Promise<void> {
     try {
+      // Stop polling during reconnection attempt
+      this.stopPolling();
+      
       // Attempt to refresh the device list
       await this.platform.discoverDevices();
       this.platform.log.info(`[${this.accessory.displayName}] Successfully refreshed device list`);
+      
+      // Resume polling
+      this.startPolling();
     } catch (error) {
       this.platform.log.error(`[${this.accessory.displayName}] Failed to reconnect: ${error}`);
+      // Mark for retry and resume polling
+      this.markForRetry();
+      this.startPolling();
     }
   }
 

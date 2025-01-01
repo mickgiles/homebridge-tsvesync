@@ -22,6 +22,8 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
   private readonly updateInterval!: number;
   private readonly debug!: boolean;
   private lastLogin: Date = new Date(0); // Track last successful login
+  private lastLoginAttempt: Date = new Date(0);
+  private loginBackoffTime = 1000; // Start with 1 second
 
   constructor(
     public readonly log: Logger,
@@ -133,16 +135,64 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
         return true;
       }
 
+      // Check if we need to wait due to backoff
+      const timeSinceLastAttempt = Date.now() - this.lastLoginAttempt.getTime();
+      if (timeSinceLastAttempt < this.loginBackoffTime) {
+        const waitTime = this.loginBackoffTime - timeSinceLastAttempt;
+        if (this.debug) {
+          this.log.debug(`Waiting ${waitTime}ms before next login attempt`);
+        }
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+      }
+
       // Need to login again
       if (this.debug) {
         this.log.debug(forceLogin ? 'Forcing new login to VeSync API' : 'Logging in to VeSync API');
       }
       
-      await this.client.login();
+      this.lastLoginAttempt = new Date();
+      const loginResult = await this.client.login();
+      
+      if (!loginResult) {
+        this.log.error('Login failed - invalid credentials or API error');
+        this.loginBackoffTime = Math.min(this.loginBackoffTime * 2, 300000);
+        return false;
+      }
+      
       this.lastLogin = new Date();
+      
+      // Reset backoff on successful login
+      this.loginBackoffTime = 1000;
       return true;
     } catch (error) {
-      this.log.error('Failed to login:', error);
+      // Handle specific "Not logged in" error
+      const errorObj = error as any;
+      const errorMsg = errorObj?.error?.msg || errorObj?.msg || String(error);
+      
+      if (errorMsg.includes('Not logged in')) {
+        if (this.debug) {
+          this.log.debug('Session expired, forcing new login');
+        }
+        // Clear last login time to force a new login on next attempt
+        this.lastLogin = new Date(0);
+        // Use minimal backoff for session expiry
+        this.loginBackoffTime = Math.min(this.loginBackoffTime, 5000);
+        return false;
+      }
+      
+      // Increase backoff time exponentially, max 5 minutes
+      this.loginBackoffTime = Math.min(this.loginBackoffTime * 2, 300000);
+      
+      const errorCode = errorObj?.error?.code || errorObj?.code;
+      
+      if (errorCode === 'ECONNRESET' || errorCode === 'ETIMEDOUT' || errorMsg.includes('timeout')) {
+        this.log.warn('Network error during login, will retry with backoff:', errorMsg);
+      } else if (errorMsg.includes('rate limit')) {
+        this.log.warn('Hit API rate limit, will retry with longer backoff');
+        this.loginBackoffTime = Math.max(this.loginBackoffTime, 60000); // At least 1 minute for rate limits
+      } else {
+        this.log.error('Failed to login:', errorMsg);
+      }
       return false;
     }
   }
@@ -158,16 +208,59 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
       }
 
       // Try using cached login first
-      if (!await this.ensureLogin()) {
-        return;
+      let loginSuccess = await this.ensureLogin();
+      if (!loginSuccess) {
+        // If first login fails, try one more time with force login
+        this.log.debug('Initial login failed, attempting forced login...');
+        loginSuccess = await this.ensureLogin(true);
+        if (!loginSuccess) {
+          this.log.error('Failed to login after retry, will attempt again later');
+          return;
+        }
       }
 
-      // Get fresh device list
-      let success = await this.client.getDevices();
+      // Get fresh device list with retries
+      let success = false;
+      let retryCount = 0;
+      const maxRetries = 3;
+
+      while (!success && retryCount < maxRetries) {
+        try {
+          success = await this.client.getDevices();
+          if (!success) {
+            if (retryCount < maxRetries - 1) {
+              this.log.debug(`Failed to get devices (attempt ${retryCount + 1}/${maxRetries}), retrying...`);
+              await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
+            } else {
+              this.log.error('Failed to get devices after all retries');
+            }
+          }
+        } catch (error) {
+          const errorObj = error as any;
+          const errorMsg = errorObj?.error?.msg || errorObj?.msg || String(error);
+          
+          if (errorMsg.includes('Not logged in')) {
+            this.log.debug('Session expired while getting devices, attempting re-login...');
+            if (await this.ensureLogin(true)) {
+              // Reset retry count if we successfully logged in again
+              retryCount = 0;
+              continue;
+            }
+          }
+          
+          if (retryCount < maxRetries - 1) {
+            this.log.warn(`Error getting devices (attempt ${retryCount + 1}/${maxRetries}): ${errorMsg}, retrying...`);
+            await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
+          } else {
+            throw error;
+          }
+        }
+        retryCount++;
+      }
       
-      // If getting devices failed, try forcing a new login
+      // If getting devices failed after retries, try forcing a new login
       if (!success) {
-        this.log.debug('Failed to get devices, trying to re-login...');
+        this.log.debug('Failed to get devices after retries, trying to re-login...');
         if (!await this.ensureLogin(true)) {
           this.log.error('Failed to re-login');
           return;
@@ -190,16 +283,35 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
       for (const accessory of this.accessories) {
         const device = devices.find(d => this.api.hap.uuid.generate(d.cid) === accessory.UUID);
         if (device) {
-          // Create fresh device context
-          const context = this.createDeviceContext(device);
-          accessory.context.device = context;
-          
-          // Update platform accessories to persist changes
-          this.api.updatePlatformAccessories([accessory]);
+          try {
+            // Create fresh device context
+            const context = this.createDeviceContext(device);
+            
+            // Only update if there are actual changes
+            if (JSON.stringify(accessory.context.device) !== JSON.stringify(context)) {
+              accessory.context.device = context;
+              
+              // Update platform accessories to persist changes
+              this.api.updatePlatformAccessories([accessory]);
+              
+              if (this.debug) {
+                this.log.debug(`Updated state for device: ${device.deviceName}`);
+              }
+            }
+          } catch (error) {
+            this.log.error(`Failed to update device state for ${device.deviceName}:`, error);
+          }
         }
       }
     } catch (error) {
-      this.log.error('Failed to update device states:', error);
+      const errorObj = error as any;
+      const errorMsg = errorObj?.error?.msg || errorObj?.msg || String(error);
+      this.log.error('Failed to update device states:', errorMsg);
+      
+      // If this was a polled update, we'll let the next poll try again
+      if (!isPolledUpdate) {
+        throw error; // Re-throw for non-polled updates to handle at caller
+      }
     }
   }
 

@@ -1,77 +1,57 @@
 import { Logger } from 'homebridge';
 
 export interface RetryConfig {
-  maxAttempts: number;
-  initialDelay: number;
-  maxDelay: number;
-  backoffFactor: number;
+  maxRetries: number;
 }
 
-export const DEFAULT_RETRY_CONFIG: RetryConfig = {
-  maxAttempts: 3,
-  initialDelay: 1000, // 1 second
-  maxDelay: 10000,    // 10 seconds
-  backoffFactor: 2,   // Double the delay each time
-};
-
 export class RetryManager {
+  private retryCount = 0;
+  private readonly maxRetries: number;
+
   constructor(
     private readonly log: Logger,
-    private readonly config: RetryConfig = DEFAULT_RETRY_CONFIG
-  ) {}
+    private readonly config: RetryConfig = { maxRetries: 3 }
+  ) {
+    this.maxRetries = config.maxRetries;
+  }
+
+  /**
+   * Get the current retry count
+   */
+  public getRetryCount(): number {
+    return this.retryCount;
+  }
 
   /**
    * Execute an operation with retry logic
-   * @param operation The async operation to execute
-   * @param context Context information for logging
-   * @returns The result of the operation
    */
-  async execute<T>(
+  public async execute<T>(
     operation: () => Promise<T>,
     context: { deviceName: string; operation: string }
   ): Promise<T> {
-    let lastError: Error | undefined;
-    let delay = this.config.initialDelay;
-
-    for (let attempt = 1; attempt <= this.config.maxAttempts; attempt++) {
+    this.retryCount = 0;
+    
+    while (this.retryCount < this.maxRetries) {
       try {
         const result = await operation();
-        
-        if (attempt > 1) {
-          // Log success after retry
-          this.log.debug(
-            `[${context.deviceName}] Successfully ${context.operation} after ${attempt} attempts`
-          );
-        }
-        
         return result;
       } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error));
+        this.retryCount++;
         
-        if (attempt === this.config.maxAttempts) {
-          // Log final failure
+        if (this.retryCount >= this.maxRetries) {
           this.log.error(
-            `[${context.deviceName}] Failed to ${context.operation} after ${attempt} attempts:`,
-            lastError.message
+            `[${context.deviceName}] Failed to ${context.operation} after ${this.maxRetries} attempts:`,
+            error
           );
-          throw lastError;
+          throw error;
         }
-
-        // Log retry attempt
-        this.log.warn(
-          `[${context.deviceName}] Attempt ${attempt} to ${context.operation} failed, retrying in ${delay}ms:`,
-          lastError.message
-        );
-
-        // Wait before next attempt
-        await new Promise(resolve => setTimeout(resolve, delay));
         
-        // Increase delay for next attempt, but don't exceed maxDelay
-        delay = Math.min(delay * this.config.backoffFactor, this.config.maxDelay);
+        this.log.warn(
+          `[${context.deviceName}] Failed to ${context.operation}, attempt ${this.retryCount}/${this.maxRetries}`
+        );
       }
     }
 
-    // This should never be reached due to the throw in the loop
-    throw lastError;
+    throw new Error(`Failed to ${context.operation} after ${this.maxRetries} attempts`);
   }
 } 
