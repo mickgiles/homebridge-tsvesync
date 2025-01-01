@@ -14,6 +14,10 @@ export abstract class BaseAccessory {
   private readonly retryManager: RetryManager;
   private readonly logger: PluginLogger;
   private needsRetry = false;
+  private isInitialized = false;
+  private initializationPromise: Promise<void>;
+  private initializationResolver!: () => void;
+  private isInitializing = false;
 
   constructor(
     platform: TSVESyncPlatform,
@@ -23,6 +27,11 @@ export abstract class BaseAccessory {
     this.platform = platform;
     this.accessory = accessory;
     this.device = device;
+
+    // Create initialization promise
+    this.initializationPromise = new Promise((resolve) => {
+      this.initializationResolver = resolve;
+    });
 
     // Initialize managers
     this.logger = new PluginLogger(
@@ -44,7 +53,7 @@ export abstract class BaseAccessory {
     // Set up the accessory
     this.setupAccessory();
 
-    this.logger.info('Accessory initialized', this.getLogContext());
+    this.logger.info('Accessory created', this.getLogContext());
   }
 
   /**
@@ -127,6 +136,49 @@ export abstract class BaseAccessory {
   }
 
   /**
+   * Initialize the accessory
+   */
+  public async initialize(): Promise<void> {
+    if (this.isInitializing) {
+      return;
+    }
+
+    this.isInitializing = true;
+    try {
+      // Initialize the device state
+      await this.initializeDeviceState();
+      this.isInitialized = true;
+      this.logger.info('Accessory initialized', this.getLogContext());
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      this.logger.error('Failed to initialize device state', this.getLogContext(), err);
+    } finally {
+      this.isInitializing = false;
+      // Signal initialization completion regardless of success
+      this.initializationResolver();
+    }
+  }
+
+  /**
+   * Initialize the device state
+   */
+  private async initializeDeviceState(): Promise<void> {
+    try {
+      // Wait for platform to be ready
+      if (typeof this.platform.isReady === 'function') {
+        await this.platform.isReady();
+      }
+      
+      // Attempt to get initial device state
+      await this.syncDeviceState();
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      this.logger.warn('Failed to get initial device state, will retry during polling', this.getLogContext());
+      throw err;
+    }
+  }
+
+  /**
    * Set up the accessory services and start polling
    */
   private setupAccessory(): void {
@@ -151,7 +203,25 @@ export abstract class BaseAccessory {
    */
   protected startPolling(): void {
     this.pollingManager.startPolling(async () => {
-      await this.syncDeviceState();
+      try {
+        // Wait for initialization before starting polling
+        await this.initializationPromise;
+        
+        // Wait for platform to be ready
+        if (typeof this.platform.isReady === 'function') {
+          await this.platform.isReady();
+        }
+
+        if (!this.isInitialized) {
+          // If not initialized, try to initialize first
+          await this.initializeDeviceState();
+        } else {
+          await this.syncDeviceState();
+        }
+      } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        this.logger.error('Failed during polling', this.getLogContext(), err);
+      }
     });
   }
 
@@ -172,7 +242,7 @@ export abstract class BaseAccessory {
   /**
    * Sync the device state with VeSync
    */
-  protected async syncDeviceState(): Promise<void> {
+  public async syncDeviceState(): Promise<void> {
     try {
       if (this.needsRetry) {
         this.platform.log.debug(`[${this.accessory.displayName}] Retrying previous failed operation`);
@@ -183,6 +253,10 @@ export abstract class BaseAccessory {
           // First try to get device details
           const details = await this.device.getDetails();
           
+          if (!details) {
+            throw new Error('Failed to get device details');
+          }
+          
           // Then update device state with the details
           await this.updateDeviceSpecificStates(details);
           
@@ -192,6 +266,10 @@ export abstract class BaseAccessory {
         'sync device state'
       );
     } catch (error) {
+      // Set initialization state to false on error to force re-initialization
+      if (!this.isInitialized) {
+        this.logger.warn('Device not initialized, will retry initialization', this.getLogContext());
+      }
       await this.handleDeviceError(
         'Failed to sync device state',
         error instanceof Error ? error : new Error(String(error))

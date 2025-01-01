@@ -25,12 +25,20 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
   private lastLogin: Date = new Date(0); // Track last successful login
   private lastLoginAttempt: Date = new Date(0);
   private loginBackoffTime = 1000; // Start with 1 second
+  private initializationPromise: Promise<void>;
+  private initializationResolver!: () => void;
+  private isInitialized = false;
 
   constructor(
     public readonly log: Logger,
     public readonly config: PlatformConfig,
     public readonly api: API,
   ) {
+    // Create initialization promise
+    this.initializationPromise = new Promise((resolve) => {
+      this.initializationResolver = resolve;
+    });
+
     // Validate configuration
     if (!config.username || !config.password) {
       log.error('Missing required configuration. Please check your config.json');
@@ -65,17 +73,22 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
     this.log.info('Finished initializing platform:', this.config.name);
 
     // When this event is fired it means Homebridge has restored all cached accessories from disk.
-    this.api.on('didFinishLaunching', () => {
+    this.api.on('didFinishLaunching', async () => {
       if (this.debug) {
         this.log.debug('Executed didFinishLaunching callback');
       }
-      // run the method to discover / register your devices as accessories
-      this.discoverDevices();
-      
-      // Set up periodic device updates
-      this.deviceUpdateInterval = setInterval(() => {
-        this.updateDeviceStates();
-      }, this.updateInterval * 1000); // Convert to milliseconds
+
+      try {
+        // Initialize platform
+        await this.initializePlatform();
+        
+        // Set up periodic device updates
+        this.deviceUpdateInterval = setInterval(() => {
+          this.updateDeviceStates();
+        }, this.updateInterval * 1000); // Convert to milliseconds
+      } catch (error) {
+        this.log.error('Failed to initialize platform:', error);
+      }
     });
 
     // Clean up when shutting down
@@ -84,6 +97,54 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
         clearInterval(this.deviceUpdateInterval);
       }
     });
+  }
+
+  /**
+   * Check if platform is ready
+   */
+  public async isReady(): Promise<void> {
+    if (!this.isInitialized) {
+      await this.initializationPromise;
+    }
+  }
+
+  /**
+   * Initialize the platform
+   */
+  private async initializePlatform(): Promise<void> {
+    try {
+      // Try to login first
+      if (!await this.ensureLogin()) {
+        throw new Error('Failed to login to VeSync API');
+      }
+
+      // Get devices from API
+      const success = await this.client.getDevices();
+      if (!success) {
+        throw new Error('Failed to get devices from API');
+      }
+
+      // Discover devices
+      await this.discoverDevices();
+
+      // Initialize all accessories
+      const initPromises = Array.from(this.deviceAccessories.entries()).map(([uuid, accessory]) => {
+        const deviceName = this.accessories.find(acc => acc.UUID === uuid)?.displayName || uuid;
+        return accessory.initialize().catch(error => {
+          this.log.error(`Failed to initialize accessory ${deviceName}:`, error);
+        });
+      });
+      
+      await Promise.all(initPromises);
+
+      this.isInitialized = true;
+      this.initializationResolver();
+    } catch (error) {
+      this.log.error('Failed to initialize platform:', error);
+      // Still resolve the promise to allow retries during polling
+      this.initializationResolver();
+      throw error;
+    }
   }
 
   /**
@@ -228,10 +289,19 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
       let success = false;
       let retryCount = 0;
       const maxRetries = 3;
+      let devices: any[] = [];
 
       while (!success && retryCount < maxRetries) {
         try {
           success = await this.client.getDevices();
+          if (success) {
+            devices = this.getAllDevices();
+            if (devices.length === 0) {
+              success = false;
+              this.log.warn('Got successful response but no devices found');
+            }
+          }
+          
           if (!success) {
             if (retryCount < maxRetries - 1) {
               this.log.debug(`Failed to get devices (attempt ${retryCount + 1}/${maxRetries}), retrying...`);
@@ -262,7 +332,7 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
         }
         retryCount++;
       }
-      
+
       // If getting devices failed after retries, try forcing a new login
       if (!success) {
         this.log.debug('Failed to get devices after retries, trying to re-login...');
@@ -275,11 +345,9 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
           this.log.error('Failed to get devices even after re-login');
           return;
         }
+        devices = this.getAllDevices();
       }
 
-      // Get all devices with fresh states
-      const devices = this.getAllDevices();
-      
       if (this.debug) {
         this.log.debug(`Found ${devices.length} devices to update`);
       }
@@ -298,6 +366,14 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
               
               // Update platform accessories to persist changes
               this.api.updatePlatformAccessories([accessory]);
+              
+              // Notify the accessory of the update
+              const deviceAccessory = this.deviceAccessories.get(accessory.UUID);
+              if (deviceAccessory) {
+                await deviceAccessory.syncDeviceState().catch(error => {
+                  this.log.error(`Failed to sync device state for ${device.deviceName}:`, error);
+                });
+              }
               
               if (this.debug) {
                 this.log.debug(`Updated state for device: ${device.deviceName}`);
