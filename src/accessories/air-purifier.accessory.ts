@@ -192,7 +192,30 @@ export class AirPurifierAccessory extends BaseAccessory {
    * Handle set rotation speed
    */
   private async handleSetRotationSpeed(value: CharacteristicValue): Promise<void> {
-    const speed = Math.round((value as number / 100) * this.device.maxSpeed);
+    const percentage = value as number;
+    
+    if (percentage === 0) {
+      // Turn off the device instead of setting speed to 0
+      await this.withRetry(async () => {
+        await this.device.turnOff();
+      }, 'turn off device');
+      return;
+    }
+
+    // Convert HomeKit percentage (0-100) to device speed (1-5)
+    let speed: number;
+    if (percentage <= 20) {
+      speed = 1; // Sleep
+    } else if (percentage <= 40) {
+      speed = 2; // Low
+    } else if (percentage <= 60) {
+      speed = 3; // Medium
+    } else if (percentage <= 80) {
+      speed = 4; // High
+    } else {
+      speed = 5; // Turbo
+    }
+
     await this.withRetry(async () => {
       await this.device.changeFanSpeed(speed);
     }, 'set rotation speed');
@@ -276,22 +299,24 @@ export class AirPurifierAccessory extends BaseAccessory {
     return 0;
   }
 
+  /**
+   * Get rotation speed
+   */
   private async getRotationSpeed(): Promise<CharacteristicValue> {
-    if (this.device.speed === undefined || this.device.speed === null || !this.device.maxSpeed) {
+    if (this.device.speed === undefined || this.device.speed === null) {
       return 0;
     }
-    return Math.min(Math.max((this.device.speed / this.device.maxSpeed) * 100, 0), 100);
-  }
 
-  /**
-   * Convert HomeKit rotation speed (0-100) to fan speed (1-maxSpeed)
-   */
-  private convertRotationSpeedToFanSpeed(value: number): number {
-    if (value === 0) {
-      return 0; // Off
+    // Convert device speed (1-5) to HomeKit percentage (0-100)
+    switch (this.device.speed) {
+      case 0: return 0;   // Off
+      case 1: return 20;  // Sleep
+      case 2: return 40;  // Low
+      case 3: return 60;  // Medium
+      case 4: return 80;  // High
+      case 5: return 100; // Turbo
+      default: return 0;
     }
-    // Convert from 0-100 to 1-maxSpeed
-    return Math.max(1, Math.round((value / 100) * this.device.maxSpeed));
   }
 
   private async getLockPhysicalControls(): Promise<CharacteristicValue> {

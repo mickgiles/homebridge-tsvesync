@@ -231,14 +231,62 @@ export class HumidifierAccessory extends BaseAccessory {
   }
 
   private async handleSetRotationSpeed(value: CharacteristicValue): Promise<void> {
-    const speed = Math.round((value as number / 100) * this.device.maxSpeed);
+    const percentage = value as number;
+    
+    if (percentage === 0) {
+      // Turn off the device instead of setting speed to 0
+      await this.withRetry(async () => {
+        await this.device.turnOff();
+      }, 'turn off device');
+      return;
+    }
+
+    // Convert HomeKit percentage (0-100) to device speed (1-9)
+    let speed: number;
+    if (percentage <= 11) {
+      speed = 1;
+    } else if (percentage <= 22) {
+      speed = 2;
+    } else if (percentage <= 33) {
+      speed = 3;
+    } else if (percentage <= 44) {
+      speed = 4;
+    } else if (percentage <= 55) {
+      speed = 5;
+    } else if (percentage <= 66) {
+      speed = 6;
+    } else if (percentage <= 77) {
+      speed = 7;
+    } else if (percentage <= 88) {
+      speed = 8;
+    } else {
+      speed = 9;
+    }
+
     await this.withRetry(async () => {
       await this.device.changeFanSpeed(speed);
     }, 'set rotation speed');
   }
 
   private async getRotationSpeed(): Promise<CharacteristicValue> {
-    return (this.device.speed / this.device.maxSpeed) * 100;
+    if (this.device.speed === undefined || this.device.speed === null) {
+      return 0;
+    }
+
+    // Convert device speed (1-9) to HomeKit percentage (0-100)
+    switch (this.device.speed) {
+      case 0: return 0;   // Off
+      case 1: return 11;
+      case 2: return 22;
+      case 3: return 33;
+      case 4: return 44;
+      case 5: return 55;
+      case 6: return 66;
+      case 7: return 77;
+      case 8: return 88;
+      case 9: return 100;
+      default: return 0;
+    }
   }
 
   private async getWaterLevel(): Promise<CharacteristicValue> {
