@@ -1,6 +1,7 @@
 import { API, DynamicPlatformPlugin, Logger, PlatformAccessory, PlatformConfig, Service, Characteristic } from 'homebridge';
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings';
 import { VeSync } from 'tsvesync';
+import { setApiBaseUrl } from 'tsvesync/src/lib/helpers';
 import { DeviceFactory } from './utils/device-factory';
 import { BaseAccessory } from './accessories/base.accessory';
 
@@ -40,12 +41,15 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
     this.updateInterval = config.updateInterval || 30;
     this.debug = config.debug || false;
 
-    // Initialize VeSync client
+    // Initialize VeSync client with all configuration
     this.client = new VeSync(
       config.username,
       config.password,
       Intl.DateTimeFormat().resolvedOptions().timeZone,
-      this.debug
+      this.debug,
+      true, // redact sensitive info
+      config.apiUrl,
+      this.log
     );
 
     if (this.debug) {
@@ -54,6 +58,7 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
         username: config.username,
         updateInterval: this.updateInterval,
         debug: this.debug,
+        apiUrl: config.apiUrl,
       });
     }
 

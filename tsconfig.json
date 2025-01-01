@@ -6,8 +6,7 @@
       "ES2015",
       "ES2016",
       "ES2017",
-      "ES2018",
-      "DOM"
+      "ES2018"
     ],
     "declaration": true,
     "declarationMap": true,
@@ -16,13 +15,15 @@
     "rootDir": "./src",
     "strict": true,
     "esModuleInterop": true,
+    "noImplicitAny": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "types": ["node", "jest"]
   },
   "include": [
     "src"
   ],
   "exclude": [
-    "**/*.spec.ts"
+    "**/*.spec.ts",
+    "**/*.test.ts"
   ]
 } 

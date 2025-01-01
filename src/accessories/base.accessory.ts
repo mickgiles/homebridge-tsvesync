@@ -318,97 +318,31 @@ export abstract class BaseAccessory {
   /**
    * Handle device errors with appropriate recovery actions
    */
-  protected async handleDeviceError(operation: string, error: unknown): Promise<void> {
-    const errorObj = error instanceof Error ? error : new Error(String(error));
-    const errorDetails = errorObj as any;
-    const errorCode = errorDetails?.error?.code || errorDetails?.code;
-    const errorMsg = errorDetails?.error?.msg || errorDetails?.msg || errorObj.message;
-    
-    // Log the error with context
-    this.platform.log.error(
-      `[${this.accessory.displayName}] ${operation}: ${errorMsg}`,
-      errorDetails?.error || errorDetails || errorObj
-    );
+  protected async handleDeviceError(message: string, error: Error | any): Promise<void> {
+    const context = this.getLogContext();
+    const retryCount = this.retryManager.getRetryCount();
+    const wrappedError = error instanceof Error ? error : new Error(JSON.stringify(error));
 
-    // Handle specific error codes
-    switch (errorCode) {
-      case 4041008: // Device not found
-        this.platform.log.warn(`[${this.accessory.displayName}] Device not found, will attempt to rediscover`);
-        await this.attemptReconnection();
-        break;
-      case -11102086: // Internal error
-        this.platform.log.warn(`[${this.accessory.displayName}] VeSync API internal error, will retry later`);
-        this.markForRetry();
-        break;
-      case 'ECONNRESET':
-      case 'ETIMEDOUT':
-        this.platform.log.warn(`[${this.accessory.displayName}] Network error (${errorCode}), will retry with backoff`);
-        await this.handleNetworkError();
-        break;
-      default:
-        if (errorMsg?.includes('rate limit')) {
-          this.platform.log.warn(`[${this.accessory.displayName}] Hit API rate limit, will retry later`);
-          await this.handleRateLimitError();
-        } else if (
-          errorMsg?.includes('not found') || 
-          errorMsg?.includes('undefined') || 
-          !errorMsg ||
-          errorMsg?.includes('Cannot read properties of undefined')
-        ) {
-          this.platform.log.warn(`[${this.accessory.displayName}] Connection issue detected, attempting to reconnect`);
-          await this.attemptReconnection();
-        } else {
-          this.markForRetry();
-        }
+    // Handle device not found error
+    if (error?.error?.code === 4041008 || error?.error?.msg?.includes('Device not found')) {
+      this.logger.warn('Device not found', context, wrappedError);
+      return;
     }
-  }
 
-  /**
-   * Handle network-related errors with exponential backoff
-   */
-  private async handleNetworkError(): Promise<void> {
-    const backoffTime = Math.min(Math.pow(2, this.retryManager.getRetryCount()) * 1000, 300000); // Max 5 minutes
-    this.platform.log.debug(`[${this.accessory.displayName}] Waiting ${backoffTime}ms before retry`);
-    await new Promise(resolve => setTimeout(resolve, backoffTime));
-    this.markForRetry();
-  }
-
-  /**
-   * Handle rate limit errors with longer backoff
-   */
-  private async handleRateLimitError(): Promise<void> {
-    const backoffTime = Math.max(60000, Math.pow(2, this.retryManager.getRetryCount()) * 1000); // At least 1 minute
-    this.platform.log.debug(`[${this.accessory.displayName}] Rate limited, waiting ${backoffTime}ms before retry`);
-    await new Promise(resolve => setTimeout(resolve, backoffTime));
-    this.markForRetry();
-  }
-
-  /**
-   * Attempt to reconnect to the device by triggering device discovery
-   */
-  private async attemptReconnection(): Promise<void> {
-    try {
-      // Stop polling during reconnection attempt
-      this.stopPolling();
-      
-      // Attempt to refresh the device list
-      await this.platform.discoverDevices();
-      this.platform.log.info(`[${this.accessory.displayName}] Successfully refreshed device list`);
-      
-      // Resume polling
-      this.startPolling();
-    } catch (error) {
-      this.platform.log.error(`[${this.accessory.displayName}] Failed to reconnect: ${error}`);
-      // Mark for retry and resume polling
-      this.markForRetry();
-      this.startPolling();
+    // Handle rate limit error
+    if (error?.message?.includes('rate limit') || error?.message?.includes('429')) {
+      this.logger.warn(`Hit API rate limit (attempt ${retryCount})`, context, wrappedError);
+      return;
     }
-  }
 
-  /**
-   * Mark the device for retry on next update cycle
-   */
-  private markForRetry(): void {
+    // Handle network errors
+    if (error?.code?.startsWith('ECONN') || error?.code === 'ETIMEDOUT') {
+      this.logger.warn('Network error', context, wrappedError);
+      return;
+    }
+
+    // Handle other errors
+    this.logger.error(message, context, wrappedError);
     this.needsRetry = true;
   }
 } 

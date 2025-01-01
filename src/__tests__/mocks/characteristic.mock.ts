@@ -1,0 +1,31 @@
+export class MockCharacteristic {
+  static readonly On = 'On';
+  static readonly Active = 'Active';
+  static readonly Name = 'Name';
+  static readonly Model = 'Model';
+  static readonly Manufacturer = 'Manufacturer';
+  static readonly SerialNumber = 'SerialNumber';
+  static readonly FirmwareRevision = 'FirmwareRevision';
+  static readonly RotationSpeed = 'RotationSpeed';
+  static readonly CurrentAirPurifierState = 'CurrentAirPurifierState';
+  static readonly TargetAirPurifierState = 'TargetAirPurifierState';
+  static readonly CurrentFanState = 'CurrentFanState';
+  static readonly TargetFanState = 'TargetFanState';
+  static readonly FilterChangeIndication = 'FilterChangeIndication';
+  static readonly FilterLifeLevel = 'FilterLifeLevel';
+  static readonly AirQuality = 'AirQuality';
+  static readonly PM2_5Density = 'PM2_5Density';
+  static readonly CurrentRelativeHumidity = 'CurrentRelativeHumidity';
+  static readonly TargetRelativeHumidity = 'TargetRelativeHumidity';
+  static readonly WaterLevel = 'WaterLevel';
+  static readonly LockPhysicalControls = 'LockPhysicalControls';
+  static readonly SwingMode = 'SwingMode';
+  static readonly Brightness = 'Brightness';
+  static readonly ColorTemperature = 'ColorTemperature';
+  static readonly Hue = 'Hue';
+  static readonly Saturation = 'Saturation';
+  static readonly OutletInUse = 'OutletInUse';
+  static readonly Voltage = 'Voltage';
+  static readonly ElectricCurrent = 'ElectricCurrent';
+  static readonly PowerMeterVisible = 'PowerMeterVisible';
+} 
