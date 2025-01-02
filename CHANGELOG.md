@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.0.20] - 2025-01-01
+## [1.0.23] - 2025-01-02
 
 ### Fixed
 - Fixed invalid speed setting issues for air purifiers, fans, and humidifiers
@@ -17,6 +17,11 @@
   - Swing mode changes
   - Rotation direction changes
   - Target humidity adjustments
+- Added support for ESO15-TB dual outdoor outlets
+  - Power state control for both outlets
+  - Energy monitoring capabilities
+  - Power consumption tracking
+  - Voltage monitoring
 
 ### Changed
 - Improved error handling for device control operations
