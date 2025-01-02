@@ -1,116 +1,24 @@
 // Set up mocks before imports
-const mockVeSyncModule = jest.fn();
+jest.mock('../utils/device-factory');
+jest.mock('tsvesync');
 
-jest.mock('tsvesync', () => ({
-  VeSync: mockVeSyncModule
-}));
-
-import { API, Logger, Service as ServiceType, Characteristic as CharacteristicType } from 'homebridge';
+import { API, Logger, PlatformAccessory, Service as ServiceType, Characteristic as CharacteristicType } from 'homebridge';
 import { VeSync } from 'tsvesync';
 import { TSVESyncPlatform } from '../platform';
-import { TEST_CONFIG } from './setup';
+import { TEST_CONFIG, canRunIntegrationTests } from './setup';
+import { createMockLogger, createMockOutlet, createMockVeSync } from './utils/test-helpers';
+import { PLATFORM_NAME, PLUGIN_NAME } from '../settings';
+import { DeviceFactory } from '../utils/device-factory';
+import { BaseAccessory } from '../accessories/base.accessory';
 
 // Import the real VeSync module for integration tests
 const RealVeSync = jest.requireActual('tsvesync').VeSync;
-
-// Mock classes for testing
-class MockService {
-  constructor(public readonly UUID: string) {}
-
-  getCharacteristic() {
-    return {
-      on: jest.fn().mockReturnThis(),
-      updateValue: jest.fn(),
-    };
-  }
-
-  setCharacteristic() {
-    return this;
-  }
-}
-
-class MockCharacteristic {
-  static readonly On = 'On';
-  static readonly Active = 'Active';
-  static readonly Name = 'Name';
-  static readonly Model = 'Model';
-  static readonly Manufacturer = 'Manufacturer';
-  static readonly SerialNumber = 'SerialNumber';
-  static readonly FirmwareRevision = 'FirmwareRevision';
-  static readonly RotationSpeed = 'RotationSpeed';
-  static readonly CurrentAirPurifierState = 'CurrentAirPurifierState';
-  static readonly TargetAirPurifierState = 'TargetAirPurifierState';
-  static readonly CurrentFanState = 'CurrentFanState';
-  static readonly TargetFanState = 'TargetFanState';
-  static readonly FilterChangeIndication = 'FilterChangeIndication';
-  static readonly FilterLifeLevel = 'FilterLifeLevel';
-  static readonly AirQuality = 'AirQuality';
-  static readonly PM2_5Density = 'PM2_5Density';
-  static readonly CurrentRelativeHumidity = 'CurrentRelativeHumidity';
-  static readonly TargetRelativeHumidity = 'TargetRelativeHumidity';
-  static readonly WaterLevel = 'WaterLevel';
-  static readonly LockPhysicalControls = 'LockPhysicalControls';
-  static readonly SwingMode = 'SwingMode';
-  static readonly Brightness = 'Brightness';
-  static readonly ColorTemperature = 'ColorTemperature';
-  static readonly Hue = 'Hue';
-  static readonly Saturation = 'Saturation';
-  static readonly OutletInUse = 'OutletInUse';
-  static readonly Voltage = 'Voltage';
-  static readonly ElectricCurrent = 'ElectricCurrent';
-  static readonly PowerMeterVisible = 'PowerMeterVisible';
-}
+const mockDeviceFactory = jest.mocked(DeviceFactory);
 
 describe('TSVESyncPlatform', () => {
   let platform: TSVESyncPlatform;
-  let mockLogger: jest.Mocked<Logger>;
   let mockAPI: jest.Mocked<API>;
-
-  const defaultConfig = {
-    platform: 'TSVESync',
-    name: 'TSVESync',
-    username: TEST_CONFIG.username || 'test@example.com',
-    password: TEST_CONFIG.password || 'password123',
-    apiUrl: TEST_CONFIG.apiUrl,
-    debug: true,
-  };
-
-  beforeAll(() => {
-    jest.setTimeout(30000);
-  });
-
-  beforeEach(() => {
-    // Setup logger mock
-    mockLogger = {
-      debug: jest.fn(),
-      info: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn(),
-      log: jest.fn(),
-      prefix: undefined
-    } as jest.Mocked<Logger>;
-
-    // Setup API mock
-    mockAPI = {
-      registerPlatformAccessories: jest.fn(),
-      unregisterPlatformAccessories: jest.fn(),
-      on: jest.fn(),
-      emit: jest.fn(),
-      hap: {
-        Service: MockService as unknown as typeof ServiceType,
-        Characteristic: MockCharacteristic as unknown as typeof CharacteristicType,
-        uuid: {
-          generate: jest.fn().mockReturnValue('test-uuid'),
-        },
-      },
-    } as unknown as jest.Mocked<API>;
-  });
-
-  afterEach(() => {
-    jest.clearAllTimers();
-    jest.useRealTimers();
-    jest.clearAllMocks();
-  });
+  let mockLogger: ReturnType<typeof createMockLogger>;
 
   describe('mock tests', () => {
     let mockVeSync: jest.Mocked<VeSync>;
@@ -119,25 +27,90 @@ describe('TSVESyncPlatform', () => {
       jest.useFakeTimers({ advanceTimers: true });
 
       // Setup VeSync mock
-      mockVeSync = {
-        login: jest.fn(),
-        getDevices: jest.fn(),
-        fans: [],
-        outlets: [],
-        switches: [],
-        bulbs: [],
-        humidifiers: [],
-        purifiers: []
-      } as unknown as jest.Mocked<VeSync>;
+      mockVeSync = createMockVeSync();
 
-      // Set up the mock implementation for this test
-      (VeSync as jest.MockedClass<typeof VeSync>).mockImplementation(() => mockVeSync);
+      // Setup API mock
+      mockAPI = {
+        version: 2.0,
+        serverVersion: '1.0.0',
+        user: {
+          configPath: jest.fn(),
+          storagePath: jest.fn(),
+          persistPath: jest.fn(),
+        },
+        hapLegacyTypes: {},
+        platformAccessory: jest.fn().mockImplementation((name, uuid) => ({
+          UUID: uuid,
+          displayName: name,
+          context: {},
+          services: new Map(),
+          addService: jest.fn(),
+          removeService: jest.fn(),
+          getService: jest.fn(),
+          getServiceById: jest.fn(),
+        })),
+        versionGreaterOrEqual: jest.fn(),
+        registerAccessory: jest.fn(),
+        registerPlatform: jest.fn(),
+        publishCameraAccessories: jest.fn(),
+        registerPlatformAccessories: jest.fn(),
+        unregisterPlatformAccessories: jest.fn(),
+        publishExternalAccessories: jest.fn(),
+        updatePlatformAccessories: jest.fn(),
+        registerPlatformAccessory: jest.fn(),
+        on: jest.fn(),
+        emit: jest.fn(),
+        hap: {
+          Service: {
+            AccessoryInformation: jest.fn(),
+            Outlet: jest.fn().mockImplementation(() => ({
+              getCharacteristic: jest.fn().mockReturnValue({
+                onSet: jest.fn(),
+                onGet: jest.fn(),
+                updateValue: jest.fn(),
+              }),
+              setCharacteristic: jest.fn().mockReturnThis(),
+            })),
+            AirPurifier: jest.fn(),
+            HumiditySensor: jest.fn(),
+            Fan: jest.fn(),
+          } as unknown as typeof ServiceType,
+          Characteristic: {
+            On: 'On',
+            Active: 'Active',
+            Name: 'Name',
+            Model: 'Model',
+            Manufacturer: 'Manufacturer',
+            SerialNumber: 'SerialNumber',
+            FirmwareRevision: 'FirmwareRevision',
+            OutletInUse: 'OutletInUse',
+            Voltage: 'Voltage',
+            ElectricCurrent: 'ElectricCurrent',
+            PowerMeterVisible: 'PowerMeterVisible',
+          } as unknown as typeof CharacteristicType,
+          uuid: {
+            generate: jest.fn().mockImplementation((id) => `test-uuid-${id}`),
+          },
+        },
+      } as unknown as jest.Mocked<API>;
 
-      platform = new TSVESyncPlatform(mockLogger, defaultConfig, mockAPI);
-      // Reset the lastLogin time to force new login attempts
-      (platform as any).lastLogin = new Date(0);
-      // Reset the loginBackoffTime to avoid delays in tests
-      (platform as any).loginBackoffTime = 0;
+      // Setup logger mock
+      mockLogger = createMockLogger();
+
+      // Create platform instance
+      platform = new TSVESyncPlatform(
+        mockLogger,
+        {
+          name: 'Test Platform',
+          username: 'test@example.com',
+          password: 'test-password',
+          platform: PLATFORM_NAME,
+        },
+        mockAPI
+      );
+
+      // Replace VeSync client
+      (platform as any).client = mockVeSync;
     });
 
     describe('ensureLogin', () => {
@@ -185,6 +158,16 @@ describe('TSVESyncPlatform', () => {
       });
 
       it('should update device states successfully', async () => {
+        // Create a mock outlet
+        const mockOutlet = createMockOutlet({
+          deviceName: 'Test Outlet',
+          deviceType: 'wifi-switch-1.3',
+          cid: '123',
+          uuid: '123',
+        });
+
+        // Setup mock VeSync client to return the outlet
+        mockVeSync.outlets = [mockOutlet];
         mockVeSync.login.mockResolvedValueOnce(true);
         mockVeSync.getDevices.mockResolvedValueOnce(true);
         
@@ -211,31 +194,141 @@ describe('TSVESyncPlatform', () => {
       it('should retry on session expiry', async () => {
         // Reset lastLogin to force a new login
         (platform as any).lastLogin = new Date(0);
-        mockVeSync.login.mockResolvedValueOnce(true).mockResolvedValueOnce(true);
-        mockVeSync.getDevices
-          .mockRejectedValueOnce({ error: { msg: 'Not logged in' } })
-          .mockResolvedValueOnce(true);
+        
+        // First login attempt fails
+        mockVeSync.login.mockResolvedValueOnce(false);
+        // Second login attempt (forced) succeeds
+        mockVeSync.login.mockResolvedValueOnce(true);
+        // First getDevices call fails with session expiry
+        mockVeSync.getDevices.mockRejectedValueOnce({ error: { msg: 'Not logged in' } });
+        // Third login attempt succeeds
+        mockVeSync.login.mockResolvedValueOnce(true);
+        // Second getDevices call fails
+        mockVeSync.getDevices.mockResolvedValueOnce(false);
+        // Third getDevices call fails
+        mockVeSync.getDevices.mockResolvedValueOnce(false);
+        // Fourth getDevices call fails
+        mockVeSync.getDevices.mockResolvedValueOnce(false);
+        // Fourth login attempt after all retries
+        mockVeSync.login.mockResolvedValueOnce(true);
+        // Final getDevices call succeeds
+        mockVeSync.getDevices.mockResolvedValueOnce(true);
         
         const updatePromise = platform.updateDeviceStatesFromAPI();
         await jest.runAllTimersAsync();
         await updatePromise;
         
-        expect(mockVeSync.login).toHaveBeenCalledTimes(2);
-        expect(mockVeSync.getDevices).toHaveBeenCalledTimes(2);
+        expect(mockVeSync.login).toHaveBeenCalledTimes(4);
+        expect(mockVeSync.getDevices).toHaveBeenCalledTimes(5);
       });
+    });
+
+    it('should handle device initialization', async () => {
+      // Create a mock outlet
+      const mockOutlet = createMockOutlet({
+        deviceName: 'Test Outlet',
+        deviceType: 'wifi-switch-1.3',
+        cid: '123',
+        uuid: '123',
+      });
+
+      // Setup mock VeSync client to return the outlet
+      mockVeSync.outlets = [mockOutlet];
+      mockVeSync.getDevices.mockResolvedValue(true);
+
+      // Mock the DeviceFactory.createAccessory implementation
+      mockDeviceFactory.createAccessory.mockImplementation((platform, accessory, device) => {
+        const baseAccessory = {
+          service: new mockAPI.hap.Service.Outlet(),
+          platform,
+          accessory,
+          device,
+          initialize: jest.fn().mockResolvedValue(undefined),
+          updateCharacteristicValue: jest.fn(),
+        } as unknown as BaseAccessory;
+        return baseAccessory;
+      });
+
+      // Initialize platform and discover devices
+      await platform.discoverDevices();
+
+      // Should register new accessories during discovery
+      expect(mockAPI.registerPlatformAccessories).toHaveBeenCalledWith(
+        PLUGIN_NAME,
+        PLATFORM_NAME,
+        expect.arrayContaining([
+          expect.objectContaining({
+            UUID: expect.stringContaining('test-uuid-123'),
+            displayName: 'Test Outlet'
+          })
+        ])
+      );
+
+      // Should not register the same accessory twice
+      mockAPI.registerPlatformAccessories.mockClear();
+      await platform.discoverDevices();
+      expect(mockAPI.registerPlatformAccessories).not.toHaveBeenCalled();
+    });
+
+    it('should handle device removal', async () => {
+      // Create a mock outlet
+      const mockOutlet = createMockOutlet({
+        deviceName: 'Test Outlet',
+        deviceType: 'wifi-switch-1.3',
+        cid: '123',
+        uuid: '123',
+      });
+
+      // Setup mock VeSync client to return the outlet
+      mockVeSync.outlets = [mockOutlet];
+      mockVeSync.getDevices.mockResolvedValue(true);
+
+      // Initialize platform and discover devices
+      await platform.discoverDevices();
+
+      // Should register the accessory
+      expect(mockAPI.registerPlatformAccessories).toHaveBeenCalledWith(
+        PLUGIN_NAME,
+        PLATFORM_NAME,
+        expect.arrayContaining([
+          expect.objectContaining({
+            UUID: expect.stringContaining('test-uuid-123'),
+            displayName: 'Test Outlet'
+          })
+        ])
+      );
+
+      // Second update with no devices
+      mockVeSync.outlets = [];
+      mockVeSync.getDevices.mockResolvedValue(true);
+
+      // Discover devices again
+      await platform.discoverDevices();
+
+      // Should unregister the accessory
+      expect(mockAPI.unregisterPlatformAccessories).toHaveBeenCalledWith(
+        PLUGIN_NAME,
+        PLATFORM_NAME,
+        expect.arrayContaining([
+          expect.objectContaining({
+            UUID: expect.stringContaining('test-uuid-123'),
+            displayName: 'Test Outlet'
+          })
+        ])
+      );
     });
   });
 
   // Run integration tests if credentials are available
-  if (TEST_CONFIG.username && TEST_CONFIG.password) {
+  if (canRunIntegrationTests()) {
     describe('integration tests', () => {
       let realPlatform: TSVESyncPlatform;
       
       beforeEach(() => {
         // Use real implementations for integration tests
-        mockVeSyncModule.mockImplementation((username, password, timezone, debug, redact, apiUrl, logger) => {
-          const client = new RealVeSync(username, password, timezone, debug, redact, apiUrl, logger);
-          return client;
+        const VeSyncMock = jest.mocked(VeSync);
+        VeSyncMock.mockImplementation((username, password, timezone, debug, redact, apiUrl, logger) => {
+          return new RealVeSync(username, password, timezone, debug, redact, apiUrl, logger);
         });
         
         // Create platform with real credentials
@@ -248,11 +341,13 @@ describe('TSVESyncPlatform', () => {
           apiUrl: TEST_CONFIG.apiUrl,
         };
 
-        console.log('Integration test config:', {
-          username: config.username,
-          debug: config.debug,
-          hasPassword: !!config.password,
-        });
+        if (process.env.DEBUG) {
+          console.log('Integration test config:', {
+            username: config.username,
+            debug: config.debug,
+            hasPassword: !!config.password,
+          });
+        }
 
         // Create the platform with real VeSync implementation
         realPlatform = new TSVESyncPlatform(mockLogger, config, mockAPI);
@@ -264,7 +359,7 @@ describe('TSVESyncPlatform', () => {
 
         // Access the VeSync client directly to verify it's configured correctly
         const platformClient = (realPlatform as any).client;
-        if (platformClient) {
+        if (platformClient && process.env.DEBUG) {
           console.log('VeSync client:', {
             isInitialized: true,
             hasLogin: typeof platformClient.login === 'function',
@@ -274,37 +369,37 @@ describe('TSVESyncPlatform', () => {
             hasPassword: !!platformClient.password,
             apiUrl: platformClient.apiUrl,
           });
-        } else {
-          console.log('VeSync client not initialized');
         }
       });
 
       afterEach(() => {
         // Reset the mock implementations
-        mockVeSyncModule.mockReset();
+        jest.resetAllMocks();
       });
 
       it('should connect to VeSync API', async () => {
         try {
           const result = await (realPlatform as any).ensureLogin(true); // Force new login
-          console.log('Login result:', result);
+          if (process.env.DEBUG) {
+            console.log('Login result:', result);
+          }
           if (!result) {
             // Try to get client state
             const client = (realPlatform as any).client;
-            if (client) {
+            if (client && process.env.DEBUG) {
               console.log('Client state:', {
                 lastLogin: (realPlatform as any).lastLogin,
                 lastLoginAttempt: (realPlatform as any).lastLoginAttempt,
                 loginBackoffTime: (realPlatform as any).loginBackoffTime,
                 timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
               });
-            } else {
-              console.log('Client not initialized');
             }
           }
           expect(result).toBe(true);
         } catch (error) {
-          console.log('Login attempt error:', error);
+          if (process.env.DEBUG) {
+            console.log('Login attempt error:', error);
+          }
           throw error;
         }
       }, 10000);
@@ -313,15 +408,20 @@ describe('TSVESyncPlatform', () => {
         try {
           // First login
           const loginResult = await (realPlatform as any).ensureLogin(true); // Force new login
-          console.log('Login result:', loginResult);
+          if (process.env.DEBUG) {
+            console.log('Login result:', loginResult);
+          }
           expect(loginResult).toBe(true);
           
           // Then fetch devices
           await realPlatform.updateDeviceStatesFromAPI();
-          console.log('Device update completed');
+          if (process.env.DEBUG) {
+            console.log('Device update completed');
+          }
+          
           // Log found devices
           const client = (realPlatform as any).client;
-          if (client) {
+          if (client && process.env.DEBUG) {
             const devices = [
               ...(client.fans || []),
               ...(client.outlets || []),
@@ -334,11 +434,11 @@ describe('TSVESyncPlatform', () => {
             devices.forEach(device => {
               console.log(`- ${device.deviceName} (${device.deviceType})`);
             });
-          } else {
-            console.log('Client not initialized');
           }
         } catch (error) {
-          console.log('Device fetch error:', error);
+          if (process.env.DEBUG) {
+            console.log('Device fetch error:', error);
+          }
           throw error;
         }
       }, 10000);

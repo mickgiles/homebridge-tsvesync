@@ -62,6 +62,15 @@ class TestAccessory extends BaseAccessory {
   }
 }
 
+// Add test factory before the describe block
+const createMockDevice = (overrides = {}) => ({
+  deviceName: 'Test Device',
+  uuid: '12345',
+  deviceType: 'outlet',
+  getDetails: jest.fn(),
+  ...overrides
+});
+
 describe('BaseAccessory', () => {
   let mockPlatform: jest.Mocked<TSVESyncPlatform>;
   let mockAccessory: jest.Mocked<PlatformAccessory>;
@@ -145,7 +154,7 @@ describe('BaseAccessory', () => {
         FirmwareRevision: 'FirmwareRevision',
       },
       api: {
-        updatePlatformAccessories: jest.fn(),
+        updatePlatformAccessories: jest.fn().mockImplementation((accessories: PlatformAccessory[]) => {}),
       },
       config: {
         platform: 'TSVESync',
@@ -254,6 +263,107 @@ describe('BaseAccessory', () => {
         expect.any(Error)
       );
     });
+
+    it('should handle API timeout errors', async () => {
+      const error = {
+        code: 'ETIMEDOUT',
+        message: 'Request timed out',
+      };
+
+      await accessory.testHandleDeviceError('test operation', error);
+      expect(mockPluginLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('Network error'),
+        expect.any(Object),
+        expect.any(Error)
+      );
+    });
+
+    it('should handle DNS resolution errors', async () => {
+      const error = {
+        code: 'ECONNREFUSED',
+        message: 'DNS lookup failed',
+      };
+
+      await accessory.testHandleDeviceError('test operation', error);
+      expect(mockPluginLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('Network error'),
+        expect.any(Object),
+        expect.any(Error)
+      );
+    });
+
+    it('should handle invalid response format', async () => {
+      const error = {
+        message: 'Invalid response format',
+      };
+
+      await accessory.testHandleDeviceError('test operation', error);
+      expect(mockPluginLogger.error).toHaveBeenCalledWith(
+        expect.stringContaining('test operation'),
+        expect.any(Object),
+        expect.any(Error)
+      );
+    });
+
+    it('should handle server errors', async () => {
+      const error = {
+        message: 'Internal server error',
+      };
+
+      await accessory.testHandleDeviceError('test operation', error);
+      expect(mockPluginLogger.error).toHaveBeenCalledWith(
+        expect.stringContaining('test operation'),
+        expect.any(Object),
+        expect.any(Error)
+      );
+    });
+
+    it('should handle authentication errors', async () => {
+      const error = {
+        message: 'rate limit exceeded',
+      };
+
+      await accessory.testHandleDeviceError('test operation', error);
+      expect(mockPluginLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('Hit API rate limit'),
+        expect.any(Object),
+        expect.any(Error)
+      );
+    });
+
+    it('should handle multiple consecutive errors', async () => {
+      const errors = [
+        { code: 'ECONNRESET', message: 'Connection reset' },
+        { error: { code: 4041008, msg: 'Device not found' } }
+      ];
+
+      for (const error of errors) {
+        await accessory.testHandleDeviceError('test operation', error);
+      }
+
+      expect(mockPluginLogger.warn).toHaveBeenCalledTimes(2);
+      expect(mockRetryManager.getRetryCount).toHaveBeenCalledTimes(2);
+    });
+
+    it('should handle malformed error objects', async () => {
+      const malformedErrors = [
+        undefined,
+        null,
+        {},
+        { error: null },
+        { error: {} },
+        { error: { code: null, msg: null } }
+      ];
+
+      for (const error of malformedErrors) {
+        await accessory.testHandleDeviceError('test operation', error);
+        expect(mockPluginLogger.error).toHaveBeenLastCalledWith(
+          expect.stringContaining('test operation'),
+          expect.any(Object),
+          expect.any(Error)
+        );
+      }
+    });
   });
 
   describe('device state management', () => {
@@ -287,6 +397,37 @@ describe('BaseAccessory', () => {
       await (accessory as any).syncDeviceState();
       expect(mockLogger.debug).toHaveBeenCalledWith(expect.stringContaining('Retrying previous failed operation'));
     });
+
+    it('should handle partial device details', async () => {
+      const partialDetails = { power: true, mode: undefined, speed: null };
+      mockDevice.getDetails.mockResolvedValueOnce(partialDetails);
+      mockRetryManager.execute.mockImplementation((fn) => fn());
+
+      await (accessory as any).syncDeviceState();
+      expect(mockDevice.getDetails).toHaveBeenCalled();
+    });
+
+    it('should handle empty device details', async () => {
+      const emptyDetails = {};
+      mockDevice.getDetails.mockResolvedValueOnce(emptyDetails);
+      mockRetryManager.execute.mockImplementation((fn) => fn());
+
+      await (accessory as any).syncDeviceState();
+      expect(mockDevice.getDetails).toHaveBeenCalled();
+    });
+
+    it('should handle invalid device details', async () => {
+      const error = new Error('Failed to get device details');
+      mockDevice.getDetails.mockRejectedValueOnce(error);
+      mockRetryManager.execute.mockRejectedValueOnce(error);
+
+      await (accessory as any).syncDeviceState();
+      expect(mockPluginLogger.error).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to sync device state'),
+        expect.any(Object),
+        error
+      );
+    });
   });
 
   describe('polling management', () => {
@@ -317,6 +458,71 @@ describe('BaseAccessory', () => {
 
       expect(mockPlatform.api.updatePlatformAccessories).toHaveBeenCalledWith([mockAccessory]);
       expect(mockAccessory.context.device.details.testKey).toBe('testValue');
+    });
+  });
+
+  describe('concurrent operations', () => {
+    it('should handle multiple state sync requests', async () => {
+      const syncPromises: Promise<void>[] = [];
+      const mockDetails = { power: true };
+      mockDevice.getDetails.mockResolvedValue(mockDetails);
+      mockRetryManager.execute.mockImplementation((fn) => fn());
+
+      // Simulate multiple concurrent sync requests
+      for (let i = 0; i < 3; i++) {
+        syncPromises.push((accessory as any).syncDeviceState());
+      }
+
+      await Promise.all(syncPromises);
+      expect(mockDevice.getDetails).toHaveBeenCalledTimes(3);
+    });
+
+    it('should handle operation timeout', async () => {
+      const timeoutError = new Error('Operation timed out');
+      mockDevice.getDetails.mockImplementation(() => new Promise((_, reject) => {
+        setTimeout(() => reject(timeoutError), 5000);
+      }));
+      mockRetryManager.execute.mockRejectedValueOnce(timeoutError);
+
+      await (accessory as any).syncDeviceState();
+      expect(mockPluginLogger.error).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to sync device state'),
+        expect.any(Object),
+        timeoutError
+      );
+    });
+  });
+
+  describe('state persistence', () => {
+    it('should handle persistence failures', async () => {
+      const error = new Error('Failed to update platform accessories');
+      (mockPlatform.api.updatePlatformAccessories as jest.Mock).mockImplementationOnce(() => {
+        throw error;
+      });
+
+      await (accessory as any).persistDeviceState('testKey', 'testValue');
+      expect(mockPluginLogger.error).toHaveBeenCalledWith(
+        expect.stringContaining('persist testKey state'),
+        expect.any(Object),
+        error
+      );
+    });
+
+    it('should batch multiple state updates', async () => {
+      const updates: Array<[string, string]> = [
+        ['key1', 'value1'],
+        ['key2', 'value2'],
+        ['key3', 'value3']
+      ];
+
+      for (const [key, value] of updates) {
+        await (accessory as any).persistDeviceState(key, value);
+      }
+
+      expect(mockPlatform.api.updatePlatformAccessories).toHaveBeenCalledTimes(updates.length);
+      updates.forEach(([key, value], index) => {
+        expect(mockAccessory.context.device.details[key]).toBe(value);
+      });
     });
   });
 }); 
