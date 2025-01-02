@@ -8,6 +8,8 @@ declare module 'tsvesync' {
     deviceType: string;
     uuid: string;
     cid: string;
+    subDeviceNo: number;
+    isSubDevice: boolean;
     deviceStatus: string;
     getDetails(): Promise<any>;
     setApiBaseUrl(url: string): void;
@@ -20,7 +22,9 @@ declare module 'tsvesync' {
     deviceType: string;
     uuid: string;
     cid: string;
+    subDeviceNo: number;
     deviceStatus: string;
+    isSubDevice: boolean;
     getDetails(): Promise<any>;
     setApiBaseUrl(url: string): void;
     turnOn(): Promise<boolean>;

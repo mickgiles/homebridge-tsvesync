@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.0.23] - 2025-01-02
+## [1.0.26] - 2025-01-02
 
 ### Fixed
 - Fixed invalid speed setting issues for air purifiers, fans, and humidifiers

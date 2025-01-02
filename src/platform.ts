@@ -1,7 +1,6 @@
 import { API, DynamicPlatformPlugin, Logger, PlatformAccessory, PlatformConfig, Service, Characteristic } from 'homebridge';
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings';
 import { VeSync } from 'tsvesync';
-import { setApiBaseUrl } from 'tsvesync/src/lib/helpers';
 import { DeviceFactory } from './utils/device-factory';
 import { BaseAccessory } from './accessories/base.accessory';
 
@@ -354,7 +353,7 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
       
       // Update each accessory's context with fresh state
       for (const accessory of this.accessories) {
-        const device = devices.find(d => this.api.hap.uuid.generate(d.cid) === accessory.UUID);
+        const device = devices.find(d => this.generateDeviceUUID(d) === accessory.UUID);
         if (device) {
           try {
             // Create fresh device context
@@ -426,7 +425,7 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
       // Loop over the discovered devices and register each one
       for (const device of devices) {
         // Generate a unique id for the accessory
-        const uuid = this.api.hap.uuid.generate(device.cid);
+        const uuid = this.generateDeviceUUID(device);
 
         // Check if an accessory already exists
         let accessory = this.accessories.find(acc => acc.UUID === uuid);
@@ -468,7 +467,7 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
 
       // Remove platform accessories that no longer exist
       this.accessories
-        .filter(accessory => !devices.find(device => this.api.hap.uuid.generate(device.cid) === accessory.UUID))
+        .filter(accessory => !devices.find(device => this.generateDeviceUUID(device) === accessory.UUID))
         .forEach(accessory => {
           this.log.info('Removing existing accessory:', accessory.displayName);
           this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
@@ -478,5 +477,18 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
     } catch (error) {
       this.log.error('Failed to discover devices:', error);
     }
+  }
+
+  /**
+   * Generate a consistent UUID for a device
+   * @param device The device to generate a UUID for
+   * @returns The generated UUID string
+   */
+  private generateDeviceUUID(device: { cid: string; isSubDevice?: boolean; subDeviceNo?: number }): string {
+    let id = device.cid;
+    if (device.isSubDevice && device.subDeviceNo !== undefined) {
+      id = `${device.cid}_${device.subDeviceNo}`;
+    }
+    return this.api.hap.uuid.generate(id);
   }
 } 
