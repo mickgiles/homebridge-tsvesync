@@ -98,6 +98,18 @@ All outlets are exposed as HomeKit outlets with the following features:
   * Mode selection (Normal, Auto, Sleep, Turbo)
   * Oscillation control
 
+  ### Wall Switches
+- ESWL01
+  - Basic on/off control
+  - Status monitoring
+- ESWL03
+  - Basic on/off control
+  - Status monitoring
+- ESWD16
+  - Dimming control
+  - RGB indicator light control
+  - Status monitoring
+
 ## Installation
 
 1. Install Homebridge if you haven't already (see [homebridge.io](https://homebridge.io))

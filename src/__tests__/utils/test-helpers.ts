@@ -3,6 +3,7 @@ import { PluginLogger } from '../../utils/logger';
 import { RetryManager } from '../../utils/retry';
 import { VeSyncOutlet } from '../../types/device.types';
 import { VeSync } from 'tsvesync';
+import { VeSyncSwitch } from '../../types/device.types';
 
 /**
  * Creates a mock Logger instance for testing
@@ -215,4 +216,64 @@ export const createMockVeSync = (): jest.Mocked<VeSync> => {
     getDevicesByDeviceRegion: jest.fn(),
     getDevicesByConnectionStatus: jest.fn(),
   } as unknown as jest.Mocked<VeSync>;
+};
+
+/**
+ * Type for mock switch configuration
+ */
+export interface MockSwitchConfig {
+  deviceName?: string;
+  deviceType?: string;
+  cid?: string;
+  uuid?: string;
+  power?: boolean;
+}
+
+/**
+ * Creates a mock switch instance for testing
+ */
+export const createMockSwitch = (config: MockSwitchConfig = {}): jest.Mocked<VeSyncSwitch> => {
+  const state = {
+    power: config.power || false,
+    deviceStatus: config.power ? 'on' : 'off',
+  };
+
+  const mockSwitch = {
+    deviceName: config.deviceName || 'Test Switch',
+    deviceType: config.deviceType || 'wifi-switch-1.3',
+    cid: config.cid || 'test-cid',
+    uuid: config.uuid || 'test-uuid',
+    deviceStatus: state.deviceStatus,
+    subDeviceNo: 0,
+    isSubDevice: false,
+    deviceRegion: 'US',
+    configModule: 'Switch',
+    macId: '00:11:22:33:44:55',
+    deviceCategory: 'switch',
+    connectionStatus: 'online',
+    power: state.power,
+    getDetails: jest.fn().mockImplementation(async () => {
+      return {
+        power: state.power,
+        deviceStatus: state.deviceStatus,
+      };
+    }),
+    setApiBaseUrl: jest.fn(),
+    turnOn: jest.fn().mockImplementation(async () => {
+      state.power = true;
+      state.deviceStatus = 'on';
+      mockSwitch.power = state.power;
+      mockSwitch.deviceStatus = state.deviceStatus;
+      return true;
+    }),
+    turnOff: jest.fn().mockImplementation(async () => {
+      state.power = false;
+      state.deviceStatus = 'off';
+      mockSwitch.power = state.power;
+      mockSwitch.deviceStatus = state.deviceStatus;
+      return true;
+    }),
+  } as unknown as jest.Mocked<VeSyncSwitch>;
+
+  return mockSwitch;
 }; 

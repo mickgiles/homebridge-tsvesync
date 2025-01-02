@@ -77,4 +77,8 @@ export interface VeSyncOutlet extends VeSyncDeviceWithPower {
   power?: number;
   voltage?: number;
   energy?: number;
+}
+
+export interface VeSyncSwitch extends VeSyncDeviceWithPower {
+  power?: boolean;
 } 

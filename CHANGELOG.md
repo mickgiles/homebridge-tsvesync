@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.0.26] - 2025-01-02
+## [1.0.27] - 2025-01-02
 
 ### Fixed
 - Fixed invalid speed setting issues for air purifiers, fans, and humidifiers
@@ -22,6 +22,7 @@
   - Energy monitoring capabilities
   - Power consumption tracking
   - Voltage monitoring
+- Added support for ESWL01, ESWL03, and ESWD16 wall switches
 
 ### Changed
 - Improved error handling for device control operations
