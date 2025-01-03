@@ -4,8 +4,8 @@ import { TSVESyncPlatform } from '../platform';
 import { DeviceCapabilities, VeSyncFan } from '../types/device.types';
 
 // Constants for fan direction
-const CLOCKWISE = 0;
-const COUNTER_CLOCKWISE = 1;
+const CLOCKWISE = 1;
+const COUNTER_CLOCKWISE = 0;
 
 export class FanAccessory extends BaseAccessory {
   protected readonly device: VeSyncFan;

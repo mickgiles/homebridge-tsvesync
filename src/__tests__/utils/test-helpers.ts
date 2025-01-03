@@ -5,6 +5,7 @@ import { VeSyncOutlet } from '../../types/device.types';
 import { VeSync } from 'tsvesync';
 import { VeSyncSwitch } from '../../types/device.types';
 import { VeSyncBulb } from '../../types/device.types';
+import { VeSyncFan } from '../../types/device.types';
 
 /**
  * Creates a mock Logger instance for testing
@@ -371,4 +372,93 @@ export function createMockLight(options: MockLightOptions): VeSyncBulb {
   } as VeSyncBulb;
 
   return mockLight;
-} 
+}
+
+/**
+ * Type for mock fan configuration
+ */
+export interface MockFanConfig {
+  deviceName?: string;
+  deviceType?: string;
+  cid?: string;
+  uuid?: string;
+  speed?: number;
+  rotationDirection?: 'clockwise' | 'counterclockwise';
+  swingMode?: boolean;
+  childLock?: boolean;
+}
+
+/**
+ * Creates a mock fan instance for testing
+ */
+export const createMockFan = (config: MockFanConfig = {}): jest.Mocked<VeSyncFan> => {
+  const state = {
+    deviceStatus: 'on',
+    speed: config.speed || 3,
+    rotationDirection: config.rotationDirection || 'clockwise',
+    swingMode: config.swingMode || false,
+    childLock: config.childLock || false,
+  };
+
+  const mockFan = {
+    deviceName: config.deviceName || 'Test Fan',
+    deviceType: config.deviceType || 'LTF-F422',
+    cid: config.cid || 'test-cid',
+    uuid: config.uuid || 'test-uuid',
+    deviceStatus: state.deviceStatus,
+    speed: state.speed,
+    maxSpeed: 5,
+    rotationDirection: state.rotationDirection,
+    swingMode: state.swingMode,
+    childLock: state.childLock,
+    subDeviceNo: 0,
+    isSubDevice: false,
+    deviceRegion: 'US',
+    configModule: 'Fan',
+    macId: '00:11:22:33:44:55',
+    deviceCategory: 'fan',
+    connectionStatus: 'online',
+    getDetails: jest.fn().mockImplementation(async () => {
+      return {
+        deviceStatus: state.deviceStatus,
+        speed: state.speed,
+        rotationDirection: state.rotationDirection,
+        swingMode: state.swingMode,
+        childLock: state.childLock,
+      };
+    }),
+    setApiBaseUrl: jest.fn(),
+    turnOn: jest.fn().mockImplementation(async () => {
+      state.deviceStatus = 'on';
+      mockFan.deviceStatus = state.deviceStatus;
+      return true;
+    }),
+    turnOff: jest.fn().mockImplementation(async () => {
+      state.deviceStatus = 'off';
+      mockFan.deviceStatus = state.deviceStatus;
+      return true;
+    }),
+    changeFanSpeed: jest.fn().mockImplementation(async (speed: number) => {
+      state.speed = speed;
+      mockFan.speed = state.speed;
+      return true;
+    }),
+    setRotationDirection: jest.fn().mockImplementation(async (direction: 'clockwise' | 'counterclockwise') => {
+      state.rotationDirection = direction;
+      mockFan.rotationDirection = state.rotationDirection;
+      return true;
+    }),
+    setSwingMode: jest.fn().mockImplementation(async (enabled: boolean) => {
+      state.swingMode = enabled;
+      mockFan.swingMode = state.swingMode;
+      return true;
+    }),
+    setChildLock: jest.fn().mockImplementation(async (enabled: boolean) => {
+      state.childLock = enabled;
+      mockFan.childLock = state.childLock;
+      return true;
+    }),
+  } as unknown as jest.Mocked<VeSyncFan>;
+
+  return mockFan;
+}; 

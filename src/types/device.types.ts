@@ -38,8 +38,8 @@ export interface VeSyncDeviceWithSpeed extends VeSyncDeviceWithPower {
 }
 
 export interface VeSyncDeviceWithRotation extends VeSyncDeviceWithPower {
-  rotationDirection?: 'clockwise' | 'counterclockwise';
-  setRotationDirection?(direction: 'clockwise' | 'counterclockwise'): Promise<boolean>;
+  rotationDirection: 'clockwise' | 'counterclockwise';
+  setRotationDirection(direction: 'clockwise' | 'counterclockwise'): Promise<boolean>;
 }
 
 export interface VeSyncDeviceWithHumidity extends VeSyncDeviceWithPower {
@@ -69,7 +69,12 @@ export interface VeSyncAirPurifier extends VeSyncDeviceWithPower, VeSyncDeviceWi
 
 export interface VeSyncHumidifier extends VeSyncDeviceWithPower, VeSyncDeviceWithSpeed, VeSyncDeviceWithHumidity, VeSyncDeviceWithControls {}
 
-export interface VeSyncFan extends VeSyncDeviceWithPower, VeSyncDeviceWithSpeed, VeSyncDeviceWithRotation, VeSyncDeviceWithControls {}
+export interface VeSyncFan extends VeSyncDeviceWithPower, VeSyncDeviceWithSpeed, VeSyncDeviceWithRotation {
+  swingMode: boolean;
+  childLock: boolean;
+  setSwingMode(enabled: boolean): Promise<boolean>;
+  setChildLock(enabled: boolean): Promise<boolean>;
+}
 
 export interface VeSyncBulb extends VeSyncDeviceWithPower, VeSyncDeviceWithBrightness, VeSyncDeviceWithColor {}
 
