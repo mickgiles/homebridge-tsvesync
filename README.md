@@ -98,7 +98,7 @@ All outlets are exposed as HomeKit outlets with the following features:
   * Mode selection (Normal, Auto, Sleep, Turbo)
   * Oscillation control
 
-  ### Wall Switches
+### Wall Switches
 - ESWL01
   - Basic on/off control
   - Status monitoring
