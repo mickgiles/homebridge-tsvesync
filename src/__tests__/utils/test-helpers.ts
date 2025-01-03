@@ -242,10 +242,11 @@ export const createMockSwitch = (config: MockSwitchConfig = {}): jest.Mocked<VeS
 
   const mockSwitch = {
     deviceName: config.deviceName || 'Test Switch',
-    deviceType: config.deviceType || 'wifi-switch-1.3',
+    deviceType: config.deviceType || 'ESW01-EU',
     cid: config.cid || 'test-cid',
     uuid: config.uuid || 'test-uuid',
     deviceStatus: state.deviceStatus,
+    power: state.power,
     subDeviceNo: 0,
     isSubDevice: false,
     deviceRegion: 'US',
@@ -253,11 +254,10 @@ export const createMockSwitch = (config: MockSwitchConfig = {}): jest.Mocked<VeS
     macId: '00:11:22:33:44:55',
     deviceCategory: 'switch',
     connectionStatus: 'online',
-    power: state.power,
     getDetails: jest.fn().mockImplementation(async () => {
       return {
-        power: state.power,
         deviceStatus: state.deviceStatus,
+        power: state.power,
       };
     }),
     setApiBaseUrl: jest.fn(),

@@ -7,9 +7,7 @@ import { VeSync } from 'tsvesync';
 import { TSVESyncPlatform } from '../../platform';
 import { TEST_CONFIG } from '../setup';
 import { createMockLogger, createMockSwitch } from '../utils/test-helpers';
-import { PLATFORM_NAME, PLUGIN_NAME } from '../../settings';
 import { DeviceFactory } from '../../utils/device-factory';
-import { BaseAccessory } from '../../accessories/base.accessory';
 import { SwitchAccessory } from '../../accessories/switch.accessory';
 
 const mockDeviceFactory = jest.mocked(DeviceFactory);
@@ -157,7 +155,7 @@ describe('Switch Device Tests', () => {
       // Create a mock switch with immediate responses
       const mockSwitch = createMockSwitch({
         deviceName: 'Test Switch',
-        deviceType: 'wifi-switch-1.3',
+        deviceType: 'ESW01-EU',
         cid: 'test-cid-123',
         uuid: 'test-uuid-123',
       });
@@ -191,7 +189,7 @@ describe('Switch Device Tests', () => {
       // Create a mock switch with immediate error responses
       const mockSwitch = createMockSwitch({
         deviceName: 'Test Switch',
-        deviceType: 'wifi-switch-1.3',
+        deviceType: 'ESW01-EU',
         cid: 'test-cid-123',
         uuid: 'test-uuid-123',
       });
@@ -223,16 +221,16 @@ describe('Switch Device Tests', () => {
   });
 
   describe('switch device types', () => {
-    it('should support wifi-switch-1.3 devices', async () => {
+    it('should support ESW01-EU devices', async () => {
       // Create a mock switch with immediate responses
       const mockSwitch = createMockSwitch({
         deviceName: 'Test Switch',
-        deviceType: 'wifi-switch-1.3',
+        deviceType: 'ESW01-EU',
         cid: 'test-cid-123',
         uuid: 'test-uuid-123',
       });
 
-      mockSwitch.getDetails.mockResolvedValue({ power: false, deviceStatus: 'off' });
+      mockSwitch.getDetails.mockResolvedValue({ deviceStatus: 'off' });
 
       // Create a mock accessory
       const mockAccessory = new mockAPI.platformAccessory(mockSwitch.deviceName, mockAPI.hap.uuid.generate(mockSwitch.cid));
@@ -245,7 +243,7 @@ describe('Switch Device Tests', () => {
       // Get the switch service
       const switchService = mockAccessory.getService(platform.Service.Switch);
       expect(switchService).toBeDefined();
-      expect(mockSwitch.deviceType).toBe('wifi-switch-1.3');
+      expect(mockSwitch.deviceType).toBe('ESW01-EU');
     }, 10000);
 
     it('should support other switch device types', async () => {
