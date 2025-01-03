@@ -152,7 +152,7 @@ export class OutletAccessory extends BaseAccessory {
     );
 
     // Update power monitoring characteristics if available
-    const powerService = this.accessory.getService('Power Monitor');
+    const powerService = this.accessory.getService(POWER_SERVICE_NAME);
     if (powerService) {
       if (outletDetails.power !== undefined) {
         powerService.updateCharacteristic(this.POWER_UUID, outletDetails.power);

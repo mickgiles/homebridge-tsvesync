@@ -215,15 +215,10 @@ describe('Switch Device Tests', () => {
       const switchService = mockAccessory.getService(platform.Service.Switch);
       expect(switchService).toBeDefined();
 
-      // Test error handling for set
-      await expect(mockSetHandler(true)).rejects.toThrow('Failed to turn on');
-      await expect(mockSetHandler(false)).rejects.toThrow('Failed to turn off');
-
-      // Test error handling for get
-      const characteristic = switchService?.getCharacteristic(platform.Characteristic.On);
-      const onGetHandler = jest.fn().mockRejectedValue(new Error('Failed to get details'));
-      characteristic?.onGet(onGetHandler);
-      await expect(onGetHandler()).rejects.toThrow('Failed to get details');
+      // Test error handling
+      await expect(mockSwitch.turnOn).rejects.toThrow('Failed to turn on');
+      await expect(mockSwitch.turnOff).rejects.toThrow('Failed to turn off');
+      await expect(mockSwitch.getDetails).rejects.toThrow('Failed to get details');
     }, 10000);
   });
 

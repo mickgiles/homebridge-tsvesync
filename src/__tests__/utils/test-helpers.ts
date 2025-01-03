@@ -4,6 +4,7 @@ import { RetryManager } from '../../utils/retry';
 import { VeSyncOutlet } from '../../types/device.types';
 import { VeSync } from 'tsvesync';
 import { VeSyncSwitch } from '../../types/device.types';
+import { VeSyncBulb } from '../../types/device.types';
 
 /**
  * Creates a mock Logger instance for testing
@@ -276,4 +277,98 @@ export const createMockSwitch = (config: MockSwitchConfig = {}): jest.Mocked<VeS
   } as unknown as jest.Mocked<VeSyncSwitch>;
 
   return mockSwitch;
-}; 
+};
+
+export interface MockLightOptions {
+  deviceName: string;
+  deviceType: string;
+  cid: string;
+  uuid: string;
+  power?: boolean;
+  brightness?: number;
+  colorTemp?: number;
+  hue?: number;
+  saturation?: number;
+  subDeviceNo?: number;
+  isSubDevice?: boolean;
+}
+
+export function createMockLight(options: MockLightOptions): VeSyncBulb {
+  const state = {
+    deviceStatus: options.power ? 'on' : 'off',
+    brightness: options.brightness || 100,
+    colorTemp: options.colorTemp || 140,
+    hue: options.hue || 0,
+    saturation: options.saturation || 0,
+  };
+
+  const turnOn = jest.fn().mockImplementation(() => {
+    state.deviceStatus = 'on';
+    mockLight.deviceStatus = state.deviceStatus;
+    return Promise.resolve(true);
+  });
+
+  const turnOff = jest.fn().mockImplementation(() => {
+    state.deviceStatus = 'off';
+    mockLight.deviceStatus = state.deviceStatus;
+    return Promise.resolve(true);
+  });
+
+  const setBrightness = jest.fn().mockImplementation((brightness: number) => {
+    state.brightness = brightness;
+    mockLight.brightness = state.brightness;
+    return Promise.resolve(true);
+  });
+
+  const setColorTemperature = jest.fn().mockImplementation((colorTemp: number) => {
+    state.colorTemp = colorTemp;
+    mockLight.colorTemp = state.colorTemp;
+    return Promise.resolve(true);
+  });
+
+  const setColor = jest.fn().mockImplementation((hue: number, saturation: number) => {
+    state.hue = hue;
+    state.saturation = saturation;
+    mockLight.hue = state.hue;
+    mockLight.saturation = state.saturation;
+    return Promise.resolve(true);
+  });
+
+  const getDetails = jest.fn().mockImplementation(() => {
+    return Promise.resolve({
+      deviceStatus: state.deviceStatus,
+      brightness: state.brightness,
+      colorTemp: state.colorTemp,
+      hue: state.hue,
+      saturation: state.saturation,
+    });
+  });
+
+  const mockLight = {
+    deviceName: options.deviceName,
+    deviceType: options.deviceType,
+    cid: options.cid,
+    uuid: options.uuid,
+    deviceStatus: state.deviceStatus,
+    brightness: state.brightness,
+    colorTemp: state.colorTemp,
+    hue: state.hue,
+    saturation: state.saturation,
+    subDeviceNo: options.subDeviceNo || 0,
+    isSubDevice: options.isSubDevice || false,
+    deviceRegion: 'US',
+    configModule: 'Light',
+    macId: '00:11:22:33:44:55',
+    deviceCategory: 'light',
+    connectionStatus: 'online',
+    setApiBaseUrl: jest.fn(),
+    turnOn,
+    turnOff,
+    setBrightness,
+    setColorTemperature,
+    setColor,
+    getDetails,
+  } as VeSyncBulb;
+
+  return mockLight;
+} 
