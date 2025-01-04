@@ -118,10 +118,10 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
    */
   private async initializePlatform(): Promise<void> {
     let retryCount = 0;
-    const maxRetries = 5;
-    const retryDelay = 60000; // 1 minute
+    let retryDelay = 60000; // Start with 1 minute
+    const maxRetryDelay = 300000; // Max 5 minutes
 
-    while (retryCount < maxRetries) {
+    while (true) {
       try {
         // Login to VeSync
         await this.ensureLogin();
@@ -130,14 +130,12 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
         const success = await this.client.getDevices();
         if (!success) {
           retryCount++;
-          this.logger.warn(`Failed to get devices (attempt ${retryCount}/${maxRetries}), retrying in ${retryDelay/1000} seconds`, 
+          this.logger.warn(`Failed to get devices (attempt ${retryCount}), retrying in ${retryDelay/1000} seconds`, 
             { operation: 'initializePlatform' });
           
-          if (retryCount < maxRetries) {
-            await new Promise(resolve => setTimeout(resolve, retryDelay));
-            continue;
-          }
-          throw new Error('Failed to get devices from VeSync');
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
+          retryDelay = Math.min(retryDelay * 2, maxRetryDelay);
+          continue;
         }
 
         const devices = [
@@ -216,18 +214,13 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
       } catch (error) {
         retryCount++;
         this.logger.error('Failed to initialize platform', { operation: 'initializePlatform' }, error as Error);
-        
-        if (retryCount < maxRetries) {
-          this.logger.warn(`Retrying initialization in ${retryDelay/1000} seconds (attempt ${retryCount}/${maxRetries})`, 
-            { operation: 'initializePlatform' });
-          await new Promise(resolve => setTimeout(resolve, retryDelay));
-          continue;
-        }
-        throw error;
+        this.logger.warn(`Retrying initialization in ${retryDelay/1000} seconds (attempt ${retryCount})`, 
+          { operation: 'initializePlatform' });
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+        retryDelay = Math.min(retryDelay * 2, maxRetryDelay);
+        continue;
       }
     }
-
-    throw new Error(`Failed to initialize platform after ${maxRetries} attempts`);
   }
 
   /**
