@@ -168,6 +168,7 @@ describe('BaseAccessory', () => {
           maxDelay: 10000,
         },
       },
+      withTokenRefresh: jest.fn().mockImplementation((operation) => operation()),
     } as unknown as jest.Mocked<TSVESyncPlatform>;
 
     // Setup accessory mock

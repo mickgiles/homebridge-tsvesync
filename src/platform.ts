@@ -262,8 +262,14 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
           throw new Error('Failed to login for device state update');
         }
 
+        // Get devices from API
+        const success = await this.client.getDevices();
+        if (!success) {
+          throw new Error('Failed to get devices from API');
+        }
+
         // Get all devices
-        const devices = await this.getAllDevices();
+        const devices = this.getAllDevices();
         if (!devices || !devices.length) {
           if (!isPolledUpdate) {
             this.log.warn('No devices found during state update');

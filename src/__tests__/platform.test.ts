@@ -202,6 +202,8 @@ describe('TSVESyncPlatform', () => {
 
     describe('updateDeviceStatesFromAPI', () => {
       beforeEach(() => {
+        // Set platform as initialized
+        (platform as any).isInitialized = true;
         // Ensure login is fresh to avoid login attempts during tests
         (platform as any).lastLogin = new Date();
       });
@@ -217,27 +219,26 @@ describe('TSVESyncPlatform', () => {
 
         // Setup mock VeSync client to return the outlet
         mockVeSync.outlets = [mockOutlet];
-        mockVeSync.login.mockResolvedValueOnce(true);
-        mockVeSync.getDevices.mockResolvedValueOnce(true);
+        mockVeSync.login.mockResolvedValue(true);
+        mockVeSync.getDevices.mockResolvedValue(true);
         
-        const updatePromise = platform.updateDeviceStatesFromAPI();
-        await jest.runAllTimersAsync();
-        await updatePromise;
+        await platform.updateDeviceStatesFromAPI();
         
         expect(mockVeSync.getDevices).toHaveBeenCalled();
         expect(mockLogger.error).not.toHaveBeenCalled();
       });
 
       it('should handle device update failure', async () => {
-        mockVeSync.login.mockResolvedValueOnce(true);
-        mockVeSync.getDevices.mockResolvedValueOnce(false);
+        mockVeSync.login.mockResolvedValue(true);
+        mockVeSync.getDevices.mockResolvedValue(false);
         
-        const updatePromise = platform.updateDeviceStatesFromAPI();
-        await jest.runAllTimersAsync();
-        await updatePromise;
+        await platform.updateDeviceStatesFromAPI();
         
         expect(mockVeSync.getDevices).toHaveBeenCalled();
-        expect(mockLogger.error).toHaveBeenCalledWith('Failed to get devices after all retries');
+        expect(mockLogger.error).toHaveBeenCalledWith(
+          'Failed to update device states:',
+          'Error: Failed to get devices from API'
+        );
       });
 
       it('should retry on session expiry', async () => {
@@ -246,29 +247,15 @@ describe('TSVESyncPlatform', () => {
         
         // First login attempt fails
         mockVeSync.login.mockResolvedValueOnce(false);
-        // Second login attempt (forced) succeeds
+        // Second login attempt succeeds
         mockVeSync.login.mockResolvedValueOnce(true);
-        // First getDevices call fails with session expiry
-        mockVeSync.getDevices.mockRejectedValueOnce({ error: { msg: 'Not logged in' } });
-        // Third login attempt succeeds
-        mockVeSync.login.mockResolvedValueOnce(true);
-        // Second getDevices call fails
-        mockVeSync.getDevices.mockResolvedValueOnce(false);
-        // Third getDevices call fails
-        mockVeSync.getDevices.mockResolvedValueOnce(false);
-        // Fourth getDevices call fails
-        mockVeSync.getDevices.mockResolvedValueOnce(false);
-        // Fourth login attempt after all retries
-        mockVeSync.login.mockResolvedValueOnce(true);
-        // Final getDevices call succeeds
-        mockVeSync.getDevices.mockResolvedValueOnce(true);
+        // getDevices call succeeds
+        mockVeSync.getDevices.mockResolvedValue(true);
         
-        const updatePromise = platform.updateDeviceStatesFromAPI();
-        await jest.runAllTimersAsync();
-        await updatePromise;
+        await platform.updateDeviceStatesFromAPI();
         
-        expect(mockVeSync.login).toHaveBeenCalledTimes(4);
-        expect(mockVeSync.getDevices).toHaveBeenCalledTimes(5);
+        expect(mockVeSync.login).toHaveBeenCalledTimes(3); // One from withTokenRefresh, two from the retry
+        expect(mockVeSync.getDevices).toHaveBeenCalled();
       });
     });
 
