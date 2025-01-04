@@ -265,8 +265,9 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
 
   /**
    * Ensure client is logged in
+   * @returns true if login was successful or not needed, false otherwise
    */
-  private async ensureLogin(): Promise<void> {
+  private async ensureLogin(): Promise<boolean> {
     const now = new Date();
     const timeSinceLastLogin = now.getTime() - this.lastLogin.getTime();
     const timeSinceLastAttempt = now.getTime() - this.lastLoginAttempt.getTime();
@@ -274,7 +275,7 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
     // Check if we need to login
     if (timeSinceLastLogin < 3600000) {
       this.logger.debug('Using existing login session', { operation: 'ensureLogin' });
-      return;
+      return true;
     }
 
     // Implement backoff for login attempts
@@ -293,10 +294,11 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
       this.lastLogin = now;
       this.loginBackoffTime = 1000; // Reset backoff time on successful login
       this.logger.debug('Successfully logged in to VeSync', { operation: 'ensureLogin' });
+      return true;
     } catch (error) {
       this.loginBackoffTime = Math.min(this.loginBackoffTime * 2, 300000); // Max 5 minutes
       this.logger.error('Failed to log in to VeSync', { operation: 'ensureLogin' }, error as Error);
-      throw error;
+      return false;
     }
   }
 
