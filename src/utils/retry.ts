@@ -34,21 +34,33 @@ export class RetryManager {
     while (this.retryCount < this.maxRetries) {
       try {
         const result = await operation();
+        
+        // If result is null and we have retries left, try again
+        if (result === null && this.retryCount < this.maxRetries - 1) {
+          this.retryCount++;
+          const delay = Math.min(2000 * Math.pow(2, this.retryCount - 1), 10000);
+          this.log.debug(`[${context.deviceName}] === RETRY MANAGER: Attempt ${this.retryCount}/${this.maxRetries}, waiting ${delay}ms ===`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+        
+        // If this is our last try and result is null, throw error
+        if (result === null && this.retryCount >= this.maxRetries - 1) {
+          throw new Error(`Failed to ${context.operation} - got null result after ${this.maxRetries} attempts`);
+        }
+        
         return result;
       } catch (error) {
         this.retryCount++;
         
         if (this.retryCount >= this.maxRetries) {
-          this.log.error(
-            `[${context.deviceName}] Failed to ${context.operation} after ${this.maxRetries} attempts:`,
-            error
-          );
           throw error;
         }
         
-        this.log.warn(
-          `[${context.deviceName}] Failed to ${context.operation}, attempt ${this.retryCount}/${this.maxRetries}`
-        );
+        // Calculate delay based on attempt number
+        const delay = Math.min(2000 * Math.pow(2, this.retryCount - 1), 10000);
+        this.log.debug(`[${context.deviceName}] === RETRY MANAGER: Attempt ${this.retryCount}/${this.maxRetries}, waiting ${delay}ms ===`);
+        await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
 

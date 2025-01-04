@@ -130,8 +130,9 @@ export class AirPurifierAccessory extends BaseAccessory {
     this.service.updateCharacteristic(this.platform.Characteristic.CurrentAirPurifierState, isOn ? 2 : 0);
 
     // Update rotation speed
-    const speed = details.speed;
-    const rotationSpeed = Math.round((speed / this.device.maxSpeed) * 100);
+    const speed = details.speed ?? 0;
+    const maxSpeed = this.device.maxSpeed ?? 5; // Default to 5 if maxSpeed is not defined
+    const rotationSpeed = Math.round((speed / maxSpeed) * 100);
     this.service.updateCharacteristic(this.platform.Characteristic.RotationSpeed, rotationSpeed);
 
     // Update air quality if available

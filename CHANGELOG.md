@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.0.31] - 2025-01-04
+
+### Fixed
+- Fixed issue where devices were not being refreshed
+
 ## [1.0.30] - 2025-01-04
 
 ### Fixed

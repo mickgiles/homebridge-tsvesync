@@ -83,7 +83,10 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
         
         // Set up periodic device updates
         this.deviceUpdateInterval = setInterval(() => {
-          this.updateDeviceStates();
+          this.updateDeviceStates().catch(error => {
+            const err = error instanceof Error ? error : new Error(String(error));
+            this.log.error('=== UPDATE INTERVAL: Failed to update device states ===', err);
+          });
         }, this.updateInterval * 1000);
       } catch (error) {
         this.log.error('Failed to initialize platform:', error);
@@ -108,36 +111,61 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
   }
 
   /**
+   * Initialize all accessories
+   */
+  private async initializeAccessories(): Promise<void> {
+    
+    // Initialize accessories in batches to avoid overwhelming the API
+    const batchSize = 2;
+    const delay = 5000; // 5 second delay between batches
+    const accessories = Array.from(this.deviceAccessories.entries());
+    
+    for (let i = 0; i < accessories.length; i += batchSize) {
+      const batch = accessories.slice(i, i + batchSize);
+      
+      const batchPromises = batch.map(([uuid, accessory]) => {
+        const deviceName = this.accessories.find(acc => acc.UUID === uuid)?.displayName || uuid;
+        return accessory.initialize().catch(error => {
+          this.log.error(`=== INIT: Failed to initialize accessory ${deviceName} ===`, error);
+        });
+      });
+      
+      await Promise.all(batchPromises);
+      
+      if (i + batchSize < accessories.length) {
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+
+  /**
    * Initialize the platform
    */
   private async initializePlatform(): Promise<void> {
     try {
       // Try to login first
       if (!await this.ensureLogin()) {
+        this.log.error('=== INIT: Initial login failed ===');
         throw new Error('Failed to login to VeSync API');
       }
 
       // Get devices from API
       const success = await this.client.getDevices();
       if (!success) {
+        this.log.error('=== INIT: Failed to get devices from API ===');
         throw new Error('Failed to get devices from API');
       }
 
       // Discover devices
       await this.discoverDevices();
 
-      // Initialize all accessories
-      const initPromises = Array.from(this.deviceAccessories.entries()).map(([uuid, accessory]) => {
-        const deviceName = this.accessories.find(acc => acc.UUID === uuid)?.displayName || uuid;
-        return accessory.initialize().catch(error => {
-          this.log.error(`Failed to initialize accessory ${deviceName}:`, error);
-        });
-      });
-      
-      await Promise.all(initPromises);
-
+      // Mark platform as initialized before accessory initialization
       this.isInitialized = true;
       this.initializationResolver();
+
+      // Initialize all accessories with staggered approach
+      await this.initializeAccessories();
+      
     } catch (error) {
       this.log.error('Failed to initialize platform:', error);
       // Still resolve the promise to allow retries during polling
@@ -189,7 +217,7 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
   /**
    * Ensure client is logged in
    */
-  private async ensureLogin(forceLogin = false): Promise<boolean> {
+  private async ensureLogin(): Promise<boolean> {
     try {
       // Check if we need to wait due to backoff
       const timeSinceLastAttempt = Date.now() - this.lastLoginAttempt.getTime();
@@ -228,22 +256,6 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
   }
 
   /**
-   * Handle operation retry with token refresh
-   */
-  public async withTokenRefresh<T>(operation: () => Promise<T>): Promise<T> {
-    try {
-      return await operation();
-    } catch (error) {
-      // If operation fails, try one login refresh and retry
-      const loginSuccess = await this.ensureLogin(true);
-      if (loginSuccess) {
-        return await operation();
-      }
-      throw error;
-    }
-  }
-
-  /**
    * Update device states from the API
    */
   public async updateDeviceStatesFromAPI(isPolledUpdate = false) {
@@ -255,51 +267,47 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
     }
 
     try {
-      await this.withTokenRefresh(async () => {
-        // Ensure we're logged in
-        const loginSuccess = await this.ensureLogin();
-        if (!loginSuccess) {
-          throw new Error('Failed to login for device state update');
-        }
+      // Ensure we're logged in
+      const loginSuccess = await this.ensureLogin();
+      if (!loginSuccess) {
+        throw new Error('Failed to login for device state update');
+      }
 
-        // Get devices from API
-        const success = await this.client.getDevices();
-        if (!success) {
-          throw new Error('Failed to get devices from API');
-        }
+      // Get devices from API
+      const success = await this.client.getDevices();
+      if (!success) {
+        throw new Error('Failed to get devices from API');
+      }
 
-        // Get all devices
-        const devices = this.getAllDevices();
-        if (!devices || !devices.length) {
-          if (!isPolledUpdate) {
-            this.log.warn('No devices found during state update');
-          }
-          return;
+      // Get all devices
+      const devices = this.getAllDevices();
+      if (!devices || !devices.length) {
+        if (!isPolledUpdate) {
+          this.log.warn('=== UPDATE API: No devices found during state update ===');
         }
+        return;
+      }
 
-        if (this.debug) {
-          this.log.debug(`Updating states for ${devices.length} devices`);
-        }
-
-        // Update each device
-        for (const device of devices) {
-          const accessory = this.deviceAccessories.get(this.generateDeviceUUID(device));
-          if (accessory) {
-            try {
-              await accessory.syncDeviceState();
-            } catch (error) {
-              this.log.error(`Failed to update state for device ${device.deviceName}:`, error);
-            }
+      // Update each device
+      for (const device of devices) {
+        const accessory = this.deviceAccessories.get(this.generateDeviceUUID(device));
+        if (accessory) {
+          try {
+            await accessory.syncDeviceState();
+          } catch (error) {
+            const err = error instanceof Error ? error : new Error(String(error));
+            this.log.error(`=== UPDATE API: Failed to update state for device ${device.deviceName} ===`, err);
           }
         }
-      });
+      }
+
     } catch (error) {
-      const errorObj = error as any;
-      const errorMsg = errorObj?.msg || String(error);
+      const err = error instanceof Error ? error : new Error(String(error));
       
       if (!isPolledUpdate || this.debug) {
-        this.log.error('Failed to update device states:', errorMsg);
+        this.log.error('=== UPDATE API: Failed to update device states ===', err);
       }
+      throw err;
     }
   }
 
@@ -307,7 +315,12 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
    * Update device states periodically
    */
   private async updateDeviceStates() {
-    await this.updateDeviceStatesFromAPI(true);
+    try {
+      await this.updateDeviceStatesFromAPI(true);
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      this.log.error('=== UPDATE STATES: Periodic update failed ===', err);
+    }
   }
 
   /**

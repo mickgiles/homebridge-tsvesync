@@ -18,6 +18,8 @@ export abstract class BaseAccessory {
   private initializationPromise: Promise<void>;
   private initializationResolver!: () => void;
   private isInitializing = false;
+  private initializationAttempts = 0;
+  private readonly maxInitializationAttempts = 5;
 
   constructor(
     platform: TSVESyncPlatform,
@@ -81,25 +83,14 @@ export abstract class BaseAccessory {
     operationName: string
   ): Promise<T> {
     const context = this.getLogContext(operationName);
-    this.logger.operationStart(context);
-
+    
     try {
-      // Use platform's token refresh wrapper
-      const result = await this.platform.withTokenRefresh(async () => {
-        return await this.retryManager.execute(operation, {
-          deviceName: this.device.deviceName,
-          operation: operationName,
-        });
+      return await this.retryManager.execute(operation, {
+        deviceName: this.device.deviceName,
+        operation: operationName,
       });
-
-      this.logger.operationEnd(context);
-      return result;
     } catch (error) {
-      this.logger.operationEnd(context, error as Error);
-      await this.handleDeviceError(
-        `Failed to ${operationName}`,
-        error instanceof Error ? error : new Error(String(error))
-      );
+      // Don't log here - let the error propagate up to be logged at a higher level
       throw error;
     }
   }
@@ -148,16 +139,26 @@ export abstract class BaseAccessory {
 
     this.isInitializing = true;
     try {
-      // Initialize the device state
-      await this.initializeDeviceState();
-      this.isInitialized = true;
-      this.logger.info('Accessory initialized', this.getLogContext());
-    } catch (error) {
-      const err = error instanceof Error ? error : new Error(String(error));
-      this.logger.error('Failed to initialize device state', this.getLogContext(), err);
+      while (this.initializationAttempts < this.maxInitializationAttempts) {
+        try {
+          await this.initializeDeviceState();
+          this.isInitialized = true;
+          return;
+        } catch (error) {
+          this.initializationAttempts++;
+          
+          if (this.initializationAttempts >= this.maxInitializationAttempts) {
+            const err = error instanceof Error ? error : new Error(String(error));
+            this.logger.error(`=== INIT: Failed to initialize accessory after ${this.maxInitializationAttempts} attempts ===`, this.getLogContext(), err);
+            throw err;
+          }
+          
+          const delay = Math.min(5000 * Math.pow(2, this.initializationAttempts - 1), 40000);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
     } finally {
       this.isInitializing = false;
-      // Signal initialization completion regardless of success
       this.initializationResolver();
     }
   }
@@ -166,19 +167,19 @@ export abstract class BaseAccessory {
    * Initialize the device state
    */
   private async initializeDeviceState(): Promise<void> {
-    try {
-      // Wait for platform to be ready
-      if (typeof this.platform.isReady === 'function') {
-        await this.platform.isReady();
-      }
-      
-      // Attempt to get initial device state
-      await this.syncDeviceState();
-    } catch (error) {
-      const err = error instanceof Error ? error : new Error(String(error));
-      this.logger.warn('Failed to get initial device state, will retry during polling', this.getLogContext());
-      throw err;
+    
+    // Wait for platform to be ready
+    if (typeof this.platform.isReady === 'function') {
+      await this.platform.isReady();
     }
+    
+    // Attempt to get initial device state
+    const success = await this.syncDeviceState();
+    
+    if (!success) {
+      throw new Error('Failed to get initial device state - got null details');
+    }
+    
   }
 
   /**
@@ -197,33 +198,54 @@ export abstract class BaseAccessory {
     // Set up device-specific service
     this.setupService();
 
-    // Start polling for updates
-    this.startPolling();
+    // Don't start polling immediately - wait for successful initialization
+    this.initializationPromise.then(() => {
+      if (this.isInitialized) {
+        this.startPolling();
+      } else {
+        this.logger.warn('=== INIT: Device failed to initialize, not starting polling ===', this.getLogContext());
+      }
+    });
   }
 
   /**
    * Start polling for device updates
    */
   protected startPolling(): void {
+    // Only start polling if device is initialized
+    if (!this.isInitialized) {
+      this.logger.warn('=== POLLING: Cannot start polling - device not initialized ===', this.getLogContext());
+      return;
+    }
+
     this.pollingManager.startPolling(async () => {
       try {
-        // Wait for initialization before starting polling
-        await this.initializationPromise;
-        
         // Wait for platform to be ready
         if (typeof this.platform.isReady === 'function') {
           await this.platform.isReady();
         }
 
+        // If device becomes uninitialized, try to reinitialize
         if (!this.isInitialized) {
-          // If not initialized, try to initialize first
-          await this.initializeDeviceState();
-        } else {
-          await this.syncDeviceState();
+          this.logger.warn('=== POLLING: Device lost initialization, attempting to reinitialize ===', this.getLogContext());
+          await this.initialize();
+          if (!this.isInitialized) {
+            this.logger.error('=== POLLING: Failed to reinitialize device, stopping polling ===', this.getLogContext());
+            this.stopPolling();
+            return;
+          }
         }
+
+        await this.syncDeviceState();
       } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error));
         this.logger.error('Failed during polling', this.getLogContext(), err);
+        
+        // If error during polling and device is not initialized, stop polling
+        if (!this.isInitialized) {
+          this.logger.error('=== POLLING: Device not initialized after error, stopping polling ===', this.getLogContext());
+          this.stopPolling();
+        }
       }
     });
   }
@@ -245,38 +267,27 @@ export abstract class BaseAccessory {
   /**
    * Sync the device state with VeSync
    */
-  public async syncDeviceState(): Promise<void> {
+  public async syncDeviceState(): Promise<boolean> {
     try {
-      if (this.needsRetry) {
-        this.platform.log.debug(`[${this.accessory.displayName}] Retrying previous failed operation`);
-      }
-      
-      await this.withRetry(
+      const details = await this.withRetry(
         async () => {
-          // First try to get device details
-          const details = await this.device.getDetails();
-          
-          if (!details) {
-            throw new Error('Failed to get device details');
+          await this.device.getDetails();
+            
+          // After getDetails(), the device object should have updated internal state
+          if (!this.device.deviceStatus) {
+            return null;
           }
-          
-          // Then update device state with the details
-          await this.updateDeviceSpecificStates(details);
-          
-          // Clear retry flag on success
-          this.needsRetry = false;
+            
+          await this.updateDeviceSpecificStates(this.device);
+          return this.device;
         },
         'sync device state'
       );
+
+      return details !== null;
     } catch (error) {
-      // Set initialization state to false on error to force re-initialization
-      if (!this.isInitialized) {
-        this.logger.warn('Device not initialized, will retry initialization', this.getLogContext());
-      }
-      await this.handleDeviceError(
-        'Failed to sync device state',
-        error instanceof Error ? error : new Error(String(error))
-      );
+      this.isInitialized = false;
+      throw error;
     }
   }
 
