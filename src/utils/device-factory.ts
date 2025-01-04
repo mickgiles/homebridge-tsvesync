@@ -6,13 +6,15 @@ import { HumidifierAccessory } from '../accessories/humidifier.accessory';
 import { FanAccessory } from '../accessories/fan.accessory';
 import { LightAccessory } from '../accessories/light.accessory';
 import { OutletAccessory } from '../accessories/outlet.accessory';
+import { SwitchAccessory } from '../accessories/switch.accessory';
 import { BaseAccessory } from '../accessories/base.accessory';
 import { 
   VeSyncAirPurifier,
   VeSyncHumidifier,
   VeSyncFan,
   VeSyncBulb,
-  VeSyncOutlet 
+  VeSyncOutlet,
+  VeSyncSwitch
 } from '../types/device.types';
 
 // Device model constants
@@ -98,11 +100,16 @@ export class DeviceFactory {
       return new LightAccessory(platform, accessory, device as VeSyncBulb);
     }
 
-    // Outlets and Switches
-    if (this.isOutlet(deviceType) || this.isSwitch(deviceType)) {
+    // Outlets
+    if (this.isOutlet(deviceType)) {
       return new OutletAccessory(platform, accessory, device as VeSyncOutlet);
     }
 
+    // Switches
+    if (this.isSwitch(deviceType)) {
+      return new SwitchAccessory(platform, accessory, device as VeSyncSwitch);
+    }
+  
     // Default to outlet for unknown devices
     platform.log.warn(`Unknown device type: ${deviceType}, defaulting to outlet`);
     return new OutletAccessory(platform, accessory, device as VeSyncOutlet);

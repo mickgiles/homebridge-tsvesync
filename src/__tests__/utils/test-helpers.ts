@@ -461,4 +461,57 @@ export const createMockFan = (config: MockFanConfig = {}): jest.Mocked<VeSyncFan
   } as unknown as jest.Mocked<VeSyncFan>;
 
   return mockFan;
+};
+
+/**
+ * Type for mock bulb configuration
+ */
+export interface MockBulbConfig {
+  deviceName?: string;
+  deviceType?: string;
+  cid?: string;
+  uuid?: string;
+  brightness?: number;
+  colorTemp?: number;
+  hue?: number;
+  saturation?: number;
+}
+
+/**
+ * Creates a mock bulb instance for testing
+ */
+export const createMockBulb = (config: MockBulbConfig = {}): jest.Mocked<VeSyncBulb> => {
+  const state = {
+    brightness: config.brightness || 100,
+    colorTemp: config.colorTemp || 200,
+    hue: config.hue || 0,
+    saturation: config.saturation || 0,
+    deviceStatus: 'off',
+  };
+
+  return {
+    deviceName: config.deviceName || 'Test Bulb',
+    deviceType: config.deviceType || 'ESL100MC',
+    cid: config.cid || 'test-cid',
+    uuid: config.uuid || 'test-uuid',
+    deviceStatus: state.deviceStatus,
+    brightness: state.brightness,
+    colorTemp: state.colorTemp,
+    hue: state.hue,
+    saturation: state.saturation,
+    subDeviceNo: 0,
+    isSubDevice: false,
+    deviceRegion: 'US',
+    configModule: 'Bulb',
+    macId: '00:11:22:33:44:55',
+    deviceCategory: 'bulb',
+    connectionStatus: 'online',
+    getDetails: jest.fn().mockResolvedValue(true),
+    setApiBaseUrl: jest.fn(),
+    turnOn: jest.fn().mockResolvedValue(true),
+    turnOff: jest.fn().mockResolvedValue(true),
+    setBrightness: jest.fn().mockResolvedValue(true),
+    setColorTemperature: jest.fn().mockResolvedValue(true),
+    setColor: jest.fn().mockResolvedValue(true),
+  } as unknown as jest.Mocked<VeSyncBulb>;
 }; 

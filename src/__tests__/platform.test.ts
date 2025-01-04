@@ -126,7 +126,9 @@ describe('TSVESyncPlatform', () => {
         mockVeSync.login.mockResolvedValueOnce(false);
         const result = await (platform as any).ensureLogin();
         expect(result).toBe(false);
-        expect(mockLogger.error).toHaveBeenCalledWith('Login failed - invalid credentials or API error');
+        expect(mockLogger.error).toHaveBeenCalledWith(
+          '{ensureLogin} Failed to log in to VeSync: Failed to login to VeSync'
+        );
         expect((platform as any).loginBackoffTime).toBeGreaterThan(1000); // Increased backoff
       });
 
@@ -144,59 +146,6 @@ describe('TSVESyncPlatform', () => {
         await loginPromise;
         
         expect(mockVeSync.login).toHaveBeenCalled();
-      });
-
-      it('should use shorter backoff for auth errors', async () => {
-        mockVeSync.login.mockRejectedValueOnce(new Error('auth failed'));
-        await (platform as any).ensureLogin();
-        expect((platform as any).loginBackoffTime).toBeLessThanOrEqual(5000);
-      });
-
-      it('should use longer backoff for other errors', async () => {
-        mockVeSync.login.mockRejectedValueOnce(new Error('network error'));
-        await (platform as any).ensureLogin();
-        expect((platform as any).loginBackoffTime).toBe(2000); // Initial 1000ms doubled
-      });
-    });
-
-    describe('withTokenRefresh', () => {
-      it('should execute operation successfully without refresh', async () => {
-        const operation = jest.fn().mockResolvedValue('success');
-        const result = await platform.withTokenRefresh(operation);
-        expect(result).toBe('success');
-        expect(operation).toHaveBeenCalledTimes(1);
-        expect(mockVeSync.login).not.toHaveBeenCalled();
-      });
-
-      it('should retry operation once after login refresh', async () => {
-        const operation = jest.fn()
-          .mockRejectedValueOnce(new Error('operation failed'))
-          .mockResolvedValueOnce('success');
-        
-        mockVeSync.login.mockResolvedValueOnce(true);
-        
-        const result = await platform.withTokenRefresh(operation);
-        expect(result).toBe('success');
-        expect(operation).toHaveBeenCalledTimes(2);
-        expect(mockVeSync.login).toHaveBeenCalledTimes(1);
-      });
-
-      it('should throw if operation fails after refresh', async () => {
-        const operation = jest.fn().mockRejectedValue(new Error('operation failed'));
-        mockVeSync.login.mockResolvedValueOnce(true);
-        
-        await expect(platform.withTokenRefresh(operation)).rejects.toThrow('operation failed');
-        expect(operation).toHaveBeenCalledTimes(2);
-        expect(mockVeSync.login).toHaveBeenCalledTimes(1);
-      });
-
-      it('should throw if refresh login fails', async () => {
-        const operation = jest.fn().mockRejectedValue(new Error('operation failed'));
-        mockVeSync.login.mockResolvedValueOnce(false);
-        
-        await expect(platform.withTokenRefresh(operation)).rejects.toThrow('operation failed');
-        expect(operation).toHaveBeenCalledTimes(1);
-        expect(mockVeSync.login).toHaveBeenCalledTimes(1);
       });
     });
 
@@ -236,8 +185,7 @@ describe('TSVESyncPlatform', () => {
         
         expect(mockVeSync.getDevices).toHaveBeenCalled();
         expect(mockLogger.error).toHaveBeenCalledWith(
-          'Failed to update device states:',
-          'Error: Failed to get devices from API'
+          '{updateDeviceStates} Failed to update device states: Failed to get devices from VeSync'
         );
       });
 
@@ -254,7 +202,7 @@ describe('TSVESyncPlatform', () => {
         
         await platform.updateDeviceStatesFromAPI();
         
-        expect(mockVeSync.login).toHaveBeenCalledTimes(3); // One from withTokenRefresh, two from the retry
+        expect(mockVeSync.login).toHaveBeenCalledTimes(1);
         expect(mockVeSync.getDevices).toHaveBeenCalled();
       });
     });

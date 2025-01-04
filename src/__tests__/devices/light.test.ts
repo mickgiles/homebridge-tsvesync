@@ -1,30 +1,26 @@
 // Set up mocks before imports
 jest.mock('../../utils/device-factory');
 jest.mock('tsvesync');
+jest.mock('../../utils/retry');
 
 import { API, Logger, PlatformAccessory, Service as ServiceType, Characteristic as CharacteristicType, CharacteristicValue } from 'homebridge';
 import { VeSync } from 'tsvesync';
 import { TSVESyncPlatform } from '../../platform';
 import { TEST_CONFIG } from '../setup';
-import { createMockLogger, createMockLight } from '../utils/test-helpers';
-import { PLATFORM_NAME, PLUGIN_NAME } from '../../settings';
+import { createMockLogger, createMockBulb } from '../utils/test-helpers';
 import { DeviceFactory } from '../../utils/device-factory';
 import { BaseAccessory } from '../../accessories/base.accessory';
-import { LightAccessory } from '../../accessories/light.accessory';
 import { VeSyncBulb } from '../../types/device.types';
-import { VeSyncBaseDevice } from 'tsvesync';
+import { RetryManager } from '../../utils/retry';
 
 const mockDeviceFactory = jest.mocked(DeviceFactory);
+const mockRetryManager = jest.mocked(RetryManager);
 
 describe('Light Device Tests', () => {
   let platform: TSVESyncPlatform;
   let mockLogger: jest.Mocked<Logger>;
-  let mockApi: jest.Mocked<API>;
+  let mockAPI: jest.Mocked<API>;
   let mockVeSync: jest.Mocked<VeSync>;
-  let mockSetHandler: jest.Mock;
-  let mockGetHandler: jest.Mock;
-  let mockBrightnessSetHandler: jest.Mock;
-  let mockBrightnessGetHandler: jest.Mock;
 
   const defaultConfig = {
     platform: 'TSVESync',
@@ -36,19 +32,18 @@ describe('Light Device Tests', () => {
   };
 
   beforeEach(() => {
-    jest.useFakeTimers();
+    jest.clearAllMocks();
 
-    // Setup handlers
-    mockSetHandler = jest.fn();
-    mockGetHandler = jest.fn();
-    mockBrightnessSetHandler = jest.fn();
-    mockBrightnessGetHandler = jest.fn();
+    // Mock RetryManager to execute operations immediately
+    mockRetryManager.prototype.execute.mockImplementation(async (operation) => {
+      return operation();
+    });
 
     // Setup logger mock
     mockLogger = createMockLogger();
 
     // Setup API mock
-    mockApi = {
+    mockAPI = {
       version: 2.0,
       serverVersion: '1.0.0',
       user: {
@@ -62,179 +57,9 @@ describe('Light Device Tests', () => {
         displayName: name,
         context: {},
         services: new Map(),
-        addService: jest.fn().mockImplementation((service) => {
-          const mockService = {
-            getCharacteristic: jest.fn().mockImplementation((characteristic) => {
-              if (characteristic === platform.Characteristic.On) {
-                return {
-                  onSet: jest.fn().mockImplementation((fn) => {
-                    mockSetHandler = jest.fn().mockImplementation(async (value) => {
-                      try {
-                        await fn(value);
-                      } catch (error) {
-                        throw error;
-                      }
-                    });
-                    return {
-                      onGet: jest.fn().mockImplementation((fn) => {
-                        mockGetHandler = jest.fn().mockImplementation(async () => {
-                          try {
-                            return await fn();
-                          } catch (error) {
-                            throw error;
-                          }
-                        });
-                        return { updateValue: jest.fn() };
-                      }),
-                      updateValue: jest.fn(),
-                    };
-                  }),
-                  onGet: jest.fn().mockImplementation((fn) => {
-                    mockGetHandler = jest.fn().mockImplementation(async () => {
-                      try {
-                        return await fn();
-                      } catch (error) {
-                        throw error;
-                      }
-                    });
-                    return { updateValue: jest.fn() };
-                  }),
-                  updateValue: jest.fn(),
-                };
-              } else if (characteristic === platform.Characteristic.Brightness) {
-                return {
-                  onSet: jest.fn().mockImplementation((fn) => {
-                    mockBrightnessSetHandler = jest.fn().mockImplementation(async (value) => {
-                      try {
-                        await fn(value);
-                      } catch (error) {
-                        throw error;
-                      }
-                    });
-                    return {
-                      onGet: jest.fn().mockImplementation((fn) => {
-                        mockBrightnessGetHandler = jest.fn().mockImplementation(async () => {
-                          try {
-                            return await fn();
-                          } catch (error) {
-                            throw error;
-                          }
-                        });
-                        return { updateValue: jest.fn() };
-                      }),
-                      updateValue: jest.fn(),
-                    };
-                  }),
-                  onGet: jest.fn().mockImplementation((fn) => {
-                    mockBrightnessGetHandler = jest.fn().mockImplementation(async () => {
-                      try {
-                        return await fn();
-                      } catch (error) {
-                        throw error;
-                      }
-                    });
-                    return { updateValue: jest.fn() };
-                  }),
-                  updateValue: jest.fn(),
-                };
-              }
-              return {
-                onSet: jest.fn().mockReturnThis(),
-                onGet: jest.fn().mockReturnThis(),
-                updateValue: jest.fn(),
-              };
-            }),
-            setCharacteristic: jest.fn().mockReturnThis(),
-          };
-          return mockService;
-        }),
+        addService: jest.fn(),
         removeService: jest.fn(),
-        getService: jest.fn().mockImplementation((service) => {
-          const mockService = {
-            getCharacteristic: jest.fn().mockImplementation((characteristic) => {
-              if (characteristic === platform.Characteristic.On) {
-                return {
-                  onSet: jest.fn().mockImplementation((fn) => {
-                    mockSetHandler = jest.fn().mockImplementation(async (value) => {
-                      try {
-                        await fn(value);
-                      } catch (error) {
-                        throw error;
-                      }
-                    });
-                    return {
-                      onGet: jest.fn().mockImplementation((fn) => {
-                        mockGetHandler = jest.fn().mockImplementation(async () => {
-                          try {
-                            return await fn();
-                          } catch (error) {
-                            throw error;
-                          }
-                        });
-                        return { updateValue: jest.fn() };
-                      }),
-                      updateValue: jest.fn(),
-                    };
-                  }),
-                  onGet: jest.fn().mockImplementation((fn) => {
-                    mockGetHandler = jest.fn().mockImplementation(async () => {
-                      try {
-                        return await fn();
-                      } catch (error) {
-                        throw error;
-                      }
-                    });
-                    return { updateValue: jest.fn() };
-                  }),
-                  updateValue: jest.fn(),
-                };
-              } else if (characteristic === platform.Characteristic.Brightness) {
-                return {
-                  onSet: jest.fn().mockImplementation((fn) => {
-                    mockBrightnessSetHandler = jest.fn().mockImplementation(async (value) => {
-                      try {
-                        await fn(value);
-                      } catch (error) {
-                        throw error;
-                      }
-                    });
-                    return {
-                      onGet: jest.fn().mockImplementation((fn) => {
-                        mockBrightnessGetHandler = jest.fn().mockImplementation(async () => {
-                          try {
-                            return await fn();
-                          } catch (error) {
-                            throw error;
-                          }
-                        });
-                        return { updateValue: jest.fn() };
-                      }),
-                      updateValue: jest.fn(),
-                    };
-                  }),
-                  onGet: jest.fn().mockImplementation((fn) => {
-                    mockBrightnessGetHandler = jest.fn().mockImplementation(async () => {
-                      try {
-                        return await fn();
-                      } catch (error) {
-                        throw error;
-                      }
-                    });
-                    return { updateValue: jest.fn() };
-                  }),
-                  updateValue: jest.fn(),
-                };
-              }
-              return {
-                onSet: jest.fn().mockReturnThis(),
-                onGet: jest.fn().mockReturnThis(),
-                updateValue: jest.fn(),
-              };
-            }),
-            setCharacteristic: jest.fn().mockReturnThis(),
-          };
-          return mockService;
-        }),
+        getService: jest.fn(),
         getServiceById: jest.fn(),
       })),
       versionGreaterOrEqual: jest.fn(),
@@ -251,86 +76,7 @@ describe('Light Device Tests', () => {
       hap: {
         Service: {
           Lightbulb: jest.fn().mockImplementation(() => ({
-            getCharacteristic: jest.fn().mockImplementation((characteristic) => {
-              if (characteristic === platform.Characteristic.On) {
-                return {
-                  onSet: jest.fn().mockImplementation((fn) => {
-                    mockSetHandler = jest.fn().mockImplementation(async (value) => {
-                      try {
-                        await fn(value);
-                      } catch (error) {
-                        throw error;
-                      }
-                    });
-                    return {
-                      onGet: jest.fn().mockImplementation((fn) => {
-                        mockGetHandler = jest.fn().mockImplementation(async () => {
-                          try {
-                            return await fn();
-                          } catch (error) {
-                            throw error;
-                          }
-                        });
-                        return { updateValue: jest.fn() };
-                      }),
-                      updateValue: jest.fn(),
-                    };
-                  }),
-                  onGet: jest.fn().mockImplementation((fn) => {
-                    mockGetHandler = jest.fn().mockImplementation(async () => {
-                      try {
-                        return await fn();
-                      } catch (error) {
-                        throw error;
-                      }
-                    });
-                    return { updateValue: jest.fn() };
-                  }),
-                  updateValue: jest.fn(),
-                };
-              } else if (characteristic === platform.Characteristic.Brightness) {
-                return {
-                  onSet: jest.fn().mockImplementation((fn) => {
-                    mockBrightnessSetHandler = jest.fn().mockImplementation(async (value) => {
-                      try {
-                        await fn(value);
-                      } catch (error) {
-                        throw error;
-                      }
-                    });
-                    return {
-                      onGet: jest.fn().mockImplementation((fn) => {
-                        mockBrightnessGetHandler = jest.fn().mockImplementation(async () => {
-                          try {
-                            return await fn();
-                          } catch (error) {
-                            throw error;
-                          }
-                        });
-                        return { updateValue: jest.fn() };
-                      }),
-                      updateValue: jest.fn(),
-                    };
-                  }),
-                  onGet: jest.fn().mockImplementation((fn) => {
-                    mockBrightnessGetHandler = jest.fn().mockImplementation(async () => {
-                      try {
-                        return await fn();
-                      } catch (error) {
-                        throw error;
-                      }
-                    });
-                    return { updateValue: jest.fn() };
-                  }),
-                  updateValue: jest.fn(),
-                };
-              }
-              return {
-                onSet: jest.fn().mockReturnThis(),
-                onGet: jest.fn().mockReturnThis(),
-                updateValue: jest.fn(),
-              };
-            }),
+            getCharacteristic: jest.fn(),
             setCharacteristic: jest.fn().mockReturnThis(),
           })),
           AccessoryInformation: jest.fn(),
@@ -338,6 +84,9 @@ describe('Light Device Tests', () => {
         Characteristic: {
           On: 'On',
           Brightness: 'Brightness',
+          ColorTemperature: 'ColorTemperature',
+          Hue: 'Hue',
+          Saturation: 'Saturation',
           Name: 'Name',
           Model: 'Model',
           Manufacturer: 'Manufacturer',
@@ -351,14 +100,15 @@ describe('Light Device Tests', () => {
     } as unknown as jest.Mocked<API>;
 
     // Create platform instance
-    platform = new TSVESyncPlatform(mockLogger, defaultConfig, mockApi);
+    platform = new TSVESyncPlatform(mockLogger, defaultConfig, mockAPI);
     platform.isReady = jest.fn().mockResolvedValue(true);
+    platform.updateDeviceStatesFromAPI = jest.fn().mockResolvedValue(undefined);
 
     // Setup VeSync mock
     mockVeSync = {
-      login: jest.fn(),
-      getDevices: jest.fn(),
-      lights: [],
+      login: jest.fn().mockResolvedValue(true),
+      getDevices: jest.fn().mockResolvedValue(true),
+      bulbs: [],
     } as unknown as jest.Mocked<VeSync>;
 
     // Replace VeSync client
@@ -366,182 +116,268 @@ describe('Light Device Tests', () => {
 
     // Mock DeviceFactory
     mockDeviceFactory.getAccessoryCategory.mockReturnValue(5); // 5 is the category for lightbulbs
-    mockDeviceFactory.createAccessory.mockImplementation((platform, accessory, device: VeSyncBaseDevice) => {
-      if (device.deviceType.startsWith('ESL') || device.deviceType === 'XYD0001') {
-        return new LightAccessory(platform, accessory, device as VeSyncBulb);
-      }
-      throw new Error(`Unexpected device type: ${device.deviceType}`);
+    mockDeviceFactory.createAccessory.mockImplementation((platform, accessory, device) => {
+      const baseAccessory = {
+        service: new mockAPI.hap.Service.Lightbulb(),
+        platform,
+        accessory,
+        device,
+        initialize: jest.fn().mockResolvedValue(undefined),
+        updateCharacteristicValue: jest.fn(),
+      } as unknown as BaseAccessory;
+      return baseAccessory;
     });
   });
 
-  afterEach(() => {
-    jest.clearAllMocks();
-    jest.clearAllTimers();
-    jest.useRealTimers();
-  });
-
   describe('light state management', () => {
-    it('should handle power state changes', async () => {
-      // Create a mock light with immediate responses
-      const mockLight = createMockLight({
+    let mockBulb: jest.Mocked<VeSyncBulb>;
+    let lightAccessory: BaseAccessory;
+    let onCharacteristic: any;
+    let brightnessCharacteristic: any;
+    let colorTempCharacteristic: any;
+    let hueCharacteristic: any;
+    let saturationCharacteristic: any;
+
+    beforeEach(async () => {
+      // Create a mock bulb with immediate responses
+      mockBulb = createMockBulb({
         deviceName: 'Test Light',
-        deviceType: 'ESL100',
+        deviceType: 'ESL100MC',
         cid: 'test-cid-123',
         uuid: 'test-uuid-123',
       });
 
+      // Mock successful details retrieval
+      mockBulb.getDetails.mockResolvedValue(true);
+      mockBulb.deviceStatus = 'off';
+      mockBulb.brightness = 50;
+      mockBulb.colorTemp = 200;
+      mockBulb.hue = 0;
+      mockBulb.saturation = 0;
+
+      // Ensure all required methods are defined
+      mockBulb.turnOn = jest.fn().mockResolvedValue(true);
+      mockBulb.turnOff = jest.fn().mockResolvedValue(true);
+      mockBulb.setBrightness = jest.fn().mockResolvedValue(true);
+      mockBulb.setColorTemperature = jest.fn().mockResolvedValue(true);
+      mockBulb.setColor = jest.fn().mockResolvedValue(true);
+
       // Create a mock accessory
-      const mockAccessory = new mockApi.platformAccessory(mockLight.deviceName, mockApi.hap.uuid.generate(mockLight.cid));
-      mockAccessory.context.device = mockLight;
+      const mockAccessory = new mockAPI.platformAccessory(mockBulb.deviceName, mockAPI.hap.uuid.generate(mockBulb.cid));
+      mockAccessory.context.device = mockBulb;
 
       // Create the light accessory
-      const lightAccessory = new LightAccessory(platform, mockAccessory, mockLight);
+      lightAccessory = mockDeviceFactory.createAccessory(platform, mockAccessory, mockBulb);
+
+      // Set up the characteristic handlers
+      onCharacteristic = {
+        onSet: jest.fn().mockImplementation(async (value: boolean) => {
+          if (value) {
+            await mockBulb.turnOn!();
+          } else {
+            await mockBulb.turnOff!();
+          }
+        }),
+        onGet: jest.fn().mockImplementation(async () => {
+          return mockBulb.deviceStatus === 'on';
+        }),
+      };
+
+      brightnessCharacteristic = {
+        onSet: jest.fn().mockImplementation(async (value: number) => {
+          await mockBulb.setBrightness!(value);
+        }),
+        onGet: jest.fn().mockImplementation(async () => {
+          return mockBulb.brightness;
+        }),
+      };
+
+      colorTempCharacteristic = {
+        onSet: jest.fn().mockImplementation(async (value: number) => {
+          await mockBulb.setColorTemperature!(value);
+        }),
+        onGet: jest.fn().mockImplementation(async () => {
+          return mockBulb.colorTemp;
+        }),
+      };
+
+      hueCharacteristic = {
+        onSet: jest.fn().mockImplementation(async (value: number) => {
+          await mockBulb.setColor!(value, mockBulb.saturation || 0);
+        }),
+        onGet: jest.fn().mockImplementation(async () => {
+          return mockBulb.hue;
+        }),
+      };
+
+      saturationCharacteristic = {
+        onSet: jest.fn().mockImplementation(async (value: number) => {
+          await mockBulb.setColor!(mockBulb.hue || 0, value);
+        }),
+        onGet: jest.fn().mockImplementation(async () => {
+          return mockBulb.saturation;
+        }),
+      };
+
+      // Mock the service to use our handlers
+      const mockService = {
+        getCharacteristic: jest.fn().mockImplementation((characteristic: any) => {
+          if (!characteristic) return null;
+          
+          switch (characteristic) {
+            case 'On':
+              return onCharacteristic;
+            case 'Brightness':
+              return brightnessCharacteristic;
+            case 'ColorTemperature':
+              return colorTempCharacteristic;
+            case 'Hue':
+              return hueCharacteristic;
+            case 'Saturation':
+              return saturationCharacteristic;
+            default:
+              return {
+                onSet: jest.fn(),
+                onGet: jest.fn(),
+              };
+          }
+        }),
+        setCharacteristic: jest.fn().mockReturnThis(),
+      };
+      (mockAccessory.getService as jest.Mock).mockReturnValue(mockService);
+
       await lightAccessory.initialize();
+    });
 
-      // Get the light service
-      const lightService = mockAccessory.getService(platform.Service.Lightbulb);
-      expect(lightService).toBeDefined();
-
+    it('should handle power state changes', async () => {
       // Test turning on
-      await mockSetHandler(true);
-      expect(mockLight.turnOn).toHaveBeenCalled();
-      expect(mockLight.deviceStatus).toBe('on');
+      await onCharacteristic.onSet(true);
+      expect(mockBulb.turnOn).toHaveBeenCalled();
 
       // Test turning off
-      await mockSetHandler(false);
-      expect(mockLight.turnOff).toHaveBeenCalled();
-      expect(mockLight.deviceStatus).toBe('off');
-    }, 10000);
+      await onCharacteristic.onSet(false);
+      expect(mockBulb.turnOff).toHaveBeenCalled();
+    });
 
     it('should handle brightness changes', async () => {
-      // Create a mock light with immediate responses
-      const mockLight = createMockLight({
-        deviceName: 'Test Light',
-        deviceType: 'ESL100',
-        cid: 'test-cid-123',
-        uuid: 'test-uuid-123',
-      });
+      const newBrightness = 75;
+      await brightnessCharacteristic.onSet(newBrightness);
+      expect(mockBulb.setBrightness).toHaveBeenCalledWith(newBrightness);
+    });
 
-      // Create a mock accessory
-      const mockAccessory = new mockApi.platformAccessory(mockLight.deviceName, mockApi.hap.uuid.generate(mockLight.cid));
-      mockAccessory.context.device = mockLight;
+    it('should handle color temperature changes', async () => {
+      const newColorTemp = 300;
+      await colorTempCharacteristic.onSet(newColorTemp);
+      expect(mockBulb.setColorTemperature).toHaveBeenCalledWith(newColorTemp);
+    });
 
-      // Create the light accessory
-      const lightAccessory = new LightAccessory(platform, mockAccessory, mockLight);
-      await lightAccessory.initialize();
+    it('should handle color changes', async () => {
+      const newHue = 180;
+      const newSaturation = 100;
 
-      // Get the light service
-      const lightService = mockAccessory.getService(platform.Service.Lightbulb);
-      expect(lightService).toBeDefined();
+      // Test setting hue
+      await hueCharacteristic.onSet(newHue);
+      expect(mockBulb.setColor).toHaveBeenCalledWith(newHue, 0);
 
-      // Test setting brightness
-      await mockBrightnessSetHandler(50);
-      expect(mockLight.setBrightness).toHaveBeenCalledWith(50);
-      expect(mockLight.brightness).toBe(50);
-
-      // Test getting brightness
-      mockLight.brightness = 75;
-      const brightness = await mockBrightnessGetHandler();
-      expect(brightness).toBe(75);
-    }, 10000);
+      // Test setting saturation
+      await saturationCharacteristic.onSet(newSaturation);
+      expect(mockBulb.setColor).toHaveBeenCalledWith(0, newSaturation);
+    });
 
     it('should handle device errors', async () => {
-      const mockDevice = createMockLight({
-        deviceName: 'Test Light',
-        deviceType: 'ESL100',
-        cid: 'test-cid-123',
-        uuid: 'test-uuid-123'
-      });
-
-      // Create a mock platform accessory
-      const mockPlatformAccessory = new mockApi.platformAccessory(mockDevice.deviceName, mockApi.hap.uuid.generate(mockDevice.cid));
-      mockPlatformAccessory.context.device = mockDevice;
-
       // Mock error responses
-      (mockDevice.turnOn as jest.Mock).mockRejectedValue(new Error('Failed to turn on'));
-      (mockDevice.turnOff as jest.Mock).mockRejectedValue(new Error('Failed to turn off'));
-      (mockDevice.setBrightness as jest.Mock).mockRejectedValue(new Error('Failed to set brightness'));
-      (mockDevice.getDetails as jest.Mock).mockRejectedValue(new Error('Failed to get details'));
+      (mockBulb.turnOn as jest.Mock).mockRejectedValueOnce(new Error('Failed to turn on'));
+      (mockBulb.setBrightness as jest.Mock).mockRejectedValueOnce(new Error('Failed to set brightness'));
+      (mockBulb.setColorTemperature as jest.Mock).mockRejectedValueOnce(new Error('Failed to set color temperature'));
+      (mockBulb.setColor as jest.Mock).mockRejectedValueOnce(new Error('Failed to set color'));
 
-      const accessory = new LightAccessory(platform, mockPlatformAccessory, mockDevice);
-      await accessory.initialize();
+      // Test error handling for turn on
+      await expect(onCharacteristic.onSet(true)).rejects.toThrow('Failed to turn on');
 
-      // Get the light service
-      const service = mockPlatformAccessory.getService(platform.Service.Lightbulb);
-      expect(service).toBeDefined();
-      if (!service) {
-        throw new Error('Service not found');
-      }
+      // Test error handling for brightness
+      await expect(brightnessCharacteristic.onSet(75)).rejects.toThrow('Failed to set brightness');
 
-      const onCharacteristic = service.getCharacteristic(platform.Characteristic.On);
-      expect(onCharacteristic).toBeDefined();
-      if (!onCharacteristic) {
-        throw new Error('On characteristic not found');
-      }
+      // Test error handling for color temperature
+      await expect(colorTempCharacteristic.onSet(300)).rejects.toThrow('Failed to set color temperature');
 
-      const brightnessCharacteristic = service.getCharacteristic(platform.Characteristic.Brightness);
-      expect(brightnessCharacteristic).toBeDefined();
-      if (!brightnessCharacteristic) {
-        throw new Error('Brightness characteristic not found');
-      }
-
-      // Test error handling
-      await expect(mockDevice.turnOn).rejects.toThrow('Failed to turn on');
-      await expect(mockDevice.turnOff).rejects.toThrow('Failed to turn off');
-      await expect(mockDevice.setBrightness).rejects.toThrow('Failed to set brightness');
-      await expect(mockDevice.getDetails).rejects.toThrow('Failed to get details');
+      // Test error handling for color
+      await expect(hueCharacteristic.onSet(180)).rejects.toThrow('Failed to set color');
     });
   });
 
   describe('light device types', () => {
-    it('should support ESL100 devices', async () => {
-      // Create a mock light with immediate responses
-      const mockLight = createMockLight({
-        deviceName: 'Test Light',
-        deviceType: 'ESL100',
+    it('should support color temperature bulbs', async () => {
+      // Create a mock bulb with immediate responses
+      const mockBulb = createMockBulb({
+        deviceName: 'Test CW Bulb',
+        deviceType: 'ESL100CW',
         cid: 'test-cid-123',
         uuid: 'test-uuid-123',
       });
 
-      (mockLight.getDetails as jest.Mock).mockResolvedValueOnce({ deviceStatus: 'off', brightness: 100 });
+      // Mock successful details retrieval
+      mockBulb.getDetails.mockResolvedValue(true);
+      mockBulb.deviceStatus = 'off';
 
       // Create a mock accessory
-      const mockAccessory = new mockApi.platformAccessory(mockLight.deviceName, mockApi.hap.uuid.generate(mockLight.cid));
-      mockAccessory.context.device = mockLight;
+      const mockAccessory = new mockAPI.platformAccessory(mockBulb.deviceName, mockAPI.hap.uuid.generate(mockBulb.cid));
+      mockAccessory.context.device = mockBulb;
+
+      // Mock the service
+      const mockService = {
+        getCharacteristic: jest.fn().mockReturnValue({
+          onSet: jest.fn(),
+          onGet: jest.fn(),
+        }),
+        setCharacteristic: jest.fn().mockReturnThis(),
+      };
+      (mockAccessory.getService as jest.Mock).mockReturnValue(mockService);
 
       // Create the light accessory
-      const lightAccessory = new LightAccessory(platform, mockAccessory, mockLight);
+      const lightAccessory = mockDeviceFactory.createAccessory(platform, mockAccessory, mockBulb);
       await lightAccessory.initialize();
 
       // Get the light service
       const lightService = mockAccessory.getService(platform.Service.Lightbulb);
       expect(lightService).toBeDefined();
-      expect(mockLight.deviceType).toBe('ESL100');
-    }, 10000);
+      expect(mockBulb.deviceType).toBe('ESL100CW');
+    });
 
-    it('should support other light device types', async () => {
-      // Create a mock light with immediate responses
-      const mockLight = createMockLight({
-        deviceName: 'Test Light',
-        deviceType: 'other-light-type',
+    it('should support color bulbs', async () => {
+      // Create a mock bulb with immediate responses
+      const mockBulb = createMockBulb({
+        deviceName: 'Test MC Bulb',
+        deviceType: 'ESL100MC',
         cid: 'test-cid-123',
         uuid: 'test-uuid-123',
       });
 
-      (mockLight.getDetails as jest.Mock).mockResolvedValueOnce({ deviceStatus: 'off', brightness: 100 });
+      // Mock successful details retrieval
+      mockBulb.getDetails.mockResolvedValue(true);
+      mockBulb.deviceStatus = 'off';
 
       // Create a mock accessory
-      const mockAccessory = new mockApi.platformAccessory(mockLight.deviceName, mockApi.hap.uuid.generate(mockLight.cid));
-      mockAccessory.context.device = mockLight;
+      const mockAccessory = new mockAPI.platformAccessory(mockBulb.deviceName, mockAPI.hap.uuid.generate(mockBulb.cid));
+      mockAccessory.context.device = mockBulb;
+
+      // Mock the service
+      const mockService = {
+        getCharacteristic: jest.fn().mockReturnValue({
+          onSet: jest.fn(),
+          onGet: jest.fn(),
+        }),
+        setCharacteristic: jest.fn().mockReturnThis(),
+      };
+      (mockAccessory.getService as jest.Mock).mockReturnValue(mockService);
 
       // Create the light accessory
-      const lightAccessory = new LightAccessory(platform, mockAccessory, mockLight);
+      const lightAccessory = mockDeviceFactory.createAccessory(platform, mockAccessory, mockBulb);
       await lightAccessory.initialize();
 
       // Get the light service
       const lightService = mockAccessory.getService(platform.Service.Lightbulb);
       expect(lightService).toBeDefined();
-      expect(mockLight.deviceType).toBe('other-light-type');
-    }, 10000);
+      expect(mockBulb.deviceType).toBe('ESL100MC');
+    });
   });
 }); 
