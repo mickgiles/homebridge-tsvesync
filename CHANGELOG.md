@@ -1,17 +1,14 @@
-# Changelog
+# Change Log
 
-## [1.0.31] - 2025-01-04
-
+# 1.0.33 (2025-01-04)
 ### Fixed
-- Fixed issue where devices were not being refreshed
+- Fixed issue where devices were not being refreshed and polling too frequently
 
-## [1.0.30] - 2025-01-04
-
+# 1.0.31 (2025-01-04)
 ### Fixed
 - Fixed issue where login token was not being refreshed
 
-## [1.0.27] - 2025-01-02
-
+# 1.0.27 (2025-01-02)
 ### Fixed
 - Fixed invalid speed setting issues for air purifiers, fans, and humidifiers
   - Speed 0 now properly turns off the device instead of attempting to set an invalid speed

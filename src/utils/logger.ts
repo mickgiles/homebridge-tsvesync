@@ -12,20 +12,25 @@ export class PluginLogger {
   constructor(
     private readonly log: Logger,
     private readonly debugMode: boolean = false
-  ) {}
+  ) {
+    // Log debug mode status on initialization
+    if (this.debugMode) {
+      this.log.info('Debug logging enabled');
+    }
+  }
 
   /**
    * Log an informational message
    */
-  info(message: string, context: Partial<LogContext>): void {
-    this.log.info(this.formatMessage(message, context));
+  info(message: string, context?: Partial<LogContext>): void {
+    this.log.info(this.formatMessage(message, context || {}));
   }
 
   /**
    * Log a warning message
    */
-  warn(message: string, context: Partial<LogContext>, error?: Error): void {
-    const formattedMessage = this.formatMessage(message, context);
+  warn(message: string, context?: Partial<LogContext>, error?: Error): void {
+    const formattedMessage = this.formatMessage(message, context || {});
     if (error) {
       this.log.warn(`${formattedMessage}: ${error.message}`);
       if (this.debugMode && error.stack) {
@@ -39,8 +44,8 @@ export class PluginLogger {
   /**
    * Log an error message
    */
-  error(message: string, context: Partial<LogContext>, error?: Error): void {
-    const formattedMessage = this.formatMessage(message, context);
+  error(message: string, context?: Partial<LogContext>, error?: Error): void {
+    const formattedMessage = this.formatMessage(message, context || {});
     if (error) {
       this.log.error(`${formattedMessage}: ${error.message}`);
       if (this.debugMode && error.stack) {
@@ -52,11 +57,11 @@ export class PluginLogger {
   }
 
   /**
-   * Log a debug message (only if debug mode is enabled)
+   * Log a debug message
    */
-  debug(message: string, context: Partial<LogContext>): void {
+  debug(message: string, context?: Partial<LogContext>): void {
     if (this.debugMode) {
-      this.log.debug(this.formatMessage(message, context));
+      this.log.info(`[DEBUG] ${this.formatMessage(message, context || {})}`);
     }
   }
 
@@ -64,14 +69,12 @@ export class PluginLogger {
    * Log a state change
    */
   stateChange(context: LogContext): void {
-    const valueStr = typeof context.value === 'object' 
-      ? JSON.stringify(context.value)
-      : context.value;
-
-    this.debug(
-      `State change: ${context.characteristic} = ${valueStr}`,
-      context
-    );
+    const message = `${context.operation}: ${context.characteristic} = ${context.value}`;
+    if (this.debugMode) {
+      this.debug(message, context);
+    } else {
+      this.info(message, context);
+    }
   }
 
   /**

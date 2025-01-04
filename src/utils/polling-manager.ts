@@ -1,29 +1,23 @@
 import { Logger } from 'homebridge';
-import { DEFAULT_POLLING_CONFIG, DEVICE_POLLING_CONFIGS, PollingConfig } from '../types/polling.types';
+import { DEFAULT_POLLING_CONFIG, PollingConfig } from '../types/polling.types';
 
 export class PollingManager {
   private currentInterval: number;
   private timer: NodeJS.Timeout | null = null;
   private lastPollTime: number = 0;
-  private isDeviceActive: boolean = false;
+  private hasActiveDevices: boolean = false;
   private readonly config: PollingConfig;
-  private readonly deviceType: string;
   private readonly log: Logger;
 
   constructor(
-    deviceType: string,
     log: Logger,
     customConfig?: Partial<PollingConfig>
   ) {
-    this.deviceType = deviceType;
     this.log = log;
-    
-    // Get device-specific config or default
-    const baseConfig = DEVICE_POLLING_CONFIGS[deviceType] || DEFAULT_POLLING_CONFIG;
     
     // Merge with custom config if provided
     this.config = {
-      ...baseConfig,
+      ...DEFAULT_POLLING_CONFIG,
       ...customConfig,
     };
 
@@ -44,7 +38,7 @@ export class PollingManager {
         this.lastPollTime = Date.now();
         this.scheduleNextPoll(callback);
       } catch (error) {
-        this.log.error(`[${this.deviceType}] Polling error:`, error);
+        this.log.error('Polling error:', error);
         // On error, schedule next poll but maybe with a longer interval
         this.scheduleNextPoll(callback, true);
       }
@@ -65,15 +59,15 @@ export class PollingManager {
   }
 
   /**
-   * Update the device's active state, which may affect polling frequency
-   * @param isActive Whether the device is currently active
+   * Update the active state of devices
+   * @param hasActiveDevices Whether any devices are currently active
    */
-  public updateDeviceState(isActive: boolean): void {
-    if (this.isDeviceActive === isActive) {
+  public updateDeviceStates(hasActiveDevices: boolean): void {
+    if (this.hasActiveDevices === hasActiveDevices) {
       return;
     }
 
-    this.isDeviceActive = isActive;
+    this.hasActiveDevices = hasActiveDevices;
     this.adjustPollingInterval();
   }
 
@@ -92,15 +86,15 @@ export class PollingManager {
   }
 
   /**
-   * Adjust the polling interval based on device state and conditions
+   * Adjust the polling interval based on device states and conditions
    * @param wasError Whether the last poll resulted in an error
    */
   private adjustPollingInterval(wasError: boolean = false): void {
     let interval = this.config.baseInterval;
 
-    // If dynamic polling is enabled, adjust based on device state
+    // If dynamic polling is enabled, adjust based on device states
     if (this.config.dynamicPolling) {
-      if (!this.isDeviceActive) {
+      if (!this.hasActiveDevices) {
         interval *= this.config.inactiveMultiplier;
       }
     }
@@ -117,8 +111,8 @@ export class PollingManager {
     );
 
     this.log.debug(
-      `[${this.deviceType}] Adjusted polling interval: ${this.currentInterval}ms ` +
-      `(Active: ${this.isDeviceActive}, Error: ${wasError})`
+      `Adjusted polling interval: ${this.currentInterval}ms ` +
+      `(Active Devices: ${this.hasActiveDevices}, Error: ${wasError})`
     );
   }
 

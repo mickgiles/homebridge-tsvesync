@@ -3,6 +3,8 @@ import { PLATFORM_NAME, PLUGIN_NAME } from './settings';
 import { VeSync } from 'tsvesync';
 import { DeviceFactory } from './utils/device-factory';
 import { BaseAccessory } from './accessories/base.accessory';
+import { PollingManager } from './utils/polling-manager';
+import { PluginLogger } from './utils/logger';
 
 /**
  * HomebridgePlatform
@@ -20,13 +22,15 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
   private client!: VeSync;
   private deviceUpdateInterval?: NodeJS.Timeout;
   private readonly updateInterval!: number;
-  private readonly debug!: boolean;
+  public readonly debug!: boolean;
   private lastLogin: Date = new Date(0); // Track last successful login
   private lastLoginAttempt: Date = new Date(0);
   private loginBackoffTime = 1000; // Start with 1 second
   private initializationPromise: Promise<void>;
   private initializationResolver!: () => void;
   private isInitialized = false;
+  private pollingManager!: PollingManager;
+  private readonly logger!: PluginLogger;
 
   constructor(
     public readonly log: Logger,
@@ -45,8 +49,14 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
     }
 
     // Get config values with defaults
-    this.updateInterval = config.updateInterval || 30;
+    this.updateInterval = config.updateInterval || 300; // Default to 5 minutes
     this.debug = config.debug || false;
+
+    // Initialize logger
+    this.logger = new PluginLogger(log, this.debug);
+
+    // Initialize polling manager
+    this.pollingManager = new PollingManager(this.log, config.polling);
 
     // Initialize VeSync client with all configuration
     this.client = new VeSync(
@@ -81,13 +91,8 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
         // Initialize platform
         await this.initializePlatform();
         
-        // Set up periodic device updates
-        this.deviceUpdateInterval = setInterval(() => {
-          this.updateDeviceStates().catch(error => {
-            const err = error instanceof Error ? error : new Error(String(error));
-            this.log.error('=== UPDATE INTERVAL: Failed to update device states ===', err);
-          });
-        }, this.updateInterval * 1000);
+        // Start polling for device updates
+        this.pollingManager.startPolling(() => this.updateDeviceStates());
       } catch (error) {
         this.log.error('Failed to initialize platform:', error);
       }
@@ -95,9 +100,7 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
 
     // Clean up when shutting down
     this.api.on('shutdown', () => {
-      if (this.deviceUpdateInterval) {
-        clearInterval(this.deviceUpdateInterval);
-      }
+      this.pollingManager.stopPolling();
     });
   }
 
@@ -111,65 +114,103 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
   }
 
   /**
-   * Initialize all accessories
-   */
-  private async initializeAccessories(): Promise<void> {
-    
-    // Initialize accessories in batches to avoid overwhelming the API
-    const batchSize = 2;
-    const delay = 5000; // 5 second delay between batches
-    const accessories = Array.from(this.deviceAccessories.entries());
-    
-    for (let i = 0; i < accessories.length; i += batchSize) {
-      const batch = accessories.slice(i, i + batchSize);
-      
-      const batchPromises = batch.map(([uuid, accessory]) => {
-        const deviceName = this.accessories.find(acc => acc.UUID === uuid)?.displayName || uuid;
-        return accessory.initialize().catch(error => {
-          this.log.error(`=== INIT: Failed to initialize accessory ${deviceName} ===`, error);
-        });
-      });
-      
-      await Promise.all(batchPromises);
-      
-      if (i + batchSize < accessories.length) {
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
-    }
-  }
-
-  /**
    * Initialize the platform
    */
   private async initializePlatform(): Promise<void> {
     try {
-      // Try to login first
-      if (!await this.ensureLogin()) {
-        this.log.error('=== INIT: Initial login failed ===');
-        throw new Error('Failed to login to VeSync API');
-      }
+      // Initialize VeSync client
+      this.client = new VeSync(
+        this.config.username,
+        this.config.password,
+        'America/Los_Angeles',
+        this.debug,
+        false,
+        undefined,
+        this.log,
+      );
 
-      // Get devices from API
+      // Login to VeSync
+      await this.ensureLogin();
+
+      // Get devices from VeSync
       const success = await this.client.getDevices();
       if (!success) {
-        this.log.error('=== INIT: Failed to get devices from API ===');
-        throw new Error('Failed to get devices from API');
+        throw new Error('Failed to get devices from VeSync');
       }
 
-      // Discover devices
-      await this.discoverDevices();
+      const devices = [
+        ...this.client.fans,
+        ...this.client.outlets,
+        ...this.client.switches,
+        ...this.client.bulbs,
+        ...this.client.humidifiers,
+        ...this.client.purifiers,
+      ];
+      this.logger.debug('Retrieved devices from VeSync', { operation: 'initializePlatform', value: devices.length });
 
-      // Mark platform as initialized before accessory initialization
+      // Create accessories for each device
+      for (const device of devices) {
+        const uuid = this.api.hap.uuid.generate(device.uuid);
+        const existingAccessory = this.accessories.find(accessory => accessory.UUID === uuid);
+
+        if (existingAccessory) {
+          this.logger.debug('Restoring existing accessory from cache', {
+            operation: 'initializePlatform',
+            deviceName: existingAccessory.displayName,
+            deviceType: device.deviceType,
+          });
+          existingAccessory.context.device = device;
+          this.api.updatePlatformAccessories([existingAccessory]);
+          const accessory = DeviceFactory.createAccessory(this, existingAccessory, device);
+          if (accessory) {
+            this.logger.debug('Successfully restored accessory', {
+              operation: 'initializePlatform',
+              deviceName: existingAccessory.displayName,
+              deviceType: device.deviceType,
+            });
+          }
+        } else {
+          this.logger.debug('Adding new accessory', {
+            operation: 'initializePlatform',
+            deviceName: device.deviceName,
+            deviceType: device.deviceType,
+          });
+          const accessory = new this.api.platformAccessory(device.deviceName, uuid);
+          accessory.context.device = device;
+          const createdAccessory = DeviceFactory.createAccessory(this, accessory, device);
+          if (createdAccessory) {
+            this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+            this.logger.debug('Successfully added new accessory', {
+              operation: 'initializePlatform',
+              deviceName: device.deviceName,
+              deviceType: device.deviceType,
+            });
+          }
+        }
+      }
+
+      // Remove platform accessories that no longer exist
+      for (const accessory of this.accessories) {
+        const device = devices.find(device => this.api.hap.uuid.generate(device.uuid) === accessory.UUID);
+        if (!device) {
+          this.logger.debug('Removing accessory no longer in VeSync', {
+            operation: 'initializePlatform',
+            deviceName: accessory.displayName,
+            deviceType: accessory.context.device?.deviceType || 'unknown',
+          });
+          this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+        }
+      }
+
+      // Start device update interval
+      this.startDeviceUpdateInterval();
+
+      // Mark platform as initialized
       this.isInitialized = true;
       this.initializationResolver();
-
-      // Initialize all accessories with staggered approach
-      await this.initializeAccessories();
-      
+      this.logger.debug('Platform initialization complete', { operation: 'initializePlatform' });
     } catch (error) {
-      this.log.error('Failed to initialize platform:', error);
-      // Still resolve the promise to allow retries during polling
-      this.initializationResolver();
+      this.logger.error('Failed to initialize platform', { operation: 'initializePlatform' }, error as Error);
       throw error;
     }
   }
@@ -217,106 +258,100 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
   /**
    * Ensure client is logged in
    */
-  private async ensureLogin(): Promise<boolean> {
-    try {
-      // Check if we need to wait due to backoff
-      const timeSinceLastAttempt = Date.now() - this.lastLoginAttempt.getTime();
-      if (timeSinceLastAttempt < this.loginBackoffTime) {
-        const waitTime = this.loginBackoffTime - timeSinceLastAttempt;
-        if (this.debug) {
-          this.log.debug(`Waiting ${waitTime}ms before next login attempt`);
-        }
-        await new Promise(resolve => setTimeout(resolve, waitTime));
-      }
+  private async ensureLogin(): Promise<void> {
+    const now = new Date();
+    const timeSinceLastLogin = now.getTime() - this.lastLogin.getTime();
+    const timeSinceLastAttempt = now.getTime() - this.lastLoginAttempt.getTime();
 
-      this.lastLoginAttempt = new Date();
-      const loginResult = await this.client.login();
-      
-      if (!loginResult) {
-        this.log.error('Login failed - invalid credentials or API error');
-        this.loginBackoffTime = Math.min(this.loginBackoffTime * 2, 300000);
-        return false;
+    // Check if we need to login
+    if (timeSinceLastLogin < 3600000) {
+      this.logger.debug('Using existing login session', { operation: 'ensureLogin' });
+      return;
+    }
+
+    // Implement backoff for login attempts
+    if (timeSinceLastAttempt < this.loginBackoffTime) {
+      this.logger.debug('Waiting for login backoff time', { operation: 'ensureLogin' });
+      await new Promise(resolve => setTimeout(resolve, this.loginBackoffTime - timeSinceLastAttempt));
+    }
+
+    try {
+      this.logger.debug('Logging in to VeSync', { operation: 'ensureLogin' });
+      this.lastLoginAttempt = now;
+      const success = await this.client.login();
+      if (!success) {
+        throw new Error('Failed to login to VeSync');
       }
-      
-      this.lastLogin = new Date();
-      this.loginBackoffTime = 1000; // Reset backoff on successful login
-      return true;
+      this.lastLogin = now;
+      this.loginBackoffTime = 1000; // Reset backoff time on successful login
+      this.logger.debug('Successfully logged in to VeSync', { operation: 'ensureLogin' });
     } catch (error) {
-      // Use minimal backoff for auth errors to allow quick retry
-      if (error instanceof Error && error.message.includes('auth')) {
-        this.loginBackoffTime = Math.min(this.loginBackoffTime, 5000);
-      } else {
-        // Increase backoff time exponentially for other errors, max 5 minutes
-        this.loginBackoffTime = Math.min(this.loginBackoffTime * 2, 300000);
-      }
-      
-      this.log.error('Login error:', error);
-      return false;
+      this.loginBackoffTime = Math.min(this.loginBackoffTime * 2, 300000); // Max 5 minutes
+      this.logger.error('Failed to log in to VeSync', { operation: 'ensureLogin' }, error as Error);
+      throw error;
     }
   }
 
   /**
    * Update device states from the API
    */
-  public async updateDeviceStatesFromAPI(isPolledUpdate = false) {
+  public async updateDeviceStatesFromAPI(): Promise<void> {
     if (!this.isInitialized) {
-      if (this.debug) {
-        this.log.debug('Skipping device state update - platform not initialized');
-      }
+      this.logger.debug('Platform not initialized, skipping device update', { operation: 'updateDeviceStates' });
       return;
     }
 
     try {
-      // Ensure we're logged in
-      const loginSuccess = await this.ensureLogin();
-      if (!loginSuccess) {
-        throw new Error('Failed to login for device state update');
-      }
-
-      // Get devices from API
+      this.logger.debug('Updating device states from API', { operation: 'updateDeviceStates' });
+      await this.ensureLogin();
       const success = await this.client.getDevices();
       if (!success) {
-        throw new Error('Failed to get devices from API');
+        throw new Error('Failed to get devices from VeSync');
       }
 
-      // Get all devices
-      const devices = this.getAllDevices();
-      if (!devices || !devices.length) {
-        if (!isPolledUpdate) {
-          this.log.warn('=== UPDATE API: No devices found during state update ===');
-        }
-        return;
-      }
+      const devices = [
+        ...this.client.fans,
+        ...this.client.outlets,
+        ...this.client.switches,
+        ...this.client.bulbs,
+        ...this.client.humidifiers,
+        ...this.client.purifiers,
+      ];
+      this.logger.debug('Retrieved device states', { operation: 'updateDeviceStates', value: devices.length });
 
-      // Update each device
-      for (const device of devices) {
-        const accessory = this.deviceAccessories.get(this.generateDeviceUUID(device));
-        if (accessory) {
-          try {
-            await accessory.syncDeviceState();
-          } catch (error) {
-            const err = error instanceof Error ? error : new Error(String(error));
-            this.log.error(`=== UPDATE API: Failed to update state for device ${device.deviceName} ===`, err);
+      // Update each accessory with its corresponding device state
+      for (const accessory of this.accessories) {
+        const device = devices.find(d => this.api.hap.uuid.generate(d.uuid) === accessory.UUID);
+        if (device) {
+          const baseAccessory = DeviceFactory.createAccessory(this, accessory, device);
+          if (baseAccessory) {
+            accessory.context.device = device;
+            await baseAccessory.updateFromPlatform(device);
+            this.logger.debug('Updated device state', {
+              operation: 'updateDeviceStates',
+              deviceName: accessory.displayName,
+              deviceType: device.deviceType,
+            });
           }
+        } else {
+          this.logger.warn('Device no longer exists', {
+            operation: 'updateDeviceStates',
+            deviceName: accessory.displayName,
+            deviceType: accessory.context.device?.deviceType || 'unknown',
+          });
         }
       }
-
     } catch (error) {
-      const err = error instanceof Error ? error : new Error(String(error));
-      
-      if (!isPolledUpdate || this.debug) {
-        this.log.error('=== UPDATE API: Failed to update device states ===', err);
-      }
-      throw err;
+      this.logger.error('Failed to update device states', { operation: 'updateDeviceStates' }, error as Error);
     }
   }
 
   /**
    * Update device states periodically
    */
-  private async updateDeviceStates() {
+  private async updateDeviceStates(): Promise<void> {
     try {
-      await this.updateDeviceStatesFromAPI(true);
+      await this.updateDeviceStatesFromAPI();
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
       this.log.error('=== UPDATE STATES: Periodic update failed ===', err);
@@ -326,10 +361,13 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
   /**
    * This function discovers and registers your devices as accessories
    */
-  async discoverDevices() {
+  async discoverDevices(): Promise<void> {
     try {
       // Try to login first
-      if (!await this.ensureLogin()) {
+      try {
+        await this.ensureLogin();
+      } catch (error) {
+        this.log.error('Failed to login during device discovery:', error);
         return;
       }
 
@@ -411,5 +449,24 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
       id = `${device.cid}_${device.subDeviceNo}`;
     }
     return this.api.hap.uuid.generate(id);
+  }
+
+  private startDeviceUpdateInterval(): void {
+    if (this.deviceUpdateInterval) {
+      clearInterval(this.deviceUpdateInterval);
+    }
+
+    this.logger.debug('Starting device update interval', {
+      operation: 'startDeviceUpdateInterval',
+      value: `${this.updateInterval} seconds`,
+    });
+    this.deviceUpdateInterval = setInterval(
+      () => {
+        this.updateDeviceStatesFromAPI().catch(error => {
+          this.logger.error('Failed to update device states', { operation: 'updateDeviceStates' }, error as Error);
+        });
+      },
+      this.updateInterval * 1000,
+    );
   }
 } 

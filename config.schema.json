@@ -31,47 +31,26 @@
       "updateInterval": {
         "title": "Update Interval",
         "type": "integer",
-        "minimum": 10,
-        "maximum": 600,
-        "default": 30,
+        "minimum": 60,
+        "maximum": 900,
+        "default": 300,
         "required": false,
-        "description": "How often to update device states (in seconds). Default is 30 seconds."
+        "description": "How often to update device states (in seconds). Default is 300 seconds (5 minutes). Minimum is 60 seconds to avoid API rate limits."
       },
       "debug": {
         "title": "Debug Logging",
         "type": "boolean",
         "required": false,
         "default": false,
-        "description": "Enable debug logging"
+        "description": "Enable debug logging for troubleshooting"
       }
     }
   },
   "layout": [
-    {
-      "type": "flex",
-      "flex-flow": "row wrap",
-      "items": [
-        {
-          "type": "flex",
-          "flex-flow": "column",
-          "items": [
-            "name",
-            "username",
-            {
-              "key": "password",
-              "type": "password"
-            }
-          ]
-        },
-        {
-          "type": "flex",
-          "flex-flow": "column",
-          "items": [
-            "updateInterval",
-            "debug"
-          ]
-        }
-      ]
-    }
+    "name",
+    "username",
+    "password",
+    "updateInterval",
+    "debug"
   ]
 } 

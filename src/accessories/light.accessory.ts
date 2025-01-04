@@ -61,14 +61,16 @@ export class LightAccessory extends BaseAccessory {
   }
 
   private setupColorTemperature(): void {
+    this.service.getCharacteristic(this.platform.Characteristic.ColorTemperature)
+      .setProps({
+        minValue: MIN_COLOR_TEMP,
+        maxValue: MAX_COLOR_TEMP,
+      });
+
     this.setupCharacteristic(
       this.platform.Characteristic.ColorTemperature,
       this.getColorTemperature.bind(this),
-      this.setColorTemperature.bind(this),
-      {
-        minValue: MIN_COLOR_TEMP,
-        maxValue: MAX_COLOR_TEMP,
-      }
+      this.setColorTemperature.bind(this)
     );
   }
 

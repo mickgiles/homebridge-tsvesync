@@ -52,21 +52,17 @@ export class AirPurifierAccessory extends BaseAccessory {
         this.accessory.addService(this.platform.Service.AirQualitySensor);
 
       // Add air quality characteristics to the Air Quality service
-      this.setupCharacteristic(
-        this.platform.Characteristic.AirQuality,
-        this.getAirQuality.bind(this),
-        undefined,
-        undefined,
-        airQualityService
-      );
+      airQualityService.getCharacteristic(this.platform.Characteristic.AirQuality)
+        .onGet(async () => {
+          await this.platform.updateDeviceStatesFromAPI();
+          return this.getAirQuality();
+        });
 
-      this.setupCharacteristic(
-        this.platform.Characteristic.PM2_5Density,
-        this.getPM25Density.bind(this),
-        undefined,
-        undefined,
-        airQualityService
-      );
+      airQualityService.getCharacteristic(this.platform.Characteristic.PM2_5Density)
+        .onGet(async () => {
+          await this.platform.updateDeviceStatesFromAPI();
+          return this.getPM25Density();
+        });
     }
 
     if (capabilities.hasSpeed) {
@@ -155,38 +151,6 @@ export class AirPurifierAccessory extends BaseAccessory {
 
     // Update device state based on activity
     this.updatePollingState(isOn);
-  }
-
-  /**
-   * Handle set active state
-   */
-  private async handleSetActive(value: CharacteristicValue): Promise<void> {
-    try {
-      const newState = value as number;
-      if (newState === 1) {
-        await this.device.turnOn();
-      } else {
-        await this.device.turnOff();
-      }
-    } catch (err) {
-      await this.handleDeviceError('set active state', err);
-      throw err;
-    }
-  }
-
-  /**
-   * Handle set target state
-   */
-  private async handleSetTargetState(value: CharacteristicValue): Promise<void> {
-    try {
-      const newState = value as number;
-      if (this.device.setMode) {
-        await this.device.setMode(newState === 1 ? 'auto' : 'manual');
-      }
-    } catch (err) {
-      await this.handleDeviceError('set target state', err);
-      throw err;
-    }
   }
 
   /**
