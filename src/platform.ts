@@ -19,14 +19,11 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
   
   private client!: VeSync;
   private deviceUpdateInterval?: NodeJS.Timeout;
-  private tokenRefreshInterval?: NodeJS.Timeout;
   private readonly updateInterval!: number;
   private readonly debug!: boolean;
   private lastLogin: Date = new Date(0); // Track last successful login
   private lastLoginAttempt: Date = new Date(0);
   private loginBackoffTime = 1000; // Start with 1 second
-  private tokenExpiryTime?: Date; // Track when the token will expire
-  private readonly TOKEN_REFRESH_BUFFER = 5 * 60 * 1000; // Refresh 5 minutes before expiry
   private initializationPromise: Promise<void>;
   private initializationResolver!: () => void;
   private isInitialized = false;
@@ -87,24 +84,16 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
         // Set up periodic device updates
         this.deviceUpdateInterval = setInterval(() => {
           this.updateDeviceStates();
-        }, this.updateInterval * 1000); // Convert to milliseconds
+        }, this.updateInterval * 1000);
       } catch (error) {
         this.log.error('Failed to initialize platform:', error);
       }
     });
 
-    // Set up token refresh interval
-    this.tokenRefreshInterval = setInterval(() => {
-      this.checkAndRefreshToken();
-    }, 60 * 1000); // Check token every minute
-
     // Clean up when shutting down
     this.api.on('shutdown', () => {
       if (this.deviceUpdateInterval) {
         clearInterval(this.deviceUpdateInterval);
-      }
-      if (this.tokenRefreshInterval) {
-        clearInterval(this.tokenRefreshInterval);
       }
     });
   }
@@ -198,18 +187,10 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
   }
 
   /**
-   * Ensure client is logged in, but avoid unnecessary logins
+   * Ensure client is logged in
    */
   private async ensureLogin(forceLogin = false): Promise<boolean> {
     try {
-      // If not forcing login and we have a valid token, use it
-      if (!forceLogin && this.tokenExpiryTime && Date.now() < this.tokenExpiryTime.getTime() - this.TOKEN_REFRESH_BUFFER) {
-        if (this.debug) {
-          this.log.debug('Using existing valid token');
-        }
-        return true;
-      }
-
       // Check if we need to wait due to backoff
       const timeSinceLastAttempt = Date.now() - this.lastLoginAttempt.getTime();
       if (timeSinceLastAttempt < this.loginBackoffTime) {
@@ -220,11 +201,6 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
         await new Promise(resolve => setTimeout(resolve, waitTime));
       }
 
-      // Need to login again
-      if (this.debug) {
-        this.log.debug(forceLogin ? 'Forcing new login to VeSync API' : 'Logging in to VeSync API');
-      }
-      
       this.lastLoginAttempt = new Date();
       const loginResult = await this.client.login();
       
@@ -235,48 +211,16 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
       }
       
       this.lastLogin = new Date();
-      
-      // Set token expiry time - default to 23 hours if not provided by API
-      const tokenTTL = (loginResult as any)?.tokenTTL || 23 * 60 * 60;
-      this.tokenExpiryTime = new Date(Date.now() + tokenTTL * 1000);
-      
-      if (this.debug) {
-        this.log.debug(`Token will expire at ${this.tokenExpiryTime.toISOString()}`);
-      }
-      
-      // Reset backoff on successful login
-      this.loginBackoffTime = 1000;
+      this.loginBackoffTime = 1000; // Reset backoff on successful login
       return true;
     } catch (error) {
-      // Handle specific errors
-      const errorObj = error as any;
-      const errorMsg = errorObj?.error?.msg || errorObj?.msg || String(error);
-      const errorCode = errorObj?.code || errorObj?.error?.code;
-      
-      // Handle token expiry specifically
-      if (errorCode === 4001004 || errorMsg.includes('token expired')) {
-        if (this.debug) {
-          this.log.debug('Token expired, forcing new login');
-        }
-        // Clear token expiry time to force a new login
-        this.tokenExpiryTime = undefined;
-        // Use minimal backoff for token expiry
-        this.loginBackoffTime = 1000;
-        // Try immediate relogin
-        return this.ensureLogin(true);
-      }
-      
-      if (errorMsg.includes('Not logged in')) {
-        if (this.debug) {
-          this.log.debug('Session expired, forcing new login');
-        }
-        this.tokenExpiryTime = undefined;
+      // Use minimal backoff for auth errors to allow quick retry
+      if (error instanceof Error && error.message.includes('auth')) {
         this.loginBackoffTime = Math.min(this.loginBackoffTime, 5000);
-        return false;
+      } else {
+        // Increase backoff time exponentially for other errors, max 5 minutes
+        this.loginBackoffTime = Math.min(this.loginBackoffTime * 2, 300000);
       }
-      
-      // Increase backoff time exponentially, max 5 minutes
-      this.loginBackoffTime = Math.min(this.loginBackoffTime * 2, 300000);
       
       this.log.error('Login error:', error);
       return false;
@@ -290,23 +234,11 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
     try {
       return await operation();
     } catch (error) {
-      const errorObj = error as any;
-      const errorCode = errorObj?.code || errorObj?.error?.code;
-      
-      // If token expired, try to refresh and retry once
-      if (errorCode === 4001004 || (errorObj?.msg || '').includes('token expired')) {
-        if (this.debug) {
-          this.log.debug('Operation failed due to token expiry, attempting refresh and retry');
-        }
-        
-        // Force new login
-        const loginSuccess = await this.ensureLogin(true);
-        if (loginSuccess) {
-          // Retry the operation
-          return await operation();
-        }
+      // If operation fails, try one login refresh and retry
+      const loginSuccess = await this.ensureLogin(true);
+      if (loginSuccess) {
+        return await operation();
       }
-      
       throw error;
     }
   }
@@ -460,27 +392,5 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
       id = `${device.cid}_${device.subDeviceNo}`;
     }
     return this.api.hap.uuid.generate(id);
-  }
-
-  /**
-   * Check if token needs refresh and refresh if needed
-   */
-  private async checkAndRefreshToken(): Promise<void> {
-    if (!this.tokenExpiryTime) {
-      // If we don't have an expiry time, force a new login
-      if (this.debug) {
-        this.log.debug('No token expiry time, forcing new login');
-      }
-      await this.ensureLogin(true);
-      return;
-    }
-
-    const timeUntilExpiry = this.tokenExpiryTime.getTime() - Date.now();
-    if (timeUntilExpiry <= this.TOKEN_REFRESH_BUFFER) {
-      if (this.debug) {
-        this.log.debug(`Token expires in ${Math.floor(timeUntilExpiry / 1000)}s, refreshing`);
-      }
-      await this.ensureLogin(true);
-    }
   }
 } 

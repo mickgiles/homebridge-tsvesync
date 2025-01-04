@@ -114,40 +114,89 @@ describe('TSVESyncPlatform', () => {
     });
 
     describe('ensureLogin', () => {
-      it('should use existing session if login is recent', async () => {
-        // Set last login to be recent
-        (platform as any).lastLogin = new Date();
-        await (platform as any).ensureLogin();
-        expect(mockVeSync.login).not.toHaveBeenCalled();
+      it('should handle successful login', async () => {
+        mockVeSync.login.mockResolvedValueOnce(true);
+        const result = await (platform as any).ensureLogin();
+        expect(result).toBe(true);
+        expect(mockVeSync.login).toHaveBeenCalledTimes(1);
+        expect((platform as any).loginBackoffTime).toBe(1000); // Reset to base backoff
       });
-
-      it('should attempt new login if session is old', async () => {
-        mockVeSync.login.mockResolvedValueOnce(true);
-        await (platform as any).ensureLogin();
-        expect(mockVeSync.login).toHaveBeenCalledTimes(1);
-        
-        // Set last login to be old and reset mock
-        (platform as any).lastLogin = new Date(0);
-        mockVeSync.login.mockClear();
-        mockVeSync.login.mockResolvedValueOnce(true);
-        
-        await (platform as any).ensureLogin();
-        expect(mockVeSync.login).toHaveBeenCalledTimes(1);
-      }, 10000);
 
       it('should handle login failure', async () => {
         mockVeSync.login.mockResolvedValueOnce(false);
-        await (platform as any).ensureLogin();
+        const result = await (platform as any).ensureLogin();
+        expect(result).toBe(false);
         expect(mockLogger.error).toHaveBeenCalledWith('Login failed - invalid credentials or API error');
+        expect((platform as any).loginBackoffTime).toBeGreaterThan(1000); // Increased backoff
       });
 
-      it('should handle "Not logged in" error', async () => {
-        const error = { error: { msg: 'Not logged in' } };
-        mockVeSync.login.mockRejectedValueOnce(error);
-        (platform as any).debug = true;
+      it('should respect backoff timing', async () => {
+        // Set a backoff time
+        (platform as any).loginBackoffTime = 5000;
+        (platform as any).lastLoginAttempt = new Date();
+
+        const loginPromise = (platform as any).ensureLogin();
+        await jest.advanceTimersByTimeAsync(2500); // Advance halfway through backoff
+        
+        expect(mockVeSync.login).not.toHaveBeenCalled();
+        
+        await jest.advanceTimersByTimeAsync(2500); // Complete backoff
+        await loginPromise;
+        
+        expect(mockVeSync.login).toHaveBeenCalled();
+      });
+
+      it('should use shorter backoff for auth errors', async () => {
+        mockVeSync.login.mockRejectedValueOnce(new Error('auth failed'));
         await (platform as any).ensureLogin();
-        expect(mockLogger.debug).toHaveBeenCalledWith('Session expired, forcing new login');
-        expect(mockLogger.error).not.toHaveBeenCalled();
+        expect((platform as any).loginBackoffTime).toBeLessThanOrEqual(5000);
+      });
+
+      it('should use longer backoff for other errors', async () => {
+        mockVeSync.login.mockRejectedValueOnce(new Error('network error'));
+        await (platform as any).ensureLogin();
+        expect((platform as any).loginBackoffTime).toBe(2000); // Initial 1000ms doubled
+      });
+    });
+
+    describe('withTokenRefresh', () => {
+      it('should execute operation successfully without refresh', async () => {
+        const operation = jest.fn().mockResolvedValue('success');
+        const result = await platform.withTokenRefresh(operation);
+        expect(result).toBe('success');
+        expect(operation).toHaveBeenCalledTimes(1);
+        expect(mockVeSync.login).not.toHaveBeenCalled();
+      });
+
+      it('should retry operation once after login refresh', async () => {
+        const operation = jest.fn()
+          .mockRejectedValueOnce(new Error('operation failed'))
+          .mockResolvedValueOnce('success');
+        
+        mockVeSync.login.mockResolvedValueOnce(true);
+        
+        const result = await platform.withTokenRefresh(operation);
+        expect(result).toBe('success');
+        expect(operation).toHaveBeenCalledTimes(2);
+        expect(mockVeSync.login).toHaveBeenCalledTimes(1);
+      });
+
+      it('should throw if operation fails after refresh', async () => {
+        const operation = jest.fn().mockRejectedValue(new Error('operation failed'));
+        mockVeSync.login.mockResolvedValueOnce(true);
+        
+        await expect(platform.withTokenRefresh(operation)).rejects.toThrow('operation failed');
+        expect(operation).toHaveBeenCalledTimes(2);
+        expect(mockVeSync.login).toHaveBeenCalledTimes(1);
+      });
+
+      it('should throw if refresh login fails', async () => {
+        const operation = jest.fn().mockRejectedValue(new Error('operation failed'));
+        mockVeSync.login.mockResolvedValueOnce(false);
+        
+        await expect(platform.withTokenRefresh(operation)).rejects.toThrow('operation failed');
+        expect(operation).toHaveBeenCalledTimes(1);
+        expect(mockVeSync.login).toHaveBeenCalledTimes(1);
       });
     });
 
