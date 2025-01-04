@@ -84,9 +84,12 @@ export abstract class BaseAccessory {
     this.logger.operationStart(context);
 
     try {
-      const result = await this.retryManager.execute(operation, {
-        deviceName: this.device.deviceName,
-        operation: operationName,
+      // Use platform's token refresh wrapper
+      const result = await this.platform.withTokenRefresh(async () => {
+        return await this.retryManager.execute(operation, {
+          deviceName: this.device.deviceName,
+          operation: operationName,
+        });
       });
 
       this.logger.operationEnd(context);

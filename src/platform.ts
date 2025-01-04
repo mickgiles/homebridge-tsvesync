@@ -19,11 +19,14 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
   
   private client!: VeSync;
   private deviceUpdateInterval?: NodeJS.Timeout;
+  private tokenRefreshInterval?: NodeJS.Timeout;
   private readonly updateInterval!: number;
   private readonly debug!: boolean;
   private lastLogin: Date = new Date(0); // Track last successful login
   private lastLoginAttempt: Date = new Date(0);
   private loginBackoffTime = 1000; // Start with 1 second
+  private tokenExpiryTime?: Date; // Track when the token will expire
+  private readonly TOKEN_REFRESH_BUFFER = 5 * 60 * 1000; // Refresh 5 minutes before expiry
   private initializationPromise: Promise<void>;
   private initializationResolver!: () => void;
   private isInitialized = false;
@@ -90,10 +93,18 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
       }
     });
 
+    // Set up token refresh interval
+    this.tokenRefreshInterval = setInterval(() => {
+      this.checkAndRefreshToken();
+    }, 60 * 1000); // Check token every minute
+
     // Clean up when shutting down
     this.api.on('shutdown', () => {
       if (this.deviceUpdateInterval) {
         clearInterval(this.deviceUpdateInterval);
+      }
+      if (this.tokenRefreshInterval) {
+        clearInterval(this.tokenRefreshInterval);
       }
     });
   }
@@ -191,11 +202,10 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
    */
   private async ensureLogin(forceLogin = false): Promise<boolean> {
     try {
-      // If not forcing login and last login was less than 23 hours ago, try using existing session
-      const loginAge = Date.now() - this.lastLogin.getTime();
-      if (!forceLogin && loginAge < 23 * 60 * 60 * 1000) { // 23 hours in milliseconds
+      // If not forcing login and we have a valid token, use it
+      if (!forceLogin && this.tokenExpiryTime && Date.now() < this.tokenExpiryTime.getTime() - this.TOKEN_REFRESH_BUFFER) {
         if (this.debug) {
-          this.log.debug('Using existing login session');
+          this.log.debug('Using existing valid token');
         }
         return true;
       }
@@ -226,21 +236,41 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
       
       this.lastLogin = new Date();
       
+      // Set token expiry time - default to 23 hours if not provided by API
+      const tokenTTL = (loginResult as any)?.tokenTTL || 23 * 60 * 60;
+      this.tokenExpiryTime = new Date(Date.now() + tokenTTL * 1000);
+      
+      if (this.debug) {
+        this.log.debug(`Token will expire at ${this.tokenExpiryTime.toISOString()}`);
+      }
+      
       // Reset backoff on successful login
       this.loginBackoffTime = 1000;
       return true;
     } catch (error) {
-      // Handle specific "Not logged in" error
+      // Handle specific errors
       const errorObj = error as any;
       const errorMsg = errorObj?.error?.msg || errorObj?.msg || String(error);
+      const errorCode = errorObj?.code || errorObj?.error?.code;
+      
+      // Handle token expiry specifically
+      if (errorCode === 4001004 || errorMsg.includes('token expired')) {
+        if (this.debug) {
+          this.log.debug('Token expired, forcing new login');
+        }
+        // Clear token expiry time to force a new login
+        this.tokenExpiryTime = undefined;
+        // Use minimal backoff for token expiry
+        this.loginBackoffTime = 1000;
+        // Try immediate relogin
+        return this.ensureLogin(true);
+      }
       
       if (errorMsg.includes('Not logged in')) {
         if (this.debug) {
           this.log.debug('Session expired, forcing new login');
         }
-        // Clear last login time to force a new login on next attempt
-        this.lastLogin = new Date(0);
-        // Use minimal backoff for session expiry
+        this.tokenExpiryTime = undefined;
         this.loginBackoffTime = Math.min(this.loginBackoffTime, 5000);
         return false;
       }
@@ -248,149 +278,89 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
       // Increase backoff time exponentially, max 5 minutes
       this.loginBackoffTime = Math.min(this.loginBackoffTime * 2, 300000);
       
-      const errorCode = errorObj?.error?.code || errorObj?.code;
-      
-      if (errorCode === 'ECONNRESET' || errorCode === 'ETIMEDOUT' || errorMsg.includes('timeout')) {
-        this.log.warn('Network error during login, will retry with backoff:', errorMsg);
-      } else if (errorMsg.includes('rate limit')) {
-        this.log.warn('Hit API rate limit, will retry with longer backoff');
-        this.loginBackoffTime = Math.max(this.loginBackoffTime, 60000); // At least 1 minute for rate limits
-      } else {
-        this.log.error('Failed to login:', errorMsg);
-      }
+      this.log.error('Login error:', error);
       return false;
     }
   }
 
   /**
-   * Update device states from the API
-   * @param isPolledUpdate Whether this update is from the polling interval
+   * Handle operation retry with token refresh
    */
-  public async updateDeviceStatesFromAPI(isPolledUpdate = false) {
+  public async withTokenRefresh<T>(operation: () => Promise<T>): Promise<T> {
     try {
-      if (this.debug) {
-        this.log.debug(isPolledUpdate ? 'Polling device states' : 'Updating device states on demand');
-      }
-
-      // Try using cached login first
-      let loginSuccess = await this.ensureLogin();
-      if (!loginSuccess) {
-        // If first login fails, try one more time with force login
-        this.log.debug('Initial login failed, attempting forced login...');
-        loginSuccess = await this.ensureLogin(true);
-        if (!loginSuccess) {
-          this.log.error('Failed to login after retry, will attempt again later');
-          return;
-        }
-      }
-
-      // Get fresh device list with retries
-      let success = false;
-      let retryCount = 0;
-      const maxRetries = 3;
-      let devices: any[] = [];
-
-      while (!success && retryCount < maxRetries) {
-        try {
-          success = await this.client.getDevices();
-          if (success) {
-            devices = this.getAllDevices();
-            if (devices.length === 0) {
-              success = false;
-              this.log.warn('Got successful response but no devices found');
-            }
-          }
-          
-          if (!success) {
-            if (retryCount < maxRetries - 1) {
-              this.log.debug(`Failed to get devices (attempt ${retryCount + 1}/${maxRetries}), retrying...`);
-              await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
-            } else {
-              this.log.error('Failed to get devices after all retries');
-            }
-          }
-        } catch (error) {
-          const errorObj = error as any;
-          const errorMsg = errorObj?.error?.msg || errorObj?.msg || String(error);
-          
-          if (errorMsg.includes('Not logged in')) {
-            this.log.debug('Session expired while getting devices, attempting re-login...');
-            if (await this.ensureLogin(true)) {
-              // Reset retry count if we successfully logged in again
-              retryCount = 0;
-              continue;
-            }
-          }
-          
-          if (retryCount < maxRetries - 1) {
-            this.log.warn(`Error getting devices (attempt ${retryCount + 1}/${maxRetries}): ${errorMsg}, retrying...`);
-            await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
-          } else {
-            throw error;
-          }
-        }
-        retryCount++;
-      }
-
-      // If getting devices failed after retries, try forcing a new login
-      if (!success) {
-        this.log.debug('Failed to get devices after retries, trying to re-login...');
-        if (!await this.ensureLogin(true)) {
-          this.log.error('Failed to re-login');
-          return;
-        }
-        success = await this.client.getDevices();
-        if (!success) {
-          this.log.error('Failed to get devices even after re-login');
-          return;
-        }
-        devices = this.getAllDevices();
-      }
-
-      if (this.debug) {
-        this.log.debug(`Found ${devices.length} devices to update`);
-      }
-      
-      // Update each accessory's context with fresh state
-      for (const accessory of this.accessories) {
-        const device = devices.find(d => this.generateDeviceUUID(d) === accessory.UUID);
-        if (device) {
-          try {
-            // Create fresh device context
-            const context = this.createDeviceContext(device);
-            
-            // Only update if there are actual changes
-            if (JSON.stringify(accessory.context.device) !== JSON.stringify(context)) {
-              accessory.context.device = context;
-              
-              // Update platform accessories to persist changes
-              this.api.updatePlatformAccessories([accessory]);
-              
-              // Notify the accessory of the update
-              const deviceAccessory = this.deviceAccessories.get(accessory.UUID);
-              if (deviceAccessory) {
-                await deviceAccessory.syncDeviceState().catch(error => {
-                  this.log.error(`Failed to sync device state for ${device.deviceName}:`, error);
-                });
-              }
-              
-              if (this.debug) {
-                this.log.debug(`Updated state for device: ${device.deviceName}`);
-              }
-            }
-          } catch (error) {
-            this.log.error(`Failed to update device state for ${device.deviceName}:`, error);
-          }
-        }
-      }
+      return await operation();
     } catch (error) {
       const errorObj = error as any;
-      const errorMsg = errorObj?.error?.msg || errorObj?.msg || String(error);
-      this.log.error('Failed to update device states:', errorMsg);
+      const errorCode = errorObj?.code || errorObj?.error?.code;
       
-      // If this was a polled update, we'll let the next poll try again
-      if (!isPolledUpdate) {
-        throw error; // Re-throw for non-polled updates to handle at caller
+      // If token expired, try to refresh and retry once
+      if (errorCode === 4001004 || (errorObj?.msg || '').includes('token expired')) {
+        if (this.debug) {
+          this.log.debug('Operation failed due to token expiry, attempting refresh and retry');
+        }
+        
+        // Force new login
+        const loginSuccess = await this.ensureLogin(true);
+        if (loginSuccess) {
+          // Retry the operation
+          return await operation();
+        }
+      }
+      
+      throw error;
+    }
+  }
+
+  /**
+   * Update device states from the API
+   */
+  public async updateDeviceStatesFromAPI(isPolledUpdate = false) {
+    if (!this.isInitialized) {
+      if (this.debug) {
+        this.log.debug('Skipping device state update - platform not initialized');
+      }
+      return;
+    }
+
+    try {
+      await this.withTokenRefresh(async () => {
+        // Ensure we're logged in
+        const loginSuccess = await this.ensureLogin();
+        if (!loginSuccess) {
+          throw new Error('Failed to login for device state update');
+        }
+
+        // Get all devices
+        const devices = await this.getAllDevices();
+        if (!devices || !devices.length) {
+          if (!isPolledUpdate) {
+            this.log.warn('No devices found during state update');
+          }
+          return;
+        }
+
+        if (this.debug) {
+          this.log.debug(`Updating states for ${devices.length} devices`);
+        }
+
+        // Update each device
+        for (const device of devices) {
+          const accessory = this.deviceAccessories.get(this.generateDeviceUUID(device));
+          if (accessory) {
+            try {
+              await accessory.syncDeviceState();
+            } catch (error) {
+              this.log.error(`Failed to update state for device ${device.deviceName}:`, error);
+            }
+          }
+        }
+      });
+    } catch (error) {
+      const errorObj = error as any;
+      const errorMsg = errorObj?.msg || String(error);
+      
+      if (!isPolledUpdate || this.debug) {
+        this.log.error('Failed to update device states:', errorMsg);
       }
     }
   }
@@ -490,5 +460,27 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
       id = `${device.cid}_${device.subDeviceNo}`;
     }
     return this.api.hap.uuid.generate(id);
+  }
+
+  /**
+   * Check if token needs refresh and refresh if needed
+   */
+  private async checkAndRefreshToken(): Promise<void> {
+    if (!this.tokenExpiryTime) {
+      // If we don't have an expiry time, force a new login
+      if (this.debug) {
+        this.log.debug('No token expiry time, forcing new login');
+      }
+      await this.ensureLogin(true);
+      return;
+    }
+
+    const timeUntilExpiry = this.tokenExpiryTime.getTime() - Date.now();
+    if (timeUntilExpiry <= this.TOKEN_REFRESH_BUFFER) {
+      if (this.debug) {
+        this.log.debug(`Token expires in ${Math.floor(timeUntilExpiry / 1000)}s, refreshing`);
+      }
+      await this.ensureLogin(true);
+    }
   }
 } 

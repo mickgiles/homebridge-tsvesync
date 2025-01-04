@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.0.28] - 2025-01-04
+
+### Fixed
+- Fixed issue where login token was not being refreshed
+
 ## [1.0.27] - 2025-01-02
 
 ### Fixed
