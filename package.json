@@ -97,7 +97,7 @@
     "axios": "^1.6.5",
     "dotenv": "^16.3.1",
     "js-yaml": "^4.1.0",
-    "tsvesync": "1.0.25"
+    "tsvesync": "1.0.26"
   },
   "devDependencies": {
     "@types/jest": "^29.5.11",

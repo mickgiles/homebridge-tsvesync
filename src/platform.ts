@@ -117,91 +117,117 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
    * Initialize the platform
    */
   private async initializePlatform(): Promise<void> {
-    try {
-      // Login to VeSync
-      await this.ensureLogin();
+    let retryCount = 0;
+    const maxRetries = 5;
+    const retryDelay = 60000; // 1 minute
 
-      // Get devices from VeSync
-      const success = await this.client.getDevices();
-      if (!success) {
-        throw new Error('Failed to get devices from VeSync');
-      }
+    while (retryCount < maxRetries) {
+      try {
+        // Login to VeSync
+        await this.ensureLogin();
 
-      const devices = [
-        ...this.client.fans,
-        ...this.client.outlets,
-        ...this.client.switches,
-        ...this.client.bulbs,
-        ...this.client.humidifiers,
-        ...this.client.purifiers,
-      ];
-      this.logger.debug('Retrieved devices from VeSync', { operation: 'initializePlatform', value: devices.length });
+        // Get devices from VeSync
+        const success = await this.client.getDevices();
+        if (!success) {
+          retryCount++;
+          this.logger.warn(`Failed to get devices (attempt ${retryCount}/${maxRetries}), retrying in ${retryDelay/1000} seconds`, 
+            { operation: 'initializePlatform' });
+          
+          if (retryCount < maxRetries) {
+            await new Promise(resolve => setTimeout(resolve, retryDelay));
+            continue;
+          }
+          throw new Error('Failed to get devices from VeSync');
+        }
 
-      // Create accessories for each device
-      for (const device of devices) {
-        const uuid = this.api.hap.uuid.generate(device.uuid);
-        const existingAccessory = this.accessories.find(accessory => accessory.UUID === uuid);
+        const devices = [
+          ...this.client.fans,
+          ...this.client.outlets,
+          ...this.client.switches,
+          ...this.client.bulbs,
+          ...this.client.humidifiers,
+          ...this.client.purifiers,
+        ];
+        this.logger.debug('Retrieved devices from VeSync', { operation: 'initializePlatform', value: devices.length });
 
-        if (existingAccessory) {
-          this.logger.debug('Restoring existing accessory from cache', {
-            operation: 'initializePlatform',
-            deviceName: existingAccessory.displayName,
-            deviceType: device.deviceType,
-          });
-          existingAccessory.context.device = device;
-          this.api.updatePlatformAccessories([existingAccessory]);
-          const accessory = DeviceFactory.createAccessory(this, existingAccessory, device);
-          if (accessory) {
-            this.logger.debug('Successfully restored accessory', {
+        // Create accessories for each device
+        for (const device of devices) {
+          const uuid = this.api.hap.uuid.generate(device.uuid);
+          const existingAccessory = this.accessories.find(accessory => accessory.UUID === uuid);
+
+          if (existingAccessory) {
+            this.logger.debug('Restoring existing accessory from cache', {
               operation: 'initializePlatform',
               deviceName: existingAccessory.displayName,
               deviceType: device.deviceType,
             });
-          }
-        } else {
-          this.logger.debug('Adding new accessory', {
-            operation: 'initializePlatform',
-            deviceName: device.deviceName,
-            deviceType: device.deviceType,
-          });
-          const accessory = new this.api.platformAccessory(device.deviceName, uuid);
-          accessory.context.device = device;
-          const createdAccessory = DeviceFactory.createAccessory(this, accessory, device);
-          if (createdAccessory) {
-            this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
-            this.logger.debug('Successfully added new accessory', {
+            existingAccessory.context.device = device;
+            this.api.updatePlatformAccessories([existingAccessory]);
+            const accessory = DeviceFactory.createAccessory(this, existingAccessory, device);
+            if (accessory) {
+              this.logger.debug('Successfully restored accessory', {
+                operation: 'initializePlatform',
+                deviceName: existingAccessory.displayName,
+                deviceType: device.deviceType,
+              });
+            }
+          } else {
+            this.logger.debug('Adding new accessory', {
               operation: 'initializePlatform',
               deviceName: device.deviceName,
               deviceType: device.deviceType,
             });
+            const accessory = new this.api.platformAccessory(device.deviceName, uuid);
+            accessory.context.device = device;
+            const createdAccessory = DeviceFactory.createAccessory(this, accessory, device);
+            if (createdAccessory) {
+              this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+              this.logger.debug('Successfully added new accessory', {
+                operation: 'initializePlatform',
+                deviceName: device.deviceName,
+                deviceType: device.deviceType,
+              });
+            }
           }
         }
-      }
 
-      // Remove platform accessories that no longer exist
-      for (const accessory of this.accessories) {
-        const device = devices.find(device => this.api.hap.uuid.generate(device.uuid) === accessory.UUID);
-        if (!device) {
-          this.logger.debug('Removing accessory no longer in VeSync', {
-            operation: 'initializePlatform',
-            deviceName: accessory.displayName,
-            deviceType: accessory.context.device?.deviceType || 'unknown',
-          });
-          this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+        // Remove platform accessories that no longer exist
+        for (const accessory of this.accessories) {
+          const device = devices.find(device => this.api.hap.uuid.generate(device.uuid) === accessory.UUID);
+          if (!device) {
+            this.logger.debug('Removing accessory no longer in VeSync', {
+              operation: 'initializePlatform',
+              deviceName: accessory.displayName,
+              deviceType: accessory.context.device?.deviceType || 'unknown',
+            });
+            this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+          }
         }
+
+        // Start device update interval
+        this.startDeviceUpdateInterval();
+
+        // Mark platform as initialized
+        this.isInitialized = true;
+        this.initializationResolver();
+        this.logger.debug('Platform initialization complete', { operation: 'initializePlatform' });
+        return;
+
+      } catch (error) {
+        retryCount++;
+        this.logger.error('Failed to initialize platform', { operation: 'initializePlatform' }, error as Error);
+        
+        if (retryCount < maxRetries) {
+          this.logger.warn(`Retrying initialization in ${retryDelay/1000} seconds (attempt ${retryCount}/${maxRetries})`, 
+            { operation: 'initializePlatform' });
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
+          continue;
+        }
+        throw error;
       }
-
-      // Start device update interval
-      this.startDeviceUpdateInterval();
-
-      // Mark platform as initialized
-      this.isInitialized = true;
-      this.initializationResolver();
-      this.logger.debug('Platform initialization complete', { operation: 'initializePlatform' });
-    } catch (error) {
-      this.logger.error('Failed to initialize platform', { operation: 'initializePlatform' }, error as Error);
-      throw error;
     }
+
+    throw new Error(`Failed to initialize platform after ${maxRetries} attempts`);
   }
 
   /**
