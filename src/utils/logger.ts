@@ -20,6 +20,28 @@ export class PluginLogger {
   }
 
   /**
+   * Create a VeSync compatible logger
+   */
+  createVeSyncLogger() {
+    return {
+      debug: (message: string, ...args: any[]) => {
+        if (this.debugMode) {
+          this.log.info(`[DEBUG] [VeSync] ${message}`, ...args);
+        }
+      },
+      info: (message: string, ...args: any[]) => {
+        this.log.info(`[VeSync] ${message}`, ...args);
+      },
+      warn: (message: string, ...args: any[]) => {
+        this.log.warn(`[VeSync] ${message}`, ...args);
+      },
+      error: (message: string, ...args: any[]) => {
+        this.log.error(`[VeSync] ${message}`, ...args);
+      }
+    };
+  }
+
+  /**
    * Log an informational message
    */
   info(message: string, context?: Partial<LogContext>): void {

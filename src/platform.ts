@@ -66,7 +66,7 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
       this.debug,
       true, // redact sensitive info
       config.apiUrl,
-      this.log
+      this.logger.createVeSyncLogger()
     );
 
     if (this.debug) {
@@ -118,17 +118,6 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
    */
   private async initializePlatform(): Promise<void> {
     try {
-      // Initialize VeSync client
-      this.client = new VeSync(
-        this.config.username,
-        this.config.password,
-        'America/Los_Angeles',
-        this.debug,
-        false,
-        undefined,
-        this.log,
-      );
-
       // Login to VeSync
       await this.ensureLogin();
 
