@@ -205,7 +205,8 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
    * Ensure client is logged in, but avoid unnecessary logins
    */
   private async ensureLogin(forceLogin = false): Promise<boolean> {
-    while (true) {  // Keep trying until successful
+    let isLoggedIn = false;
+    while (!isLoggedIn) {  // Keep trying until successful
       try {
         // Check if we need to wait for backoff
         const timeSinceLastAttempt = Date.now() - this.lastLoginAttempt.getTime();
@@ -229,6 +230,7 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
         
         // Reset backoff on successful login
         this.loginBackoffTime = 10000;
+        isLoggedIn = true;
         return true;
       } catch (error) {
         // Handle specific errors
@@ -248,6 +250,7 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
         continue;  // Try again after backoff
       }
     }
+    return true;  // This line will never be reached but TypeScript needs it
   }
 
   /**
