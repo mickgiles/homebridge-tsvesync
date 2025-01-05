@@ -205,46 +205,48 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
    * Ensure client is logged in, but avoid unnecessary logins
    */
   private async ensureLogin(forceLogin = false): Promise<boolean> {
-    try {
-      // Check if we need to wait for backoff
-      const timeSinceLastAttempt = Date.now() - this.lastLoginAttempt.getTime();
-      if (timeSinceLastAttempt < this.loginBackoffTime) {
-        const waitTime = this.loginBackoffTime - timeSinceLastAttempt;
-        this.logger.debug(`Waiting ${waitTime}ms before next login attempt (backoff)`);
-        await new Promise(resolve => setTimeout(resolve, waitTime));
-      }
+    while (true) {  // Keep trying until successful
+      try {
+        // Check if we need to wait for backoff
+        const timeSinceLastAttempt = Date.now() - this.lastLoginAttempt.getTime();
+        if (timeSinceLastAttempt < this.loginBackoffTime) {
+          const waitTime = this.loginBackoffTime - timeSinceLastAttempt;
+          this.logger.debug(`Waiting ${waitTime}ms before next login attempt (backoff)`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+        }
 
-      // Need to login again
-      this.logger.debug(forceLogin ? 'Forcing new login to VeSync API' : 'Logging in to VeSync API');
-      
-      this.lastLoginAttempt = new Date();
-      const loginResult = await this.client.login();
-      
-      if (!loginResult) {
-        this.logger.error('Login failed - invalid credentials or API error');
+        // Need to login again
+        this.logger.debug(forceLogin ? 'Forcing new login to VeSync API' : 'Logging in to VeSync API');
+        
+        this.lastLoginAttempt = new Date();
+        const loginResult = await this.client.login();
+        
+        if (!loginResult) {
+          this.logger.error('Login failed - invalid credentials or API error');
+          this.loginBackoffTime = Math.min(this.loginBackoffTime * 2, 300000);
+          continue;  // Try again after backoff
+        }
+        
+        // Reset backoff on successful login
+        this.loginBackoffTime = 10000;
+        return true;
+      } catch (error) {
+        // Handle specific errors
+        const errorObj = error as any;
+        const errorMsg = errorObj?.error?.msg || errorObj?.msg || String(error);
+        
+        if (errorMsg.includes('Not logged in')) {
+          this.logger.debug('Session expired, forcing new login');
+          this.loginBackoffTime = Math.min(this.loginBackoffTime, 5000);
+          continue;  // Try again after backoff
+        }
+        
+        // Increase backoff time exponentially, max 5 minutes
         this.loginBackoffTime = Math.min(this.loginBackoffTime * 2, 300000);
-        return false;
+        
+        this.logger.error('Login error:', error);
+        continue;  // Try again after backoff
       }
-      
-      // Reset backoff on successful login
-      this.loginBackoffTime = 10000;
-      return true;
-    } catch (error) {
-      // Handle specific errors
-      const errorObj = error as any;
-      const errorMsg = errorObj?.error?.msg || errorObj?.msg || String(error);
-      
-      if (errorMsg.includes('Not logged in')) {
-        this.logger.debug('Session expired, forcing new login');
-        this.loginBackoffTime = Math.min(this.loginBackoffTime, 5000);
-        return false;
-      }
-      
-      // Increase backoff time exponentially, max 5 minutes
-      this.loginBackoffTime = Math.min(this.loginBackoffTime * 2, 300000);
-      
-      this.logger.error('Login error:', error);
-      return false;
     }
   }
 
@@ -266,8 +268,27 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
         return;
       }
 
-      // Update device data from API
-      await this.client.update();
+      let retryCount = 0;
+      let success = false;
+
+      // Keep retrying API calls
+      while (!success) {
+        try {
+          // Update device data from API
+          await this.client.update();
+          success = true;
+        } catch (error) {
+          retryCount++;
+          const backoffTime = Math.min(10000 * Math.pow(2, retryCount), 300000);
+          this.logger.warn(`API call failed, retry attempt ${retryCount}. Waiting ${backoffTime/1000} seconds...`);
+          await new Promise(resolve => setTimeout(resolve, backoffTime));
+          
+          // Try to ensure we're still logged in before next attempt
+          if (!await this.ensureLogin()) {
+            continue;
+          }
+        }
+      }
 
       // Get all devices
       const devices = this.getAllDevices();
@@ -313,7 +334,26 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
           this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
           this.accessories.push(accessory);
         }
-        await deviceAccessory.syncDeviceState();
+
+        // Try to update device state with retries
+        let stateRetryCount = 0;
+        let stateSuccess = false;
+        while (!stateSuccess) {
+          try {
+            await deviceAccessory.syncDeviceState();
+            stateSuccess = true;
+          } catch (error) {
+            stateRetryCount++;
+            const backoffTime = Math.min(5000 * Math.pow(2, stateRetryCount), 300000);
+            this.logger.warn(`Failed to sync device state for ${device.deviceName}, retry attempt ${stateRetryCount}. Waiting ${backoffTime/1000} seconds...`);
+            await new Promise(resolve => setTimeout(resolve, backoffTime));
+            
+            // Try to ensure we're still logged in before next attempt
+            if (!await this.ensureLogin()) {
+              continue;
+            }
+          }
+        }
       }
 
       // Remove platform accessories that no longer exist
