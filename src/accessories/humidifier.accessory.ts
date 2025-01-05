@@ -59,10 +59,24 @@ export class HumidifierAccessory extends BaseAccessory {
       isActive ? 1 : 0
     );
 
-    // Update rotation speed
+    // Update rotation speed - convert device speed (1-9) to HomeKit percentage (0-100)
+    let rotationSpeed = 0;
+    if (isActive && humidifierDetails.speed !== undefined) {
+      switch (humidifierDetails.speed) {
+        case 1: rotationSpeed = 11; break;
+        case 2: rotationSpeed = 22; break;
+        case 3: rotationSpeed = 33; break;
+        case 4: rotationSpeed = 44; break;
+        case 5: rotationSpeed = 55; break;
+        case 6: rotationSpeed = 66; break;
+        case 7: rotationSpeed = 77; break;
+        case 8: rotationSpeed = 88; break;
+        case 9: rotationSpeed = 100; break;
+      }
+    }
     this.updateCharacteristicValue(
       this.platform.Characteristic.RotationSpeed,
-      humidifierDetails.speed
+      rotationSpeed
     );
   }
 
@@ -93,6 +107,8 @@ export class HumidifierAccessory extends BaseAccessory {
         throw new Error(`Failed to turn ${isOn ? 'on' : 'off'} device`);
       }
       
+      // Update device state and characteristics
+      await this.updateDeviceSpecificStates(this.device);
       await this.persistDeviceState('deviceStatus', isOn ? 'on' : 'off');
     } catch (error) {
       this.handleDeviceError('set active state', error);

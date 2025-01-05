@@ -68,13 +68,20 @@ export class AirPurifierAccessory extends BaseAccessory {
    */
   protected async updateDeviceSpecificStates(details: any): Promise<void> {
     // Update power state
-    const isOn = details.enabled;
+    const isOn = details.enabled || details.deviceStatus === 'on';
     this.service.updateCharacteristic(this.platform.Characteristic.Active, isOn ? 1 : 0);
 
-    // Update rotation speed
-    const speed = details.speed ?? 0;
-    const maxSpeed = this.device.maxSpeed ?? 5; // Default to 5 if maxSpeed is not defined
-    const rotationSpeed = Math.round((speed / maxSpeed) * 100);
+    // Update rotation speed - convert device speed (1-5) to HomeKit percentage (0-100)
+    let rotationSpeed = 0;
+    if (isOn && details.speed !== undefined) {
+      switch (details.speed) {
+        case 1: rotationSpeed = 20; break;  // Sleep
+        case 2: rotationSpeed = 40; break;  // Low
+        case 3: rotationSpeed = 60; break;  // Medium
+        case 4: rotationSpeed = 80; break;  // High
+        case 5: rotationSpeed = 100; break; // Turbo
+      }
+    }
     this.service.updateCharacteristic(this.platform.Characteristic.RotationSpeed, rotationSpeed);
   }
 
@@ -120,6 +127,8 @@ export class AirPurifierAccessory extends BaseAccessory {
         throw new Error(`Failed to turn ${isOn ? 'on' : 'off'} device`);
       }
       
+      // Update device state and characteristics
+      await this.updateDeviceSpecificStates(this.device);
       await this.persistDeviceState('deviceStatus', isOn ? 'on' : 'off');
     } catch (error) {
       this.handleDeviceError('set active state', error);

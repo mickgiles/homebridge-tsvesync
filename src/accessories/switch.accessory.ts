@@ -61,7 +61,6 @@ export class SwitchAccessory extends BaseAccessory {
 
   private async handleOnGet(): Promise<CharacteristicValue> {
     try {
-      await this.device.getDetails();
       return this.device.power || this.device.deviceStatus === 'on';
     } catch (error) {
       this.platform.log.error('Failed to get switch state:', error);
@@ -81,7 +80,6 @@ export class SwitchAccessory extends BaseAccessory {
       }
 
       // Update the device state after successful change
-      await this.device.getDetails();
     } catch (error) {
       this.platform.log.error('Failed to set switch state:', error);
       throw error;

@@ -63,10 +63,20 @@ export class FanAccessory extends BaseAccessory {
       isActive ? 1 : 0
     );
 
-    // Update rotation speed
+    // Update rotation speed - convert device speed (1-5) to HomeKit percentage (0-100)
+    let rotationSpeed = 0;
+    if (isActive && fanDetails.speed !== undefined) {
+      switch (fanDetails.speed) {
+        case 1: rotationSpeed = 20; break;  // Sleep
+        case 2: rotationSpeed = 40; break;  // Low
+        case 3: rotationSpeed = 60; break;  // Medium
+        case 4: rotationSpeed = 80; break;  // High
+        case 5: rotationSpeed = 100; break; // Turbo
+      }
+    }
     this.updateCharacteristicValue(
       this.platform.Characteristic.RotationSpeed,
-      fanDetails.speed
+      rotationSpeed
     );
   }
 
@@ -97,6 +107,8 @@ export class FanAccessory extends BaseAccessory {
         throw new Error(`Failed to turn ${isOn ? 'on' : 'off'} device`);
       }
       
+      // Update device state and characteristics
+      await this.updateDeviceSpecificStates(this.device);
       await this.persistDeviceState('deviceStatus', isOn ? 'on' : 'off');
     } catch (error) {
       this.handleDeviceError('set active state', error);

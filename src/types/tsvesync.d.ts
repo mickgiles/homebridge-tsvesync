@@ -11,7 +11,6 @@ declare module 'tsvesync' {
     subDeviceNo: number;
     isSubDevice: boolean;
     deviceStatus: string;
-    getDetails(): Promise<boolean>;
     setApiBaseUrl(url: string): void;
     turnOn(): Promise<boolean>;
     turnOff(): Promise<boolean>;
@@ -25,7 +24,6 @@ declare module 'tsvesync' {
     subDeviceNo: number;
     deviceStatus: string;
     isSubDevice: boolean;
-    getDetails(): Promise<boolean>;
     setApiBaseUrl(url: string): void;
     turnOn(): Promise<boolean>;
     turnOff(): Promise<boolean>;
