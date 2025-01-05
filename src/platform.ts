@@ -304,13 +304,14 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
    * Update device states periodically
    */
   private async updateDeviceStates() {
-    await this.updateDeviceStatesFromAPI(true);
+    await this.discoverDevices();
   }
 
   /**
    * This function discovers and registers your devices as accessories
    */
   async discoverDevices() {
+    this.logger.warn('Discovering devices');
     try {
       // Try to login first
       if (!await this.ensureLogin()) {
@@ -364,6 +365,7 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
           this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
           this.accessories.push(accessory);
         }
+        await deviceAccessory.syncDeviceState();
       }
 
       // Remove platform accessories that no longer exist
