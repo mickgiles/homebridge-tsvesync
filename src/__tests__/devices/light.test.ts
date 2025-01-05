@@ -102,7 +102,7 @@ describe('Light Device Tests', () => {
     // Create platform instance
     platform = new TSVESyncPlatform(mockLogger, defaultConfig, mockAPI);
     platform.isReady = jest.fn().mockResolvedValue(true);
-    platform.updateDeviceStatesFromAPI = jest.fn().mockResolvedValue(undefined);
+    platform.discoverDevices = jest.fn().mockResolvedValue(undefined);
 
     // Setup VeSync mock
     mockVeSync = {

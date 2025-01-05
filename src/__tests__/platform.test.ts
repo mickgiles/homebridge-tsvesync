@@ -149,7 +149,7 @@ describe('TSVESyncPlatform', () => {
       });
     });
 
-    describe('updateDeviceStatesFromAPI', () => {
+    describe('discoverDevices', () => {
       beforeEach(() => {
         // Set platform as initialized
         (platform as any).isInitialized = true;
@@ -171,7 +171,7 @@ describe('TSVESyncPlatform', () => {
         mockVeSync.login.mockResolvedValue(true);
         mockVeSync.getDevices.mockResolvedValue(true);
         
-        await platform.updateDeviceStatesFromAPI();
+        await platform.discoverDevices();
         
         expect(mockVeSync.getDevices).toHaveBeenCalled();
         expect(mockLogger.error).not.toHaveBeenCalled();
@@ -181,7 +181,7 @@ describe('TSVESyncPlatform', () => {
         mockVeSync.login.mockResolvedValue(true);
         mockVeSync.getDevices.mockResolvedValue(false);
         
-        await platform.updateDeviceStatesFromAPI();
+        await platform.discoverDevices();
         
         expect(mockVeSync.getDevices).toHaveBeenCalled();
         expect(mockLogger.error).toHaveBeenCalledWith(
@@ -200,7 +200,7 @@ describe('TSVESyncPlatform', () => {
         // getDevices call succeeds
         mockVeSync.getDevices.mockResolvedValue(true);
         
-        await platform.updateDeviceStatesFromAPI();
+        await platform.discoverDevices();
         
         expect(mockVeSync.login).toHaveBeenCalledTimes(1);
         expect(mockVeSync.getDevices).toHaveBeenCalled();
@@ -398,7 +398,7 @@ describe('TSVESyncPlatform', () => {
           expect(loginResult).toBe(true);
           
           // Then fetch devices
-          await realPlatform.updateDeviceStatesFromAPI();
+          await realPlatform.discoverDevices();
           if (process.env.DEBUG) {
             console.log('Device update completed');
           }

@@ -45,7 +45,7 @@ class TestAccessory extends BaseAccessory {
   // Override syncDeviceState to remove retry logic
   public async syncDeviceState(): Promise<boolean> {
     try {
-      await this.platform.updateDeviceStatesFromAPI();
+      await this.platform.discoverDevices();
       
       if (!this.device.deviceStatus) {
         return false;
@@ -156,7 +156,7 @@ describe('BaseAccessory', () => {
         password: 'password123',
         debug: true,
       },
-      updateDeviceStatesFromAPI: jest.fn(),
+      discoverDevices: jest.fn(),
     } as unknown as jest.Mocked<TSVESyncPlatform>;
 
     // Setup accessory mock
@@ -259,21 +259,21 @@ describe('BaseAccessory', () => {
   describe('device state management', () => {
     beforeEach(() => {
       // Reset mocks
-      mockPlatform.updateDeviceStatesFromAPI.mockReset();
+      mockPlatform.discoverDevices.mockReset();
       mockPluginLogger.error.mockReset();
     });
 
     it('should sync device state successfully', async () => {
       mockDevice.deviceStatus = 'on';
-      mockPlatform.updateDeviceStatesFromAPI.mockResolvedValue(undefined);
+      mockPlatform.discoverDevices.mockResolvedValue(undefined);
 
       await (accessory as any).syncDeviceState();
-      expect(mockPlatform.updateDeviceStatesFromAPI).toHaveBeenCalled();
+      expect(mockPlatform.discoverDevices).toHaveBeenCalled();
     });
 
     it('should handle sync failure', async () => {
       const error = new Error('Sync failed');
-      mockPlatform.updateDeviceStatesFromAPI.mockRejectedValue(error);
+      mockPlatform.discoverDevices.mockRejectedValue(error);
 
       await expect((accessory as any).syncDeviceState()).rejects.toThrow(error);
       expect(mockPluginLogger.error).toHaveBeenCalledWith(
@@ -285,11 +285,11 @@ describe('BaseAccessory', () => {
 
     it('should handle empty device details', async () => {
       mockDevice.deviceStatus = undefined;
-      mockPlatform.updateDeviceStatesFromAPI.mockResolvedValue(undefined);
+      mockPlatform.discoverDevices.mockResolvedValue(undefined);
 
       const result = await (accessory as any).syncDeviceState();
       expect(result).toBe(false);
-      expect(mockPlatform.updateDeviceStatesFromAPI).toHaveBeenCalled();
+      expect(mockPlatform.discoverDevices).toHaveBeenCalled();
     });
   });
 

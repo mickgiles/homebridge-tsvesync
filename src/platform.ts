@@ -249,58 +249,6 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
   }
 
   /**
-   * Update device states from the API
-   */
-  public async updateDeviceStatesFromAPI(isPolledUpdate = false) {
-    this.logger.warn('Updating device states from API');
-    if (!this.isInitialized) {
-      this.logger.debug('Skipping device state update - platform not initialized');
-      return;
-    }
-
-    try {
-      // Ensure we're logged in
-      const loginSuccess = await this.ensureLogin();
-      if (!loginSuccess) {
-        throw new Error('Failed to login for device state update');
-      }
-
-      // Update device data from API
-      await this.client.update();
-      
-      // Get all devices
-      const devices = this.getAllDevices();
-      if (!devices || !devices.length) {
-        if (!isPolledUpdate) {
-          this.logger.warn('No devices found during state update');
-        }
-        return;
-      }
-
-      this.logger.debug(`Updating states for ${devices.length} devices`);
-
-      // Update each device
-      for (const device of devices) {
-        const accessory = this.deviceAccessories.get(this.generateDeviceUUID(device));
-        if (accessory) {
-          try {
-            await accessory.syncDeviceState();
-          } catch (error) {
-            this.logger.error(`Failed to update state for device ${device.deviceName}:`, error);
-          }
-        }
-      }
-    } catch (error) {
-      const errorObj = error as any;
-      const errorMsg = errorObj?.msg || String(error);
-      
-      if (!isPolledUpdate) {
-        this.logger.error('Failed to update device states:', errorMsg);
-      }
-    }
-  }
-
-  /**
    * Update device states periodically
    */
   private async updateDeviceStates() {
