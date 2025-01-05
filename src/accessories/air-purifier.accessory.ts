@@ -70,6 +70,18 @@ export class AirPurifierAccessory extends BaseAccessory {
     // Update power state
     const isOn = details.enabled || details.deviceStatus === 'on';
     this.service.updateCharacteristic(this.platform.Characteristic.Active, isOn ? 1 : 0);
+    
+    // Update current state (INACTIVE = 0, IDLE = 1, PURIFYING_AIR = 2)
+    this.service.updateCharacteristic(
+      this.platform.Characteristic.CurrentAirPurifierState,
+      isOn ? 2 : 0
+    );
+
+    // Update target state (AUTO = 0, MANUAL = 1)
+    this.service.updateCharacteristic(
+      this.platform.Characteristic.TargetAirPurifierState,
+      1  // Always manual since we don't have auto mode info
+    );
 
     // Update rotation speed - convert device speed (1-5) to HomeKit percentage (0-100)
     let rotationSpeed = 0;

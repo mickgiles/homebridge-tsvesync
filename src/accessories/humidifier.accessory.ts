@@ -59,6 +59,18 @@ export class HumidifierAccessory extends BaseAccessory {
       isActive ? 1 : 0
     );
 
+    // Update current state (INACTIVE = 0, IDLE = 1, HUMIDIFYING = 2, DEHUMIDIFYING = 3)
+    this.updateCharacteristicValue(
+      this.platform.Characteristic.CurrentHumidifierDehumidifierState,
+      isActive ? 2 : 0
+    );
+
+    // Update target state (HUMIDIFIER = 1, DEHUMIDIFIER = 2, AUTO = 0)
+    this.updateCharacteristicValue(
+      this.platform.Characteristic.TargetHumidifierDehumidifierState,
+      1  // Always humidifier mode
+    );
+
     // Update rotation speed - convert device speed (1-9) to HomeKit percentage (0-100)
     let rotationSpeed = 0;
     if (isActive && humidifierDetails.speed !== undefined) {

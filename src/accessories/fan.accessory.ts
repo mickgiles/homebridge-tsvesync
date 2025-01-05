@@ -63,6 +63,12 @@ export class FanAccessory extends BaseAccessory {
       isActive ? 1 : 0
     );
 
+    // Update current state (INACTIVE = 0, IDLE = 1, BLOWING_AIR = 2)
+    this.updateCharacteristicValue(
+      this.platform.Characteristic.CurrentFanState,
+      isActive ? 2 : 0
+    );
+
     // Update rotation speed - convert device speed (1-5) to HomeKit percentage (0-100)
     let rotationSpeed = 0;
     if (isActive && fanDetails.speed !== undefined) {
