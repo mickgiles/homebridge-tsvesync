@@ -134,10 +134,7 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
       }
 
       // Get devices from API
-      const success = await this.client.getDevices();
-      if (!success) {
-        throw new Error('Failed to get devices from API');
-      }
+      await this.client.update();
 
       // Discover devices
       await this.discoverDevices();
@@ -269,10 +266,7 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
       }
 
       // Update device data from API
-      const success = await this.client.update();
-      if (!success) {
-        this.logger.error('Failed to get devices from API');
-      }
+      await this.client.update();
       
       // Get all devices
       const devices = this.getAllDevices();
@@ -323,11 +317,8 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
         return;
       }
 
-      // // Update device data from API
-      // const success = await this.client.update();
-      // if (!success) {
-      //   this.logger.error('Failed to get devices from API');
-      // }
+      // Update device data from API
+      await this.client.update();
 
       // Get all devices
       const devices = this.getAllDevices();

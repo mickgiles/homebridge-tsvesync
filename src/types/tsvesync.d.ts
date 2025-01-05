@@ -50,7 +50,6 @@ declare module 'tsvesync' {
     purifiers: VeSyncDeviceWithPower[];
 
     login(): Promise<boolean>;
-    getDevices(): Promise<boolean>;
-    update(): Promise<boolean>;
+    update(): Promise<void>;
   }
 } 
