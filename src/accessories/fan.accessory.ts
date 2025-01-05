@@ -33,41 +33,12 @@ export class FanAccessory extends BaseAccessory {
       this.setActive.bind(this)
     );
 
-    // Set up optional characteristics based on device capabilities
-    const capabilities = this.getDeviceCapabilities();
-
-    if (capabilities.hasSpeed) {
-      this.setupCharacteristic(
-        this.platform.Characteristic.RotationSpeed,
-        this.getRotationSpeed.bind(this),
-        this.handleSetRotationSpeed.bind(this)
-      );
-    }
-
-    // Add rotation direction (if supported by the device)
-    if ('setRotationDirection' in this.device) {
-      this.setupCharacteristic(
-        this.platform.Characteristic.RotationDirection,
-        this.getRotationDirection.bind(this),
-        this.setRotationDirection.bind(this)
-      );
-    }
-
-    if (capabilities.hasSwingMode) {
-      this.setupCharacteristic(
-        this.platform.Characteristic.SwingMode,
-        this.getSwingMode.bind(this),
-        this.setSwingMode.bind(this)
-      );
-    }
-
-    if (capabilities.hasChildLock) {
-      this.setupCharacteristic(
-        this.platform.Characteristic.LockPhysicalControls,
-        this.getLockPhysicalControls.bind(this),
-        this.setLockPhysicalControls.bind(this)
-      );
-    }
+    // Set up speed control
+    this.setupCharacteristic(
+      this.platform.Characteristic.RotationSpeed,
+      this.getRotationSpeed.bind(this),
+      this.handleSetRotationSpeed.bind(this)
+    );
 
     // Add Name characteristic
     this.setupCharacteristic(
@@ -83,8 +54,6 @@ export class FanAccessory extends BaseAccessory {
     const fanDetails = details as {
       deviceStatus: string;
       speed: number;
-      childLock: boolean;
-      swingMode: boolean;
     };
 
     // Update active state
@@ -94,29 +63,11 @@ export class FanAccessory extends BaseAccessory {
       isActive ? 1 : 0
     );
 
-    // Update rotation speed if supported
-    if (this.capabilities.hasSpeed) {
-      this.updateCharacteristicValue(
-        this.platform.Characteristic.RotationSpeed,
-        fanDetails.speed
-      );
-    }
-
-    // Update child lock if supported
-    if (this.capabilities.hasChildLock) {
-      this.updateCharacteristicValue(
-        this.platform.Characteristic.LockPhysicalControls,
-        fanDetails.childLock ? 1 : 0
-      );
-    }
-
-    // Update swing mode if supported
-    if (this.capabilities.hasSwingMode) {
-      this.updateCharacteristicValue(
-        this.platform.Characteristic.SwingMode,
-        fanDetails.swingMode ? 1 : 0
-      );
-    }
+    // Update rotation speed
+    this.updateCharacteristicValue(
+      this.platform.Characteristic.RotationSpeed,
+      fanDetails.speed
+    );
   }
 
   protected getDeviceCapabilities(): DeviceCapabilities {

@@ -32,62 +32,11 @@ export class AirPurifierAccessory extends BaseAccessory {
       this.setActive.bind(this)
     );
 
+    // Set up speed control
     this.setupCharacteristic(
-      this.platform.Characteristic.CurrentAirPurifierState,
-      this.getCurrentAirPurifierState.bind(this)
-    );
-
-    this.setupCharacteristic(
-      this.platform.Characteristic.TargetAirPurifierState,
-      this.getTargetAirPurifierState.bind(this),
-      this.setTargetAirPurifierState.bind(this)
-    );
-
-    // Set up optional characteristics based on device capabilities
-    const capabilities = this.getDeviceCapabilities();
-
-    if (capabilities.hasAirQuality) {
-      // Create a separate Air Quality service for air quality characteristics
-      const airQualityService = this.accessory.getService(this.platform.Service.AirQualitySensor) ||
-        this.accessory.addService(this.platform.Service.AirQualitySensor);
-
-      // Add air quality characteristics to the Air Quality service
-      airQualityService.getCharacteristic(this.platform.Characteristic.AirQuality)
-        .onGet(async () => {
-          return this.getAirQuality();
-        });
-
-      airQualityService.getCharacteristic(this.platform.Characteristic.PM2_5Density)
-        .onGet(async () => {
-          return this.getPM25Density();
-        });
-    }
-
-    if (capabilities.hasSpeed) {
-      this.setupCharacteristic(
-        this.platform.Characteristic.RotationSpeed,
-        this.getRotationSpeed.bind(this),
-        this.handleSetRotationSpeed.bind(this)
-      );
-    }
-
-    if (capabilities.hasChildLock) {
-      this.setupCharacteristic(
-        this.platform.Characteristic.LockPhysicalControls,
-        this.getLockPhysicalControls.bind(this),
-        this.setLockPhysicalControls.bind(this)
-      );
-    }
-
-    // Add filter maintenance characteristics
-    this.setupCharacteristic(
-      this.platform.Characteristic.FilterChangeIndication,
-      this.getFilterChangeIndication.bind(this)
-    );
-
-    this.setupCharacteristic(
-      this.platform.Characteristic.FilterLifeLevel,
-      this.getFilterLifeLevel.bind(this)
+      this.platform.Characteristic.RotationSpeed,
+      this.getRotationSpeed.bind(this),
+      this.handleSetRotationSpeed.bind(this)
     );
 
     // Add Name characteristic
@@ -121,31 +70,12 @@ export class AirPurifierAccessory extends BaseAccessory {
     // Update power state
     const isOn = details.enabled;
     this.service.updateCharacteristic(this.platform.Characteristic.Active, isOn ? 1 : 0);
-    this.service.updateCharacteristic(this.platform.Characteristic.CurrentAirPurifierState, isOn ? 2 : 0);
 
     // Update rotation speed
     const speed = details.speed ?? 0;
     const maxSpeed = this.device.maxSpeed ?? 5; // Default to 5 if maxSpeed is not defined
     const rotationSpeed = Math.round((speed / maxSpeed) * 100);
     this.service.updateCharacteristic(this.platform.Characteristic.RotationSpeed, rotationSpeed);
-
-    // Update air quality if available
-    if (this.capabilities.hasAirQuality) {
-      const pm25 = details.airQuality?.pm25 ?? 0;
-      const airQuality = this.convertAirQualityToHomeKit(pm25);
-      this.service.updateCharacteristic(this.platform.Characteristic.AirQuality, airQuality);
-      this.service.updateCharacteristic(this.platform.Characteristic.PM2_5Density, pm25);
-    }
-
-    // Update filter life if available
-    if (details.filterLife !== undefined) {
-      const filterLife = details.filterLife;
-      this.service.updateCharacteristic(this.platform.Characteristic.FilterLifeLevel, filterLife);
-      this.service.updateCharacteristic(
-        this.platform.Characteristic.FilterChangeIndication,
-        filterLife <= 20 ? 1 : 0
-      );
-    }
   }
 
   /**
@@ -196,53 +126,6 @@ export class AirPurifierAccessory extends BaseAccessory {
     }
   }
 
-  private async getCurrentAirPurifierState(): Promise<CharacteristicValue> {
-    return this.device.deviceStatus === 'on' ? 2 : 0; // 0 = INACTIVE, 2 = PURIFYING_AIR
-  }
-
-  private async getTargetAirPurifierState(): Promise<CharacteristicValue> {
-    return this.device.mode === 'auto' ? 1 : 0; // 0 = MANUAL, 1 = AUTO
-  }
-
-  private async setTargetAirPurifierState(value: CharacteristicValue): Promise<void> {
-    try {
-      const mode = value as number === 1 ? 'auto' : 'manual';
-      const success = await this.device.setMode(mode);
-      
-      if (!success) {
-        throw new Error(`Failed to set mode to ${mode}`);
-      }
-      
-      await this.persistDeviceState('mode', mode);
-    } catch (error) {
-      this.handleDeviceError('set target state', error);
-    }
-  }
-
-  private async getAirQuality(): Promise<CharacteristicValue> {
-    return this.device.airQuality !== undefined && this.device.airQuality !== null
-      ? this.convertAirQualityToHomeKit(this.device.airQuality)
-      : 0;
-  }
-
-  private async getPM25Density(): Promise<CharacteristicValue> {
-    // First try to get PM2.5 specific value
-    if (typeof this.device.pm25 === 'number' && !isNaN(this.device.pm25)) {
-      return this.device.pm25;
-    }
-    
-    // Fall back to general air quality value if available
-    if (typeof this.device.airQuality === 'number' && !isNaN(this.device.airQuality)) {
-      return this.device.airQuality;
-    }
-    
-    // Return 0 if no valid value is available
-    return 0;
-  }
-
-  /**
-   * Get rotation speed
-   */
   private async getRotationSpeed(): Promise<CharacteristicValue> {
     if (this.device.speed === undefined || this.device.speed === null) {
       return 0;
@@ -258,40 +141,5 @@ export class AirPurifierAccessory extends BaseAccessory {
       case 5: return 100; // Turbo
       default: return 0;
     }
-  }
-
-  private async getLockPhysicalControls(): Promise<CharacteristicValue> {
-    return this.device.childLock ? 1 : 0;
-  }
-
-  private async setLockPhysicalControls(value: CharacteristicValue): Promise<void> {
-    try {
-      if (!this.device.setChildLock) {
-        throw new Error('Device does not support child lock');
-      }
-      
-      const enabled = value as number === 1;
-      const success = await this.device.setChildLock(enabled);
-      
-      if (!success) {
-        throw new Error(`Failed to ${enabled ? 'enable' : 'disable'} child lock`);
-      }
-      
-      await this.persistDeviceState('childLock', enabled);
-    } catch (error) {
-      this.handleDeviceError('set child lock', error);
-    }
-  }
-
-  private async getFilterChangeIndication(): Promise<CharacteristicValue> {
-    return this.device.filterLife <= 20 ? 1 : 0;
-  }
-
-  private async getFilterLifeLevel(): Promise<CharacteristicValue> {
-    return this.device.filterLife;
-  }
-
-  protected async updateRotationSpeed(speed: number): Promise<void> {
-    await this.device.changeFanSpeed(speed);
   }
 } 
