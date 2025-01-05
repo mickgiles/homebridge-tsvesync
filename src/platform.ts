@@ -264,7 +264,7 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
    * This function discovers and registers your devices as accessories
    */
   async discoverDevices() {
-    this.logger.warn('Discovering devices');
+    this.logger.debug('Discovering devices');
     try {
       // Try to login first
       if (!await this.ensureLogin()) {
