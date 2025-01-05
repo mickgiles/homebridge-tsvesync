@@ -94,7 +94,7 @@ export class LightAccessory extends BaseAccessory {
   protected async updateDeviceSpecificStates(details: any): Promise<void> {
     const lightDetails = details as {
       deviceStatus: string;
-      brightness: number;
+      brightness?: number;
       colorTemp?: number;
       hue?: number;
       saturation?: number;
@@ -131,7 +131,6 @@ export class LightAccessory extends BaseAccessory {
           lightDetails.hue
         );
       }
-
       if (lightDetails.saturation !== undefined) {
         this.updateCharacteristicValue(
           this.platform.Characteristic.Saturation,
@@ -139,9 +138,6 @@ export class LightAccessory extends BaseAccessory {
         );
       }
     }
-
-    // Update polling state based on active status
-    this.updatePollingState(isActive);
   }
 
   protected getDeviceCapabilities(): DeviceCapabilities {

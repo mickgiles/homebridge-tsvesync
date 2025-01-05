@@ -117,9 +117,6 @@ export class FanAccessory extends BaseAccessory {
         fanDetails.swingMode ? 1 : 0
       );
     }
-
-    // Update polling state based on active status
-    this.updatePollingState(isActive);
   }
 
   protected getDeviceCapabilities(): DeviceCapabilities {

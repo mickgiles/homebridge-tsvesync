@@ -155,9 +155,6 @@ export class HumidifierAccessory extends BaseAccessory {
         humidifierDetails.waterLevel
       );
     }
-
-    // Update polling state based on active status
-    this.updatePollingState(isActive);
   }
 
   protected getDeviceCapabilities(): DeviceCapabilities {

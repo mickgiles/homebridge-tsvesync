@@ -148,9 +148,6 @@ export class AirPurifierAccessory extends BaseAccessory {
         filterLife <= 20 ? 1 : 0
       );
     }
-
-    // Update device state based on activity
-    this.updatePollingState(isOn);
   }
 
   /**

@@ -1,7 +1,6 @@
-import { CharacteristicValue, PlatformAccessory, Service, Characteristic, WithUUID } from 'homebridge';
+import { CharacteristicValue, PlatformAccessory, Service } from 'homebridge';
 import { TSVESyncPlatform } from '../platform';
 import { DeviceCapabilities, VeSyncDeviceWithPower } from '../types/device.types';
-import { PollingManager } from '../utils/polling-manager';
 import { RetryManager } from '../utils/retry';
 import { LogContext, PluginLogger } from '../utils/logger';
 
@@ -10,7 +9,6 @@ export abstract class BaseAccessory {
   protected readonly platform: TSVESyncPlatform;
   protected readonly accessory: PlatformAccessory;
   protected readonly device: VeSyncDeviceWithPower;
-  private readonly pollingManager: PollingManager;
   private readonly retryManager: RetryManager;
   private readonly logger: PluginLogger;
   private needsRetry = false;
@@ -18,8 +16,6 @@ export abstract class BaseAccessory {
   private initializationPromise: Promise<void>;
   private initializationResolver!: () => void;
   private isInitializing = false;
-  private initializationAttempts = 0;
-  private readonly maxInitializationAttempts = 5;
 
   constructor(
     platform: TSVESyncPlatform,
@@ -38,12 +34,7 @@ export abstract class BaseAccessory {
     // Initialize managers
     this.logger = new PluginLogger(
       this.platform.log,
-      this.platform.debug
-    );
-
-    this.pollingManager = new PollingManager(
-      this.platform.log,
-      this.platform.config.polling
+      this.platform.config.debug
     );
 
     this.retryManager = new RetryManager(
@@ -54,7 +45,7 @@ export abstract class BaseAccessory {
     // Set up the accessory
     this.setupAccessory();
 
-    this.logger.info('Accessory created', this.getLogContext());
+    this.logger.debug('Accessory created', this.getLogContext());
   }
 
   /**
@@ -82,15 +73,24 @@ export abstract class BaseAccessory {
     operationName: string
   ): Promise<T> {
     const context = this.getLogContext(operationName);
-    
+    this.logger.operationStart(context);
+
     try {
-      return await this.retryManager.execute(operation, {
+      const result = await this.retryManager.execute(operation, {
         deviceName: this.device.deviceName,
         operation: operationName,
       });
+
+      this.logger.operationEnd(context);
+      return result;
     } catch (error) {
-      // Don't log here - let the error propagate up to be logged at a higher level
-      throw error;
+      const err = error instanceof Error ? error : new Error(String(error));
+      this.logger.operationEnd(context, err);
+      await this.handleDeviceError(
+        `Failed to ${operationName}`,
+        err
+      );
+      throw err;
     }
   }
 
@@ -103,13 +103,6 @@ export abstract class BaseAccessory {
    * Update device-specific states
    */
   protected abstract updateDeviceSpecificStates(details: any): Promise<void>;
-
-  /**
-   * Update device states from platform
-   */
-  public async updateFromPlatform(details: any): Promise<void> {
-    await this.updateDeviceSpecificStates(details);
-  }
 
   /**
    * Get device capabilities
@@ -136,60 +129,7 @@ export abstract class BaseAccessory {
   }
 
   /**
-   * Initialize the accessory
-   */
-  public async initialize(): Promise<void> {
-    if (this.isInitializing) {
-      return;
-    }
-
-    this.isInitializing = true;
-    try {
-      while (this.initializationAttempts < this.maxInitializationAttempts) {
-        try {
-          await this.initializeDeviceState();
-          this.isInitialized = true;
-          return;
-        } catch (error) {
-          this.initializationAttempts++;
-          
-          if (this.initializationAttempts >= this.maxInitializationAttempts) {
-            const err = error instanceof Error ? error : new Error(String(error));
-            this.logger.error(`=== INIT: Failed to initialize accessory after ${this.maxInitializationAttempts} attempts ===`, this.getLogContext(), err);
-            throw err;
-          }
-          
-          const delay = Math.min(5000 * Math.pow(2, this.initializationAttempts - 1), 40000);
-          await new Promise(resolve => setTimeout(resolve, delay));
-        }
-      }
-    } finally {
-      this.isInitializing = false;
-      this.initializationResolver();
-    }
-  }
-
-  /**
-   * Initialize the device state
-   */
-  private async initializeDeviceState(): Promise<void> {
-    
-    // Wait for platform to be ready
-    if (typeof this.platform.isReady === 'function') {
-      await this.platform.isReady();
-    }
-    
-    // Attempt to get initial device state
-    const success = await this.syncDeviceState();
-    
-    if (!success) {
-      throw new Error('Failed to get initial device state - got null details');
-    }
-    
-  }
-
-  /**
-   * Set up the accessory services and start polling
+   * Set up the accessory services
    */
   private setupAccessory(): void {
     // Set accessory information
@@ -203,39 +143,100 @@ export abstract class BaseAccessory {
 
     // Set up device-specific service
     this.setupService();
+  }
 
-    // Initialize the accessory
-    this.initializationPromise.then(() => {
-      if (!this.isInitialized) {
-        this.logger.warn('=== INIT: Device failed to initialize ===', this.getLogContext());
+  /**
+   * Initialize the accessory
+   */
+  public async initialize(): Promise<void> {
+    if (this.isInitializing) {
+      return;
+    }
+
+    this.isInitializing = true;
+    try {
+      // Initialize the device state
+      await this.initializeDeviceState();
+      this.isInitialized = true;
+      this.logger.info('Accessory initialized', this.getLogContext());
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      this.logger.error('Failed to initialize device state', this.getLogContext(), err);
+    } finally {
+      this.isInitializing = false;
+      // Signal initialization completion regardless of success
+      this.initializationResolver();
+    }
+  }
+
+  /**
+   * Initialize the device state
+   */
+  protected async initializeDeviceState(): Promise<void> {
+    try {
+      // Ensure platform is ready before proceeding
+      await this.platform.isReady();
+
+      // Get initial device details
+      const result = await this.withRetry(
+        async () => {
+          return await this.device.getDetails();
+        },
+        'get initial device details'
+      );
+      
+      if (!result) {
+        throw new Error('Failed to get initial device details');
       }
-    });
+
+      // Update device state with initial details
+      await this.updateDeviceSpecificStates(result);
+
+      // Mark as initialized
+      this.isInitialized = true;
+      this.initializationResolver();
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      this.logger.error('Failed to initialize device state', this.getLogContext(), err);
+      throw err;
+    }
   }
 
   /**
    * Sync the device state with VeSync
    */
-  public async syncDeviceState(): Promise<boolean> {
+  public async syncDeviceState(): Promise<void> {
     try {
-      const details = await this.withRetry(
+      if (this.needsRetry) {
+        this.platform.log.debug(`[${this.accessory.displayName}] Retrying previous failed operation`);
+      }
+      
+      await this.withRetry(
         async () => {
-          await this.platform.updateDeviceStatesFromAPI();
-            
-          // After getDetails(), the device object should have updated internal state
-          if (!this.device.deviceStatus) {
-            return null;
+          // First try to get device details
+          const details = await this.device.getDetails();
+          
+          if (!details) {
+            throw new Error('Failed to get device details');
           }
-            
-          await this.updateDeviceSpecificStates(this.device);
-          return this.device;
+          
+          // Then update device state with the details
+          await this.updateDeviceSpecificStates(details);
+          
+          // Clear retry flag on success
+          this.needsRetry = false;
         },
         'sync device state'
       );
-
-      return details !== null;
     } catch (error) {
-      this.isInitialized = false;
-      throw error;
+      // Set initialization state to false on error to force re-initialization
+      if (!this.isInitialized) {
+        this.logger.warn('Device not initialized, will retry initialization', this.getLogContext());
+      }
+      await this.handleDeviceError(
+        'Failed to sync device state',
+        error instanceof Error ? error : new Error(String(error))
+      );
     }
   }
 
@@ -251,47 +252,67 @@ export abstract class BaseAccessory {
   }
 
   /**
-   * Set up a characteristic with get/set handlers
+   * Helper method to set up a characteristic with get/set handlers
    */
   protected setupCharacteristic(
-    characteristic: WithUUID<new () => Characteristic>,
-    getter: () => CharacteristicValue | Promise<CharacteristicValue>,
-    setter?: (value: CharacteristicValue) => Promise<void>,
+    characteristic: any,
+    onGet?: () => Promise<CharacteristicValue>,
+    onSet?: (value: CharacteristicValue) => Promise<void>,
+    props?: Record<string, any>,
+    service?: Service
   ): void {
-    this.service
-      .getCharacteristic(characteristic)
-      .onGet(async () => {
+    const targetService = service || this.service;
+    const char = targetService.getCharacteristic(characteristic);
+    
+    if (onGet) {
+      char.onGet(async () => {
+        const context = this.getLogContext(
+          'get characteristic',
+          characteristic.name
+        );
+        
         try {
-          await this.platform.updateDeviceStatesFromAPI();
-          return await Promise.resolve(getter());
+          const value = await this.withRetry(onGet, `get ${characteristic.name}`);
+          this.logger.stateChange({ ...context, value } as LogContext);
+          return value;
         } catch (error) {
-          this.logger.error('Failed to get characteristic value', {
-            operation: 'getCharacteristic',
-            deviceName: this.accessory.displayName,
-            deviceType: this.device.deviceType,
-            characteristic: characteristic.name,
-          }, error as Error);
+          this.logger.error(
+            'Failed to get characteristic value',
+            context,
+            error as Error
+          );
           throw error;
         }
       });
-
-    if (setter) {
-      this.service
-        .getCharacteristic(characteristic)
-        .onSet(async (value) => {
-          try {
-            await setter(value);
-          } catch (error) {
-            this.logger.error('Failed to set characteristic value', {
-              operation: 'setCharacteristic',
-              deviceName: this.accessory.displayName,
-              deviceType: this.device.deviceType,
-              characteristic: characteristic.name,
-              value,
-            }, error as Error);
-            throw error;
-          }
-        });
+    }
+    
+    if (onSet) {
+      char.onSet(async (value) => {
+        const context = this.getLogContext(
+          'set characteristic',
+          characteristic.name,
+          value
+        );
+        
+        try {
+          await this.withRetry(
+            () => onSet(value),
+            `set ${characteristic.name} to ${value}`
+          );
+          this.logger.stateChange(context as LogContext);
+        } catch (error) {
+          this.logger.error(
+            'Failed to set characteristic value',
+            context,
+            error as Error
+          );
+          throw error;
+        }
+      });
+    }
+    
+    if (props) {
+      char.setProps(props);
     }
   }
 
@@ -364,38 +385,5 @@ export abstract class BaseAccessory {
     // Handle other errors
     this.logger.error(message, context, wrappedError);
     this.needsRetry = true;
-  }
-
-  /**
-   * Update polling state based on device activity
-   */
-  protected updatePollingState(isActive: boolean): void {
-    this.pollingManager.updateDeviceStates(isActive);
-  }
-
-  /**
-   * Get the current state of the device from the API
-   */
-  protected async getDeviceState(): Promise<void> {
-    try {
-      this.logger.debug('Getting device state', {
-        operation: 'getDeviceState',
-        deviceName: this.accessory.displayName,
-        deviceType: this.device.deviceType,
-      });
-      await this.platform.updateDeviceStatesFromAPI();
-      this.logger.debug('Successfully got device state', {
-        operation: 'getDeviceState',
-        deviceName: this.accessory.displayName,
-        deviceType: this.device.deviceType,
-      });
-    } catch (error) {
-      this.logger.error('Failed to get device state', {
-        operation: 'getDeviceState',
-        deviceName: this.accessory.displayName,
-        deviceType: this.device.deviceType,
-      }, error as Error);
-      throw error;
-    }
   }
 } 

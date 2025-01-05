@@ -166,9 +166,6 @@ export class OutletAccessory extends BaseAccessory {
         powerService.updateCharacteristic(this.ENERGY_UUID, outletDetails.energy);
       }
     }
-
-    // Update polling state based on active status
-    this.updatePollingState(isActive);
   }
 
   protected getDeviceCapabilities(): DeviceCapabilities {

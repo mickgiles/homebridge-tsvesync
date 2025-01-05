@@ -34,21 +34,15 @@ export class SwitchAccessory extends BaseAccessory {
     );
   }
 
+  /**
+   * Update device states based on the latest details
+   */
   protected async updateDeviceSpecificStates(details: any): Promise<void> {
-    const switchDetails = details as {
-      deviceStatus: string;
-      power?: boolean;
-    };
-
-    // Update power state
-    const isOn = switchDetails.power || switchDetails.deviceStatus === 'on';
-    this.service.updateCharacteristic(
+    const isOn = details.deviceStatus === 'on';
+    this.updateCharacteristicValue(
       this.platform.Characteristic.On,
       isOn
     );
-
-    // Update polling state based on active status
-    this.updatePollingState(isOn);
   }
 
   protected getDeviceCapabilities(): DeviceCapabilities {
