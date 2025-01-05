@@ -66,35 +66,6 @@ export abstract class BaseAccessory {
   }
 
   /**
-   * Execute an operation with retry logic
-   */
-  protected async withRetry<T>(
-    operation: () => Promise<T>,
-    operationName: string
-  ): Promise<T> {
-    const context = this.getLogContext(operationName);
-    this.logger.operationStart(context);
-
-    try {
-      const result = await this.retryManager.execute(operation, {
-        deviceName: this.device.deviceName,
-        operation: operationName,
-      });
-
-      this.logger.operationEnd(context);
-      return result;
-    } catch (error) {
-      const err = error instanceof Error ? error : new Error(String(error));
-      this.logger.operationEnd(context, err);
-      await this.handleDeviceError(
-        `Failed to ${operationName}`,
-        err
-      );
-      throw err;
-    }
-  }
-
-  /**
    * Set up the device-specific service
    */
   protected abstract setupService(): void;
@@ -155,50 +126,20 @@ export abstract class BaseAccessory {
 
     this.isInitializing = true;
     try {
-      // Initialize the device state
-      await this.initializeDeviceState();
+      // Ensure platform is ready before proceeding
+      await this.platform.isReady();
+      
+      // Update states using device info we already have from getDevices
+      await this.updateDeviceSpecificStates(this.device);
+      
       this.isInitialized = true;
-      this.logger.info('Accessory initialized', this.getLogContext());
+      this.logger.debug('Accessory initialized', this.getLogContext());
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
       this.logger.error('Failed to initialize device state', this.getLogContext(), err);
     } finally {
       this.isInitializing = false;
-      // Signal initialization completion regardless of success
       this.initializationResolver();
-    }
-  }
-
-  /**
-   * Initialize the device state
-   */
-  protected async initializeDeviceState(): Promise<void> {
-    try {
-      // Ensure platform is ready before proceeding
-      await this.platform.isReady();
-
-      // Get initial device details
-      const result = await this.withRetry(
-        async () => {
-          return await this.device.getDetails();
-        },
-        'get initial device details'
-      );
-      
-      if (!result) {
-        throw new Error('Failed to get initial device details');
-      }
-
-      // Update device state with initial details
-      await this.updateDeviceSpecificStates(result);
-
-      // Mark as initialized
-      this.isInitialized = true;
-      this.initializationResolver();
-    } catch (error) {
-      const err = error instanceof Error ? error : new Error(String(error));
-      this.logger.error('Failed to initialize device state', this.getLogContext(), err);
-      throw err;
     }
   }
 
@@ -207,32 +148,9 @@ export abstract class BaseAccessory {
    */
   public async syncDeviceState(): Promise<void> {
     try {
-      if (this.needsRetry) {
-        this.platform.log.debug(`[${this.accessory.displayName}] Retrying previous failed operation`);
-      }
-      
-      await this.withRetry(
-        async () => {
-          // First try to get device details
-          const details = await this.device.getDetails();
-          
-          if (!details) {
-            throw new Error('Failed to get device details');
-          }
-          
-          // Then update device state with the details
-          await this.updateDeviceSpecificStates(details);
-          
-          // Clear retry flag on success
-          this.needsRetry = false;
-        },
-        'sync device state'
-      );
+      // Update states using the device's internal state
+      await this.updateDeviceSpecificStates(this.device);
     } catch (error) {
-      // Set initialization state to false on error to force re-initialization
-      if (!this.isInitialized) {
-        this.logger.warn('Device not initialized, will retry initialization', this.getLogContext());
-      }
       await this.handleDeviceError(
         'Failed to sync device state',
         error instanceof Error ? error : new Error(String(error))
@@ -272,7 +190,7 @@ export abstract class BaseAccessory {
         );
         
         try {
-          const value = await this.withRetry(onGet, `get ${characteristic.name}`);
+          const value = await onGet();
           this.logger.stateChange({ ...context, value } as LogContext);
           return value;
         } catch (error) {
@@ -295,10 +213,7 @@ export abstract class BaseAccessory {
         );
         
         try {
-          await this.withRetry(
-            () => onSet(value),
-            `set ${characteristic.name} to ${value}`
-          );
+          await onSet(value); 
           this.logger.stateChange(context as LogContext);
         } catch (error) {
           this.logger.error(

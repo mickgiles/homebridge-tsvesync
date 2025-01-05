@@ -158,9 +158,7 @@ export class AirPurifierAccessory extends BaseAccessory {
     
     if (percentage === 0) {
       // Turn off the device instead of setting speed to 0
-      await this.withRetry(async () => {
-        await this.device.turnOff();
-      }, 'turn off device');
+      await this.device.turnOff();
       return;
     }
 
@@ -178,24 +176,7 @@ export class AirPurifierAccessory extends BaseAccessory {
       speed = 5; // Turbo
     }
 
-    await this.withRetry(async () => {
-      await this.device.changeFanSpeed(speed);
-    }, 'set rotation speed');
-  }
-
-  /**
-   * Handle set child lock
-   */
-  private async handleSetChildLock(value: CharacteristicValue): Promise<void> {
-    try {
-      const enabled = value as number === 1;
-      if (this.device.setChildLock) {
-        await this.device.setChildLock(enabled);
-      }
-    } catch (err) {
-      await this.handleDeviceError('set child lock', err);
-      throw err;
-    }
+    await this.device.changeFanSpeed(speed);
   }
 
   private async getActive(): Promise<CharacteristicValue> {
@@ -313,8 +294,6 @@ export class AirPurifierAccessory extends BaseAccessory {
   }
 
   protected async updateRotationSpeed(speed: number): Promise<void> {
-    await this.withRetry(async () => {
-      await this.device.changeFanSpeed(speed);
-    }, 'update rotation speed');
+    await this.device.changeFanSpeed(speed);
   }
 } 

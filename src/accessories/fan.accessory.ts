@@ -157,9 +157,7 @@ export class FanAccessory extends BaseAccessory {
     
     if (percentage === 0) {
       // Turn off the device instead of setting speed to 0
-      await this.withRetry(async () => {
-        await this.device.turnOff();
-      }, 'turn off device');
+      await this.device.turnOff();
       return;
     }
 
@@ -177,9 +175,7 @@ export class FanAccessory extends BaseAccessory {
       speed = 5; // Turbo
     }
 
-    await this.withRetry(async () => {
-      await this.device.changeFanSpeed(speed);
-    }, 'set rotation speed');
+    await this.device.changeFanSpeed(speed);
   }
 
   private async getRotationSpeed(): Promise<CharacteristicValue> {

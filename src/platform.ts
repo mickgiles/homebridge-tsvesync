@@ -87,6 +87,9 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
         }, this.updateInterval * 1000);
       } catch (error) {
         this.logger.error('Failed to initialize platform:', error);
+        // Ensure initialization is resolved even on error
+        this.isInitialized = true;
+        this.initializationResolver();
       }
     });
 
@@ -103,7 +106,20 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
    */
   public async isReady(): Promise<void> {
     if (!this.isInitialized) {
-      await this.initializationPromise;
+      try {
+        // Add a 30 second timeout to prevent infinite waiting
+        const timeoutPromise = new Promise<void>((_, reject) => {
+          setTimeout(() => reject(new Error('Platform initialization timed out')), 30000);
+        });
+
+        await Promise.race([this.initializationPromise, timeoutPromise]);
+      } catch (error) {
+        this.logger.error('Platform initialization failed:', error);
+        // Force initialization state to true to prevent further waiting
+        this.isInitialized = true;
+        this.initializationResolver();
+        throw error;
+      }
     }
   }
 
@@ -126,6 +142,10 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
       // Discover devices
       await this.discoverDevices();
 
+      // Mark as initialized before initializing accessories
+      this.isInitialized = true;
+      this.initializationResolver();
+
       // Initialize all accessories
       const initPromises = Array.from(this.deviceAccessories.entries()).map(([uuid, accessory]) => {
         const deviceName = this.accessories.find(acc => acc.UUID === uuid)?.displayName || uuid;
@@ -135,12 +155,10 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
       });
       
       await Promise.all(initPromises);
-
-      this.isInitialized = true;
-      this.initializationResolver();
     } catch (error) {
       this.logger.error('Failed to initialize platform:', error);
       // Still resolve the promise to allow retries during polling
+      this.isInitialized = true;
       this.initializationResolver();
       throw error;
     }
@@ -157,7 +175,12 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
   /**
    * Get all devices from all categories
    */
-  private getAllDevices() {
+  private async getAllDevices() {
+    // Get devices from API
+    const success = await this.client.getDevices();
+    if (!success) {
+      this.logger.error('Failed to get devices from API');
+    }
     return [
       ...this.client.fans,
       ...this.client.outlets,
@@ -237,6 +260,7 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
    * Update device states from the API
    */
   public async updateDeviceStatesFromAPI(isPolledUpdate = false) {
+    this.logger.warn('Updating device states from API');
     if (!this.isInitialized) {
       this.logger.debug('Skipping device state update - platform not initialized');
       return;
@@ -298,15 +322,8 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
         return;
       }
 
-      // Get devices from API
-      const success = await this.client.getDevices();
-      if (!success) {
-        this.logger.error('Failed to get devices from API');
-        return;
-      }
-
       // Get all devices
-      const devices = this.getAllDevices();
+      const devices = await this.getAllDevices();
 
       // Loop over the discovered devices and register each one
       for (const device of devices) {
