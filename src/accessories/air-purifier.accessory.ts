@@ -54,13 +54,11 @@ export class AirPurifierAccessory extends BaseAccessory {
       // Add air quality characteristics to the Air Quality service
       airQualityService.getCharacteristic(this.platform.Characteristic.AirQuality)
         .onGet(async () => {
-          await this.platform.updateDeviceStatesFromAPI();
           return this.getAirQuality();
         });
 
       airQualityService.getCharacteristic(this.platform.Characteristic.PM2_5Density)
         .onGet(async () => {
-          await this.platform.updateDeviceStatesFromAPI();
           return this.getPM25Density();
         });
     }
