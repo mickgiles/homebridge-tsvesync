@@ -73,9 +73,8 @@ MD5_PASS=$(echo -n "$VESYNC_PASSWORD" | md5sum | cut -d ' ' -f 1)
 
 # Step 1: Login to get token and account ID
 echo "Logging in to VeSync..."
-LOGIN_URL="$BASE_URL/cloud/v1/user/login"
-echo "Calling URL: $LOGIN_URL"
-LOGIN_RESPONSE=$(curl -s -X POST "$LOGIN_URL" \
+
+LOGIN_RESPONSE=$(curl -s -X POST "$BASE_URL/cloud/v1/user/login" \
     -H "Content-Type: application/json" \
     -H "Accept: application/json" \
     -H "Accept-Language: en" \
@@ -109,9 +108,7 @@ echo "Successfully logged in"
 
 # Step 2: Get list of devices
 echo "Getting device list..."
-DEVICES_URL="$BASE_URL/cloud/v2/deviceManaged/devices"
-echo "Calling URL: $DEVICES_URL"
-DEVICES_RESPONSE=$(curl -s -X POST "$DEVICES_URL" \
+DEVICES_RESPONSE=$(curl -s -X POST "$BASE_URL/cloud/v2/deviceManaged/devices" \
     -H "Content-Type: application/json" \
     -H "Accept: application/json" \
     -H "Accept-Language: en" \
@@ -184,9 +181,7 @@ echo "$DEVICES_RESPONSE" | jq -c '.result.list[]' | while read -r device; do
     # Get device details based on device type
     if [[ "$DEVICE_TYPE" == "ESO15-TB" ]]; then
         echo "Getting device details..."
-        DETAILS_URL="$BASE_URL/outdoorsocket15a/v1/device/devicedetail"
-        echo "Calling URL: $DETAILS_URL"
-        DETAILS_RESPONSE=$(curl -s -X POST "$DETAILS_URL" \
+        DETAILS_RESPONSE=$(curl -s -X POST "$BASE_URL/outdoorsocket15a/v1/device/devicedetail" \
             -H "Content-Type: application/json" \
             -H "accept-language: en" \
             -H "accountId: $ACCOUNT_ID" \
@@ -208,9 +203,7 @@ echo "$DEVICES_RESPONSE" | jq -c '.result.list[]' | while read -r device; do
             }')
     elif [[ "$DEVICE_TYPE" == "ESW15-USA" ]]; then
         echo "Getting 15A outlet details..."
-        DETAILS_URL="$BASE_URL/15a/v1/device/devicedetail"
-        echo "Calling URL: $DETAILS_URL"
-        DETAILS_RESPONSE=$(curl -s -X POST "$DETAILS_URL" \
+        DETAILS_RESPONSE=$(curl -s -X POST "$BASE_URL/15a/v1/device/devicedetail" \
             -H "Content-Type: application/json" \
             -H "accept-language: en" \
             -H "accountId: $ACCOUNT_ID" \
@@ -237,9 +230,7 @@ echo "$DEVICES_RESPONSE" | jq -c '.result.list[]' | while read -r device; do
         # Get energy data
         for period in week month year; do
             echo "Getting $period energy data..."
-            ENERGY_URL="$BASE_URL/15a/v1/device/energy$period"
-            echo "Calling URL: $ENERGY_URL"
-            ENERGY_RESPONSE=$(curl -s -X POST "$ENERGY_URL" \
+            ENERGY_RESPONSE=$(curl -s -X POST "$BASE_URL/15a/v1/device/energy$period" \
                 -H "Content-Type: application/json" \
                 -H "accept-language: en" \
                 -H "accountId: $ACCOUNT_ID" \
@@ -264,9 +255,7 @@ echo "$DEVICES_RESPONSE" | jq -c '.result.list[]' | while read -r device; do
         done
     elif [[ "$DEVICE_TYPE" == "ESW01-EU" ]]; then
         echo "Getting EU outlet details..."
-        DETAILS_URL="$BASE_URL/10a/v1/device/devicedetail"
-        echo "Calling URL: $DETAILS_URL"
-        DETAILS_RESPONSE=$(curl -s -X POST "$DETAILS_URL" \
+        DETAILS_RESPONSE=$(curl -s -X POST "$BASE_URL/10a/v1/device/devicedetail" \
             -H "Content-Type: application/json" \
             -H "accept-language: en" \
             -H "accountId: $ACCOUNT_ID" \
@@ -293,9 +282,7 @@ echo "$DEVICES_RESPONSE" | jq -c '.result.list[]' | while read -r device; do
         # Get energy data
         for period in week month year; do
             echo "Getting $period energy data..."
-            ENERGY_URL="$BASE_URL/10a/v1/device/energy$period"
-            echo "Calling URL: $ENERGY_URL"
-            ENERGY_RESPONSE=$(curl -s -X POST "$ENERGY_URL" \
+            ENERGY_RESPONSE=$(curl -s -X POST "$BASE_URL/10a/v1/device/energy$period" \
                 -H "Content-Type: application/json" \
                 -H "accept-language: en" \
                 -H "accountId: $ACCOUNT_ID" \
@@ -320,9 +307,7 @@ echo "$DEVICES_RESPONSE" | jq -c '.result.list[]' | while read -r device; do
         done
     elif [[ "$DEVICE_TYPE" =~ ^ESL100(CW|MC)?$ ]]; then
         echo "Getting smart bulb details..."
-        DETAILS_URL="$BASE_URL/SmartBulb/v1/device/devicedetail"
-        echo "Calling URL: $DETAILS_URL"
-        DETAILS_RESPONSE=$(curl -s -X POST "$DETAILS_URL" \
+        DETAILS_RESPONSE=$(curl -s -X POST "$BASE_URL/SmartBulb/v1/device/devicedetail" \
             -H "Content-Type: application/json" \
             -H "accept-language: en" \
             -H "accountId: $ACCOUNT_ID" \
@@ -348,9 +333,7 @@ echo "$DEVICES_RESPONSE" | jq -c '.result.list[]' | while read -r device; do
         
         # Get device status
         echo "Getting smart bulb status..."
-        STATUS_URL="$BASE_URL/SmartBulb/v1/device/devicestatus"
-        echo "Calling URL: $STATUS_URL"
-        STATUS_RESPONSE=$(curl -s -X POST "$STATUS_URL" \
+        STATUS_RESPONSE=$(curl -s -X POST "$BASE_URL/SmartBulb/v1/device/devicestatus" \
             -H "Content-Type: application/json" \
             -H "accept-language: en" \
             -H "accountId: $ACCOUNT_ID" \
@@ -369,9 +352,7 @@ echo "$DEVICES_RESPONSE" | jq -c '.result.list[]' | while read -r device; do
         echo "$STATUS_RESPONSE" | jq '.'
     elif [[ "$DEVICE_TYPE" == "XYD0001" ]]; then
         echo "Getting XYD0001 smart bulb details..."
-        DETAILS_URL="$BASE_URL/cloud/v2/deviceManaged/bypassV2"
-        echo "Calling URL: $DETAILS_URL"
-        DETAILS_RESPONSE=$(curl -s -X POST "$DETAILS_URL" \
+        DETAILS_RESPONSE=$(curl -s -X POST "$BASE_URL/cloud/v2/deviceManaged/bypassV2" \
             -H "Content-Type: application/json; charset=UTF-8" \
             -H "User-Agent: okhttp/3.12.1" \
             -d '{
@@ -400,9 +381,7 @@ echo "$DEVICES_RESPONSE" | jq -c '.result.list[]' | while read -r device; do
         
         # Get device status
         echo "Getting XYD0001 smart bulb status..."
-        STATUS_URL="$BASE_URL/cloud/v2/deviceManaged/bypassV2"
-        echo "Calling URL: $STATUS_URL"
-        STATUS_RESPONSE=$(curl -s -X POST "$STATUS_URL" \
+        STATUS_RESPONSE=$(curl -s -X POST "$BASE_URL/cloud/v2/deviceManaged/bypassV2" \
             -H "Content-Type: application/json; charset=UTF-8" \
             -H "User-Agent: okhttp/3.12.1" \
             -d '{
@@ -430,9 +409,7 @@ echo "$DEVICES_RESPONSE" | jq -c '.result.list[]' | while read -r device; do
         echo "$STATUS_RESPONSE" | jq '.'
     elif [[ "$DEVICE_TYPE" =~ ^ESWL0[13]$ ]]; then
         echo "Getting wall switch details..."
-        DETAILS_URL="$BASE_URL/inwallswitch/v1/device/devicedetail"
-        echo "Calling URL: $DETAILS_URL"
-        DETAILS_RESPONSE=$(curl -s -X POST "$DETAILS_URL" \
+        DETAILS_RESPONSE=$(curl -s -X POST "$BASE_URL/inwallswitch/v1/device/devicedetail" \
             -H "Content-Type: application/json" \
             -H "accept-language: en" \
             -H "accountId: $ACCOUNT_ID" \
@@ -457,9 +434,7 @@ echo "$DEVICES_RESPONSE" | jq -c '.result.list[]' | while read -r device; do
         echo "$DETAILS_RESPONSE" | jq '.'
     elif [[ "$DEVICE_TYPE" == "ESWD16" ]]; then
         echo "Getting dimmer switch details..."
-        DETAILS_URL="$BASE_URL/dimmer/v1/device/devicedetail"
-        echo "Calling URL: $DETAILS_URL"
-        DETAILS_RESPONSE=$(curl -s -X POST "$DETAILS_URL" \
+        DETAILS_RESPONSE=$(curl -s -X POST "$BASE_URL/dimmer/v1/device/devicedetail" \
             -H "Content-Type: application/json" \
             -H "accept-language: en" \
             -H "accountId: $ACCOUNT_ID" \
@@ -485,9 +460,7 @@ echo "$DEVICES_RESPONSE" | jq -c '.result.list[]' | while read -r device; do
         
         # Get RGB status for dimmer
         echo "Getting dimmer RGB status..."
-        RGB_URL="$BASE_URL/dimmer/v1/device/devicergbstatus"
-        echo "Calling URL: $RGB_URL"
-        RGB_RESPONSE=$(curl -s -X POST "$RGB_URL" \
+        RGB_RESPONSE=$(curl -s -X POST "$BASE_URL/dimmer/v1/device/devicergbstatus" \
             -H "Content-Type: application/json" \
             -H "accept-language: en" \
             -H "accountId: $ACCOUNT_ID" \
@@ -506,9 +479,7 @@ echo "$DEVICES_RESPONSE" | jq -c '.result.list[]' | while read -r device; do
         echo "$RGB_RESPONSE" | jq '.'
     elif [[ "$DEVICE_TYPE" == "wifi-switch-1.3" ]]; then
         echo "Getting device details..."
-        DETAILS_URL="$BASE_URL/v1/device/$DEVICE_CID/detail"
-        echo "Calling URL: $DETAILS_URL"
-        DETAILS_RESPONSE=$(curl -s -X GET "$DETAILS_URL" \
+        DETAILS_RESPONSE=$(curl -s -X GET "$BASE_URL/v1/device/$DEVICE_CID/detail" \
             -H "Content-Type: application/json" \
             -H "accept-language: en" \
             -H "accountId: $ACCOUNT_ID" \
@@ -517,9 +488,7 @@ echo "$DEVICES_RESPONSE" | jq -c '.result.list[]' | while read -r device; do
             -H "tz: America/New_York")
     elif [[ "$DEVICE_TYPE" == *"Core"* ]] || [[ "$DEVICE_TYPE" == *"LAP"* ]] || [[ "$DEVICE_TYPE" == "Dual200S" ]] || [[ "$DEVICE_TYPE" == *"LTF-"* ]] || [[ "$DEVICE_TYPE" == *"Classic"* ]] || [[ "$DEVICE_TYPE" == *"LUH"* ]] || [[ "$DEVICE_TYPE" == *"LEH"* ]]; then
         echo "Getting device details..."
-        DETAILS_URL="$BASE_URL/cloud/v2/deviceManaged/bypassV2"
-        echo "Calling URL: $DETAILS_URL"
-        DETAILS_RESPONSE=$(curl -s -X POST "$DETAILS_URL" \
+        DETAILS_RESPONSE=$(curl -s -X POST "$BASE_URL/cloud/v2/deviceManaged/bypassV2" \
             -H "Content-Type: application/json; charset=UTF-8" \
             -H "User-Agent: okhttp/3.12.1" \
             -d '{
@@ -532,12 +501,9 @@ echo "$DEVICES_RESPONSE" | jq -c '.result.list[]' | while read -r device; do
                 "deviceRegion": "US",
                 "method": "bypassV2",
                 "payload": {
-                    "data": {
-                        "type": "air",
-                        "id": 0
-                    },
-                    "method": "getPurifierStatus",
-                    "source": "APP"
+                    "method": "getHumidifierStatus",
+                    "source": "APP",
+                    "data": {}
                 },
                 "phoneBrand": "SM N9005",
                 "phoneOS": "Android",
@@ -547,9 +513,7 @@ echo "$DEVICES_RESPONSE" | jq -c '.result.list[]' | while read -r device; do
             }')
     elif [[ "$DEVICE_TYPE" == *"LV-"* ]]; then
         echo "Getting device details..."
-        DETAILS_URL="$BASE_URL/131airPurifier/v1/device/deviceDetail"
-        echo "Calling URL: $DETAILS_URL"
-        DETAILS_RESPONSE=$(curl -s -X POST "$DETAILS_URL" \
+        DETAILS_RESPONSE=$(curl -s -X POST "$BASE_URL/131airPurifier/v1/device/deviceDetail" \
             -H "Content-Type: application/json" \
             -H "accept-language: en" \
             -H "accountId: $ACCOUNT_ID" \
@@ -575,9 +539,7 @@ echo "$DEVICES_RESPONSE" | jq -c '.result.list[]' | while read -r device; do
         
         # Get device status
         echo "Getting device status..."
-        STATUS_URL="$BASE_URL/131airPurifier/v1/device/deviceStatus"
-        echo "Calling URL: $STATUS_URL"
-        STATUS_RESPONSE=$(curl -s -X POST "$STATUS_URL" \
+        STATUS_RESPONSE=$(curl -s -X POST "$BASE_URL/131airPurifier/v1/device/deviceStatus" \
             -H "Content-Type: application/json" \
             -H "accept-language: en" \
             -H "accountId: $ACCOUNT_ID" \
@@ -600,11 +562,10 @@ echo "$DEVICES_RESPONSE" | jq -c '.result.list[]' | while read -r device; do
     echo "$DETAILS_RESPONSE" | jq '.'
     
     # Get device status based on device type
-    if [[ "$DEVICE_TYPE" == *"Core"* ]] || [[ "$DEVICE_TYPE" == *"LAP"* ]] || [[ "$DEVICE_TYPE" == "Dual200S" ]] || [[ "$DEVICE_TYPE" == *"LTF-"* ]] || [[ "$DEVICE_TYPE" == *"Classic"* ]] || [[ "$DEVICE_TYPE" == *"LUH"* ]] || [[ "$DEVICE_TYPE" == *"LEH"* ]]; then
+    if [[ "$DEVICE_TYPE" == *"Core"* ]] || [[ "$DEVICE_TYPE" == *"LAP"* ]]; then
+        # Air purifiers
         echo "Getting purifier status..."
-        STATUS_URL="$BASE_URL/cloud/v2/deviceManaged/bypassV2"
-        echo "Calling URL: $STATUS_URL"
-        STATUS_RESPONSE=$(curl -s -X POST "$STATUS_URL" \
+        STATUS_RESPONSE=$(curl -s -X POST "$BASE_URL/cloud/v2/deviceManaged/bypassV2" \
             -H "Content-Type: application/json; charset=UTF-8" \
             -H "User-Agent: okhttp/3.12.1" \
             -d '{
@@ -633,6 +594,66 @@ echo "$DEVICES_RESPONSE" | jq -c '.result.list[]' | while read -r device; do
         
         echo "Purifier status for $DEVICE_NAME:"
         echo "$STATUS_RESPONSE" | jq '.'
+
+    elif [[ "$DEVICE_TYPE" == "Dual200S" ]] || [[ "$DEVICE_TYPE" == *"Classic"* ]] || [[ "$DEVICE_TYPE" == *"LUH"* ]] || [[ "$DEVICE_TYPE" == *"LEH"* ]]; then
+        # Humidifiers
+        echo "Getting humidifier status..."
+        STATUS_RESPONSE=$(curl -s -X POST "$BASE_URL/cloud/v2/deviceManaged/bypassV2" \
+            -H "Content-Type: application/json; charset=UTF-8" \
+            -H "User-Agent: okhttp/3.12.1" \
+            -d '{
+                "acceptLanguage": "en",
+                "accountID": "'"$ACCOUNT_ID"'",
+                "appVersion": "2.8.6",
+                "cid": "'"$DEVICE_CID"'",
+                "configModule": "'"$CONFIG_MODULE"'",
+                "debugMode": false,
+                "deviceRegion": "US",
+                "method": "bypassV2",
+                "payload": {
+                    "method": "getHumidifierStatus",
+                    "source": "APP",
+                    "data": {}
+                },
+                "phoneBrand": "SM N9005",
+                "phoneOS": "Android",
+                "timeZone": "America/New_York",
+                "token": "'"$TOKEN"'",
+                "traceId": "TRACE_ID"
+            }')
+        
+        echo "Humidifier status for $DEVICE_NAME:"
+        echo "$STATUS_RESPONSE" | jq '.'
+
+    elif [[ "$DEVICE_TYPE" == *"LTF-"* ]]; then
+        # Tower Fans
+        echo "Getting tower fan status..."
+        STATUS_RESPONSE=$(curl -s -X POST "$BASE_URL/cloud/v2/deviceManaged/bypassV2" \
+            -H "Content-Type: application/json; charset=UTF-8" \
+            -H "User-Agent: okhttp/3.12.1" \
+            -d '{
+                "acceptLanguage": "en",
+                "accountID": "'"$ACCOUNT_ID"'",
+                "appVersion": "2.8.6",
+                "cid": "'"$DEVICE_CID"'",
+                "configModule": "'"$CONFIG_MODULE"'",
+                "debugMode": false,
+                "deviceRegion": "US",
+                "method": "bypassV2",
+                "payload": {
+                    "method": "getTowerFanStatus",
+                    "source": "APP",
+                    "data": {}
+                },
+                "phoneBrand": "SM N9005",
+                "phoneOS": "Android",
+                "timeZone": "America/New_York",
+                "token": "'"$TOKEN"'",
+                "traceId": "TRACE_ID"
+            }')
+        
+        echo "Tower fan status for $DEVICE_NAME:"
+        echo "$STATUS_RESPONSE" | jq '.'
     fi
     
     # For outlets with energy monitoring
@@ -640,9 +661,7 @@ echo "$DEVICES_RESPONSE" | jq -c '.result.list[]' | while read -r device; do
         echo "Getting energy details for wifi-switch-1.3..."
         
         # Get weekly energy
-        WEEKLY_URL="$BASE_URL/v1/device/$DEVICE_CID/energy/week"
-        echo "Calling URL: $WEEKLY_URL"
-        WEEKLY_RESPONSE=$(curl -s -X GET "$WEEKLY_URL" \
+        WEEKLY_RESPONSE=$(curl -s -X GET "$BASE_URL/v1/device/$DEVICE_CID/energy/week" \
             -H "Content-Type: application/json" \
             -H "accept-language: en" \
             -H "accountId: $ACCOUNT_ID" \
@@ -654,9 +673,7 @@ echo "$DEVICES_RESPONSE" | jq -c '.result.list[]' | while read -r device; do
         echo "$WEEKLY_RESPONSE" | jq '.'
         
         # Get monthly energy
-        MONTHLY_URL="$BASE_URL/v1/device/$DEVICE_CID/energy/month"
-        echo "Calling URL: $MONTHLY_URL"
-        MONTHLY_RESPONSE=$(curl -s -X GET "$MONTHLY_URL" \
+        MONTHLY_RESPONSE=$(curl -s -X GET "$BASE_URL/v1/device/$DEVICE_CID/energy/month" \
             -H "Content-Type: application/json" \
             -H "accept-language: en" \
             -H "accountId: $ACCOUNT_ID" \
@@ -668,9 +685,7 @@ echo "$DEVICES_RESPONSE" | jq -c '.result.list[]' | while read -r device; do
         echo "$MONTHLY_RESPONSE" | jq '.'
         
         # Get yearly energy
-        YEARLY_URL="$BASE_URL/v1/device/$DEVICE_CID/energy/year"
-        echo "Calling URL: $YEARLY_URL"
-        YEARLY_RESPONSE=$(curl -s -X GET "$YEARLY_URL" \
+        YEARLY_RESPONSE=$(curl -s -X GET "$BASE_URL/v1/device/$DEVICE_CID/energy/year" \
             -H "Content-Type: application/json" \
             -H "accept-language: en" \
             -H "accountId: $ACCOUNT_ID" \
@@ -684,9 +699,7 @@ echo "$DEVICES_RESPONSE" | jq -c '.result.list[]' | while read -r device; do
         echo "Getting energy details for ESO15-TB..."
         
         # Get weekly energy
-        WEEKLY_URL="$BASE_URL/outdoorsocket15a/v1/device/energyweek"
-        echo "Calling URL: $WEEKLY_URL"
-        WEEKLY_RESPONSE=$(curl -s -X POST "$WEEKLY_URL" \
+        WEEKLY_RESPONSE=$(curl -s -X POST "$BASE_URL/outdoorsocket15a/v1/device/energyweek" \
             -H "Content-Type: application/json" \
             -H "accept-language: en" \
             -H "accountId: $ACCOUNT_ID" \
@@ -711,9 +724,7 @@ echo "$DEVICES_RESPONSE" | jq -c '.result.list[]' | while read -r device; do
         echo "$WEEKLY_RESPONSE" | jq '.'
         
         # Get monthly energy
-        MONTHLY_URL="$BASE_URL/outdoorsocket15a/v1/device/energymonth"
-        echo "Calling URL: $MONTHLY_URL"
-        MONTHLY_RESPONSE=$(curl -s -X POST "$MONTHLY_URL" \
+        MONTHLY_RESPONSE=$(curl -s -X POST "$BASE_URL/outdoorsocket15a/v1/device/energymonth" \
             -H "Content-Type: application/json" \
             -H "accept-language: en" \
             -H "accountId: $ACCOUNT_ID" \
@@ -738,9 +749,7 @@ echo "$DEVICES_RESPONSE" | jq -c '.result.list[]' | while read -r device; do
         echo "$MONTHLY_RESPONSE" | jq '.'
         
         # Get yearly energy
-        YEARLY_URL="$BASE_URL/outdoorsocket15a/v1/device/energyyear"
-        echo "Calling URL: $YEARLY_URL"
-        YEARLY_RESPONSE=$(curl -s -X POST "$YEARLY_URL" \
+        YEARLY_RESPONSE=$(curl -s -X POST "$BASE_URL/outdoorsocket15a/v1/device/energyyear" \
             -H "Content-Type: application/json" \
             -H "accept-language: en" \
             -H "accountId: $ACCOUNT_ID" \
@@ -767,9 +776,7 @@ echo "$DEVICES_RESPONSE" | jq -c '.result.list[]' | while read -r device; do
         echo "Getting energy details for ESW03-USA..."
         
         # Get weekly energy
-        WEEKLY_URL="$BASE_URL/10a/v1/device/energyweek"
-        echo "Calling URL: $WEEKLY_URL"
-        WEEKLY_RESPONSE=$(curl -s -X POST "$WEEKLY_URL" \
+        WEEKLY_RESPONSE=$(curl -s -X POST "$BASE_URL/10a/v1/device/energyweek" \
             -H "Content-Type: application/json" \
             -H "accept-language: en" \
             -H "accountId: $ACCOUNT_ID" \
@@ -794,9 +801,7 @@ echo "$DEVICES_RESPONSE" | jq -c '.result.list[]' | while read -r device; do
         echo "$WEEKLY_RESPONSE" | jq '.'
         
         # Get monthly energy
-        MONTHLY_URL="$BASE_URL/10a/v1/device/energymonth"
-        echo "Calling URL: $MONTHLY_URL"
-        MONTHLY_RESPONSE=$(curl -s -X POST "$MONTHLY_URL" \
+        MONTHLY_RESPONSE=$(curl -s -X POST "$BASE_URL/10a/v1/device/energymonth" \
             -H "Content-Type: application/json" \
             -H "accept-language: en" \
             -H "accountId: $ACCOUNT_ID" \
@@ -821,9 +826,7 @@ echo "$DEVICES_RESPONSE" | jq -c '.result.list[]' | while read -r device; do
         echo "$MONTHLY_RESPONSE" | jq '.'
         
         # Get yearly energy
-        YEARLY_URL="$BASE_URL/10a/v1/device/energyyear"
-        echo "Calling URL: $YEARLY_URL"
-        YEARLY_RESPONSE=$(curl -s -X POST "$YEARLY_URL" \
+        YEARLY_RESPONSE=$(curl -s -X POST "$BASE_URL/10a/v1/device/energyyear" \
             -H "Content-Type: application/json" \
             -H "accept-language: en" \
             -H "accountId: $ACCOUNT_ID" \
@@ -846,30 +849,6 @@ echo "$DEVICES_RESPONSE" | jq -c '.result.list[]' | while read -r device; do
         
         echo "Yearly energy for $DEVICE_NAME:"
         echo "$YEARLY_RESPONSE" | jq '.'
-    fi
-    
-    # For humidifiers
-    if [[ "$DEVICE_TYPE" == *"Classic"* ]] || [[ "$DEVICE_TYPE" == *"LUH"* ]] || [[ "$DEVICE_TYPE" == *"LEH"* ]]; then
-        echo "Getting humidifier status..."
-        STATUS_URL="$BASE_URL/cloud/v2/deviceManaged/bypassV2"
-        echo "Calling URL: $STATUS_URL"
-        STATUS_RESPONSE=$(curl -s -X POST "$STATUS_URL" \
-            -H "Content-Type: application/json" \
-            -d '{
-                "token": "'"$TOKEN"'",
-                "accountID": "'"$ACCOUNT_ID"'",
-                "cid": "'"$DEVICE_CID"'",
-                "configModule": "'"$CONFIG_MODULE"'",
-                "method": "bypassV2",
-                "payload": {
-                    "method": "getHumidifierStatus",
-                    "source": "APP",
-                    "data": {}
-                }
-            }')
-        
-        echo "Humidifier status for $DEVICE_NAME:"
-        echo "$STATUS_RESPONSE" | jq '.'
     fi
     
     echo "----------------------------------------"
