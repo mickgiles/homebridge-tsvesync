@@ -4,6 +4,7 @@ import { VeSync } from 'tsvesync';
 import { DeviceFactory } from './utils/device-factory';
 import { BaseAccessory } from './accessories/base.accessory';
 import { PluginLogger } from './utils/logger';
+import { createRateLimitedVeSync } from './utils/api-proxy';
 
 /**
  * HomebridgePlatform
@@ -28,6 +29,8 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
   private initializationResolver!: () => void;
   private isInitialized = false;
   private readonly logger!: PluginLogger;
+  private readonly TOKEN_EXPIRY = 60 * 60 * 1000; // 1 hour in milliseconds
+  private lastTokenRefresh: Date = new Date(0);
 
   constructor(
     public readonly log: Logger,
@@ -53,7 +56,7 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
     }
 
     // Initialize VeSync client with all configuration
-    this.client = new VeSync(
+    this.client = createRateLimitedVeSync(
       config.username,
       config.password,
       Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -205,6 +208,12 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
    * Ensure client is logged in, but avoid unnecessary logins
    */
   private async ensureLogin(forceLogin = false): Promise<boolean> {
+    // Check if token needs refresh
+    const timeSinceLastRefresh = Date.now() - this.lastTokenRefresh.getTime();
+    if (!forceLogin && timeSinceLastRefresh < this.TOKEN_EXPIRY) {
+      return true; // Token is still valid
+    }
+
     let isLoggedIn = false;
     while (!isLoggedIn) {  // Keep trying until successful
       try {
@@ -217,7 +226,7 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
         }
 
         // Need to login again
-        this.logger.debug(forceLogin ? 'Forcing new login to VeSync API' : 'Logging in to VeSync API');
+        this.logger.debug(forceLogin ? 'Forcing new login to VeSync API' : 'Refreshing VeSync API token');
         
         this.lastLoginAttempt = new Date();
         const loginResult = await this.client.login();
@@ -228,8 +237,9 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
           continue;  // Try again after backoff
         }
         
-        // Reset backoff on successful login
+        // Reset backoff and update token refresh time on successful login
         this.loginBackoffTime = 10000;
+        this.lastTokenRefresh = new Date();
         isLoggedIn = true;
         return true;
       } catch (error) {
