@@ -34,7 +34,7 @@ const FAN_MODELS = ['LTF-F422'];
 
 const OUTLET_MODELS = [
   'ESO15-TB', 'ESW15-USA', 'ESW03-USA', 'ESW01-EU',
-  'wifi-switch-1.3'
+  'ESW10-USA', 'wifi-switch-1.3'
 ];
 
 const SWITCH_MODELS = ['ESWD16', 'ESWL01', 'ESWL03'];

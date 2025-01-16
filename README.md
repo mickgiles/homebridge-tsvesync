@@ -82,7 +82,7 @@ All outlets are exposed as HomeKit outlets with the following features:
   * Power/Energy monitoring
   * Voltage monitoring
 
-- 10A Outlets (ESW03-USA, ESW01-EU)
+- 10A Outlets (ESW03-USA, ESW01-EU, ESW10-USA)
   * On/Off control
   * Power/Energy monitoring
   * Voltage monitoring

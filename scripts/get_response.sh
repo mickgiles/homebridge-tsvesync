@@ -253,8 +253,8 @@ echo "$DEVICES_RESPONSE" | jq -c '.result.list[]' | while read -r device; do
             echo "$period energy for $DEVICE_NAME:"
             echo "$ENERGY_RESPONSE" | jq '.'
         done
-    elif [[ "$DEVICE_TYPE" == "ESW01-EU" ]]; then
-        echo "Getting EU outlet details..."
+    elif [[ "$DEVICE_TYPE" == "ESW01-EU" || "$DEVICE_TYPE" == "ESW03-USA" || "$DEVICE_TYPE" == "ESW10-USA" ]]; then
+        echo "Getting 10A outlet details..."
         DETAILS_RESPONSE=$(curl -s -X POST "$BASE_URL/10a/v1/device/devicedetail" \
             -H "Content-Type: application/json" \
             -H "accept-language: en" \
@@ -556,6 +556,8 @@ echo "$DEVICES_RESPONSE" | jq -c '.result.list[]' | while read -r device; do
         
         echo "Status for $DEVICE_NAME:"
         echo "$STATUS_RESPONSE" | jq '.'
+    elif [[ "$DEVICE_TYPE" == "ESW03-USA" ]]; then
+        echo "Getting energy details for 10A outlet..."
     fi
     
     echo "Details for $DEVICE_NAME:"

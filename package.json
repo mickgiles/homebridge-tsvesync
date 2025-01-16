@@ -1,6 +1,6 @@
 {
   "name": "homebridge-tsvesync",
-  "version": "1.0.41",
+  "version": "1.0.42",
   "description": "Homebridge plugin for VeSync devices including Levoit air purifiers, humidifiers, and Etekcity smart outlets",
   "main": "dist/index.js",
   "scripts": {
@@ -72,6 +72,7 @@
     "XYD0001",
     "ESO15-TB",
     "ESW15-USA",
+    "ESW10-USA",
     "ESW03-USA",
     "ESW01-EU",
     "LTF-F422S",
@@ -97,7 +98,7 @@
     "axios": "^1.6.5",
     "dotenv": "^16.3.1",
     "js-yaml": "^4.1.0",
-    "tsvesync": "1.0.36"
+    "tsvesync": "1.0.37"
   },
   "devDependencies": {
     "@types/jest": "^29.5.11",
