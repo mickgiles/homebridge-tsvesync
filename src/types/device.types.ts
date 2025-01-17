@@ -72,8 +72,10 @@ export interface VeSyncHumidifier extends VeSyncDeviceWithPower, VeSyncDeviceWit
 export interface VeSyncFan extends VeSyncDeviceWithPower, VeSyncDeviceWithSpeed, VeSyncDeviceWithRotation {
   swingMode: boolean;
   childLock: boolean;
+  mode: 'normal' | 'auto' | 'sleep' | 'turbo';
   setSwingMode(enabled: boolean): Promise<boolean>;
   setChildLock(enabled: boolean): Promise<boolean>;
+  setMode(mode: 'normal' | 'auto' | 'sleep' | 'turbo'): Promise<boolean>;
 }
 
 export interface VeSyncBulb extends VeSyncDeviceWithPower, VeSyncDeviceWithBrightness, VeSyncDeviceWithColor {}

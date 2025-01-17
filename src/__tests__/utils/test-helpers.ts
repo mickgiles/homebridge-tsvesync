@@ -386,6 +386,7 @@ export interface MockFanConfig {
   rotationDirection?: 'clockwise' | 'counterclockwise';
   swingMode?: boolean;
   childLock?: boolean;
+  mode?: 'normal' | 'auto' | 'sleep' | 'turbo';
 }
 
 /**
@@ -398,6 +399,7 @@ export const createMockFan = (config: MockFanConfig = {}): jest.Mocked<VeSyncFan
     rotationDirection: config.rotationDirection || 'clockwise',
     swingMode: config.swingMode || false,
     childLock: config.childLock || false,
+    mode: config.mode || 'normal'
   };
 
   const mockFan = {
@@ -411,6 +413,7 @@ export const createMockFan = (config: MockFanConfig = {}): jest.Mocked<VeSyncFan
     rotationDirection: state.rotationDirection,
     swingMode: state.swingMode,
     childLock: state.childLock,
+    mode: state.mode,
     subDeviceNo: 0,
     isSubDevice: false,
     deviceRegion: 'US',
@@ -425,6 +428,7 @@ export const createMockFan = (config: MockFanConfig = {}): jest.Mocked<VeSyncFan
         rotationDirection: state.rotationDirection,
         swingMode: state.swingMode,
         childLock: state.childLock,
+        mode: state.mode
       };
     }),
     setApiBaseUrl: jest.fn(),
@@ -458,6 +462,11 @@ export const createMockFan = (config: MockFanConfig = {}): jest.Mocked<VeSyncFan
       mockFan.childLock = state.childLock;
       return true;
     }),
+    setMode: jest.fn().mockImplementation(async (mode: 'normal' | 'auto' | 'sleep' | 'turbo') => {
+      state.mode = mode;
+      mockFan.mode = state.mode;
+      return true;
+    })
   } as unknown as jest.Mocked<VeSyncFan>;
 
   return mockFan;

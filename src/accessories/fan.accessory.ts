@@ -7,6 +7,12 @@ import { DeviceCapabilities, VeSyncFan } from '../types/device.types';
 const CLOCKWISE = 1;
 const COUNTER_CLOCKWISE = 0;
 
+// Constants for fan modes
+const MODE_NORMAL = 0;
+const MODE_AUTO = 1;
+const MODE_SLEEP = 2;
+const MODE_TURBO = 3;
+
 export class FanAccessory extends BaseAccessory {
   protected readonly device: VeSyncFan;
   private readonly capabilities: DeviceCapabilities;
@@ -40,6 +46,36 @@ export class FanAccessory extends BaseAccessory {
       this.handleSetRotationSpeed.bind(this)
     );
 
+    // Set up mode control
+    this.setupCharacteristic(
+      this.platform.Characteristic.SwingMode,
+      this.getSwingMode.bind(this),
+      this.setSwingMode.bind(this)
+    );
+
+    // Set up rotation direction
+    this.setupCharacteristic(
+      this.platform.Characteristic.RotationDirection,
+      this.getRotationDirection.bind(this),
+      this.setRotationDirection.bind(this)
+    );
+
+    // Set up child lock
+    this.setupCharacteristic(
+      this.platform.Characteristic.LockPhysicalControls,
+      this.getLockPhysicalControls.bind(this),
+      this.setLockPhysicalControls.bind(this)
+    );
+
+    // Add mode control service
+    const modeService = this.accessory.getService('Fan Mode') ||
+      this.accessory.addService(this.platform.Service.Switch, 'Fan Mode', 'fan-mode');
+
+    // Set up mode characteristics
+    modeService.getCharacteristic(this.platform.Characteristic.On)
+      .onGet(() => this.getMode())
+      .onSet((value) => this.setMode(value));
+
     // Add Name characteristic
     this.setupCharacteristic(
       this.platform.Characteristic.Name,
@@ -54,6 +90,7 @@ export class FanAccessory extends BaseAccessory {
     const fanDetails = details as {
       deviceStatus: string;
       speed: number;
+      mode: 'normal' | 'auto' | 'sleep' | 'turbo';
     };
 
     // Update active state
@@ -84,6 +121,15 @@ export class FanAccessory extends BaseAccessory {
       this.platform.Characteristic.RotationSpeed,
       rotationSpeed
     );
+
+    // Update mode state
+    const modeService = this.accessory.getService('Fan Mode');
+    if (modeService && fanDetails.mode) {
+      modeService.setCharacteristic(
+        this.platform.Characteristic.On,
+        this.getModeValue(fanDetails.mode)
+      );
+    }
   }
 
   protected getDeviceCapabilities(): DeviceCapabilities {
@@ -232,6 +278,44 @@ export class FanAccessory extends BaseAccessory {
       await this.persistDeviceState('childLock', enabled);
     } catch (error) {
       this.handleDeviceError('set child lock', error);
+    }
+  }
+
+  private getModeValue(mode: 'normal' | 'auto' | 'sleep' | 'turbo'): number {
+    switch (mode) {
+      case 'normal': return MODE_NORMAL;
+      case 'auto': return MODE_AUTO;
+      case 'sleep': return MODE_SLEEP;
+      case 'turbo': return MODE_TURBO;
+      default: return MODE_NORMAL;
+    }
+  }
+
+  private getModeString(value: number): 'normal' | 'auto' | 'sleep' | 'turbo' {
+    switch (value) {
+      case MODE_AUTO: return 'auto';
+      case MODE_SLEEP: return 'sleep';
+      case MODE_TURBO: return 'turbo';
+      default: return 'normal';
+    }
+  }
+
+  private async getMode(): Promise<CharacteristicValue> {
+    return this.getModeValue(this.device.mode || 'normal');
+  }
+
+  private async setMode(value: CharacteristicValue): Promise<void> {
+    try {
+      const mode = this.getModeString(value as number);
+      const success = await this.device.setMode(mode);
+      
+      if (!success) {
+        throw new Error(`Failed to set mode to ${mode}`);
+      }
+      
+      await this.persistDeviceState('mode', mode);
+    } catch (error) {
+      this.handleDeviceError('set mode', error);
     }
   }
 } 
