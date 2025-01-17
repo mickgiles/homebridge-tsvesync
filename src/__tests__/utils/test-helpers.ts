@@ -384,7 +384,7 @@ export interface MockFanConfig {
   uuid?: string;
   speed?: number;
   rotationDirection?: 'clockwise' | 'counterclockwise';
-  swingMode?: boolean;
+  oscillationState?: boolean;
   childLock?: boolean;
   mode?: 'normal' | 'auto' | 'sleep' | 'turbo';
 }
@@ -397,7 +397,7 @@ export const createMockFan = (config: MockFanConfig = {}): jest.Mocked<VeSyncFan
     deviceStatus: 'on',
     speed: config.speed || 3,
     rotationDirection: config.rotationDirection || 'clockwise',
-    swingMode: config.swingMode || false,
+    oscillationState: config.oscillationState || false,
     childLock: config.childLock || false,
     mode: config.mode || 'normal'
   };
@@ -411,7 +411,7 @@ export const createMockFan = (config: MockFanConfig = {}): jest.Mocked<VeSyncFan
     speed: state.speed,
     maxSpeed: 5,
     rotationDirection: state.rotationDirection,
-    swingMode: state.swingMode,
+    oscillationState: state.oscillationState,
     childLock: state.childLock,
     mode: state.mode,
     subDeviceNo: 0,
@@ -426,7 +426,7 @@ export const createMockFan = (config: MockFanConfig = {}): jest.Mocked<VeSyncFan
         deviceStatus: state.deviceStatus,
         speed: state.speed,
         rotationDirection: state.rotationDirection,
-        swingMode: state.swingMode,
+        oscillationState: state.oscillationState,
         childLock: state.childLock,
         mode: state.mode
       };
@@ -452,9 +452,9 @@ export const createMockFan = (config: MockFanConfig = {}): jest.Mocked<VeSyncFan
       mockFan.rotationDirection = state.rotationDirection;
       return true;
     }),
-    setSwingMode: jest.fn().mockImplementation(async (enabled: boolean) => {
-      state.swingMode = enabled;
-      mockFan.swingMode = state.swingMode;
+    setOscillation: jest.fn().mockImplementation(async (enabled: boolean) => {
+      state.oscillationState = enabled;
+      mockFan.oscillationState = state.oscillationState;
       return true;
     }),
     setChildLock: jest.fn().mockImplementation(async (enabled: boolean) => {

@@ -70,10 +70,10 @@ export interface VeSyncAirPurifier extends VeSyncDeviceWithPower, VeSyncDeviceWi
 export interface VeSyncHumidifier extends VeSyncDeviceWithPower, VeSyncDeviceWithSpeed, VeSyncDeviceWithHumidity, VeSyncDeviceWithControls {}
 
 export interface VeSyncFan extends VeSyncDeviceWithPower, VeSyncDeviceWithSpeed, VeSyncDeviceWithRotation {
-  swingMode: boolean;
+  oscillationState: boolean;
   childLock: boolean;
   mode: 'normal' | 'auto' | 'sleep' | 'turbo';
-  setSwingMode(enabled: boolean): Promise<boolean>;
+  setOscillation(enabled: boolean): Promise<boolean>;
   setChildLock(enabled: boolean): Promise<boolean>;
   setMode(mode: 'normal' | 'auto' | 'sleep' | 'turbo'): Promise<boolean>;
 }

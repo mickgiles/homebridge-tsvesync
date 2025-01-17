@@ -91,6 +91,7 @@ export class FanAccessory extends BaseAccessory {
       deviceStatus: string;
       speed: number;
       mode: 'normal' | 'auto' | 'sleep' | 'turbo';
+      oscillationState: boolean;
     };
 
     // Update active state
@@ -122,7 +123,15 @@ export class FanAccessory extends BaseAccessory {
       rotationSpeed
     );
 
-    // Update mode state
+    // Update oscillation status
+    if ('oscillationState' in fanDetails) {
+      this.updateCharacteristicValue(
+        this.platform.Characteristic.SwingMode,
+        fanDetails.oscillationState ? 1 : 0
+      );
+    }
+
+    // Update mode
     const modeService = this.accessory.getService('Fan Mode');
     if (modeService && fanDetails.mode) {
       modeService.setCharacteristic(
@@ -236,25 +245,25 @@ export class FanAccessory extends BaseAccessory {
   }
 
   private async getSwingMode(): Promise<CharacteristicValue> {
-    return this.device.swingMode ? 1 : 0;
+    return this.device.oscillationState ? 1 : 0;
   }
 
   private async setSwingMode(value: CharacteristicValue): Promise<void> {
     try {
-      if (!this.device.setSwingMode) {
-        throw new Error('Device does not support swing mode');
+      if (!this.device.setOscillation) {
+        throw new Error('Device does not support oscillation');
       }
       
       const enabled = value as number === 1;
-      const success = await this.device.setSwingMode(enabled);
+      const success = await this.device.setOscillation(enabled);
       
       if (!success) {
-        throw new Error(`Failed to ${enabled ? 'enable' : 'disable'} swing mode`);
+        throw new Error(`Failed to ${enabled ? 'enable' : 'disable'} oscillation`);
       }
       
-      await this.persistDeviceState('swingMode', enabled);
+      await this.persistDeviceState('oscillationState', enabled);
     } catch (error) {
-      this.handleDeviceError('set swing mode', error);
+      this.handleDeviceError('set oscillation', error);
     }
   }
 
