@@ -43,6 +43,106 @@
         "required": false,
         "default": false,
         "description": "Enable debug logging for troubleshooting"
+      },
+      "exclude": {
+        "title": "Device Exclusions",
+        "type": "object",
+        "required": false,
+        "description": "Configure which devices to exclude from HomeKit",
+        "properties": {
+          "type": {
+            "title": "Exclude Device Types",
+            "type": "array",
+            "items": {
+              "title": "Device Type",
+              "type": "string",
+              "enum": ["fan", "outlet", "switch", "bulb", "purifier", "humidifier"]
+            },
+            "uniqueItems": true,
+            "description": "Select device types to exclude from HomeKit",
+            "default": []
+          },
+          "model": {
+            "title": "Exclude Device Models",
+            "type": "array",
+            "items": {
+              "title": "Device Model",
+              "type": "string",
+              "placeholder": "Core300S"
+            },
+            "uniqueItems": true,
+            "description": "Enter device models to exclude (e.g., Core300S, LV600S, ESL100)",
+            "default": []
+          },
+          "name": {
+            "title": "Exclude by Name",
+            "type": "array",
+            "items": {
+              "title": "Device Name",
+              "type": "string",
+              "placeholder": "Living Room Light"
+            },
+            "uniqueItems": true,
+            "description": "Enter exact device names to exclude (case-sensitive)",
+            "default": []
+          },
+          "namePattern": {
+            "title": "Exclude by Name Pattern",
+            "type": "array",
+            "items": {
+              "title": "Pattern",
+              "type": "string",
+              "placeholder": "Bedroom.*"
+            },
+            "uniqueItems": true,
+            "description": "Enter regex patterns to match device names for exclusion (e.g., 'Bedroom.*' to exclude all bedroom devices)",
+            "default": []
+          },
+          "id": {
+            "title": "Exclude by Device ID",
+            "type": "array",
+            "items": {
+              "title": "Device ID",
+              "type": "string",
+              "placeholder": "cid123456"
+            },
+            "uniqueItems": true,
+            "description": "Enter device IDs (cid/uuid) to exclude",
+            "default": []
+          }
+        }
+      },
+      "retry": {
+        "title": "API Retry Configuration",
+        "type": "object",
+        "required": false,
+        "description": "Configure retry behavior for API calls",
+        "properties": {
+          "maxRetries": {
+            "title": "Maximum Retries",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10,
+            "default": 3,
+            "description": "Maximum number of retry attempts for failed API calls"
+          },
+          "initialDelay": {
+            "title": "Initial Retry Delay",
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 10000,
+            "default": 2000,
+            "description": "Initial delay between retries in milliseconds"
+          },
+          "maxDelay": {
+            "title": "Maximum Retry Delay",
+            "type": "integer",
+            "minimum": 5000,
+            "maximum": 30000,
+            "default": 10000,
+            "description": "Maximum delay between retries in milliseconds"
+          }
+        }
       }
     }
   },
@@ -51,6 +151,88 @@
     "username",
     "password",
     "updateInterval",
-    "debug"
+    "debug",
+    {
+      "key": "exclude",
+      "type": "section",
+      "title": "Device Exclusions",
+      "expandable": true,
+      "expanded": false,
+      "orderable": false,
+      "items": [
+        {
+          "key": "exclude.type",
+          "type": "array",
+          "title": "Device Types to Exclude",
+          "buttonText": "Add Device Type",
+          "items": [
+            {
+              "key": "exclude.type[]",
+              "type": "select"
+            }
+          ]
+        },
+        {
+          "key": "exclude.model",
+          "type": "array",
+          "title": "Device Models to Exclude",
+          "buttonText": "Add Device Model",
+          "items": [
+            {
+              "key": "exclude.model[]",
+              "type": "string"
+            }
+          ]
+        },
+        {
+          "key": "exclude.name",
+          "type": "array",
+          "title": "Device Names to Exclude",
+          "buttonText": "Add Device Name",
+          "items": [
+            {
+              "key": "exclude.name[]",
+              "type": "string"
+            }
+          ]
+        },
+        {
+          "key": "exclude.namePattern",
+          "type": "array",
+          "title": "Name Patterns to Exclude",
+          "buttonText": "Add Name Pattern",
+          "items": [
+            {
+              "key": "exclude.namePattern[]",
+              "type": "string"
+            }
+          ]
+        },
+        {
+          "key": "exclude.id",
+          "type": "array",
+          "title": "Device IDs to Exclude",
+          "buttonText": "Add Device ID",
+          "items": [
+            {
+              "key": "exclude.id[]",
+              "type": "string"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "retry",
+      "type": "section",
+      "title": "API Retry Settings",
+      "expandable": true,
+      "expanded": false,
+      "items": [
+        "retry.maxRetries",
+        "retry.initialDelay",
+        "retry.maxDelay"
+      ]
+    }
   ]
 } 

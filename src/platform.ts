@@ -1,10 +1,11 @@
-import { API, DynamicPlatformPlugin, Logger, PlatformAccessory, PlatformConfig, Service, Characteristic } from 'homebridge';
+import { API, DynamicPlatformPlugin, Logger, PlatformAccessory, Service, Characteristic } from 'homebridge';
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings';
 import { VeSync } from 'tsvesync';
 import { DeviceFactory } from './utils/device-factory';
 import { BaseAccessory } from './accessories/base.accessory';
 import { PluginLogger } from './utils/logger';
 import { createRateLimitedVeSync } from './utils/api-proxy';
+import { DeviceExclusion, PlatformConfig as TSVESyncPlatformConfig } from './types/device.types';
 
 /**
  * HomebridgePlatform
@@ -34,7 +35,7 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
 
   constructor(
     public readonly log: Logger,
-    public readonly config: PlatformConfig,
+    public readonly config: TSVESyncPlatformConfig,
     public readonly api: API,
   ) {
     // Create initialization promise
@@ -271,6 +272,57 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
   }
 
   /**
+   * Check if a device should be excluded based on configuration
+   */
+  private shouldExcludeDevice(device: any): boolean {
+    const exclude = this.config.exclude;
+    if (!exclude) {
+      return false;
+    }
+
+    // Check device type
+    if (exclude.type?.includes(device.deviceType.toLowerCase())) {
+      this.logger.debug(`Excluding device ${device.deviceName} by type: ${device.deviceType}`);
+      return true;
+    }
+
+    // Check device model
+    if (exclude.model?.some(model => device.deviceType.toUpperCase().includes(model.toUpperCase()))) {
+      this.logger.debug(`Excluding device ${device.deviceName} by model: ${device.deviceType}`);
+      return true;
+    }
+
+    // Check exact name match
+    if (exclude.name?.includes(device.deviceName.trim())) {
+      this.logger.debug(`Excluding device ${device.deviceName} by exact name match`);
+      return true;
+    }
+
+    // Check name patterns
+    if (exclude.namePattern) {
+      for (const pattern of exclude.namePattern) {
+        try {
+          const regex = new RegExp(pattern);
+          if (regex.test(device.deviceName.trim())) {
+            this.logger.debug(`Excluding device ${device.deviceName} by name pattern: ${pattern}`);
+            return true;
+          }
+        } catch (error) {
+          this.logger.warn(`Invalid regex pattern in exclude config: ${pattern}`);
+        }
+      }
+    }
+
+    // Check device ID (cid or uuid)
+    if (exclude.id?.includes(device.cid) || exclude.id?.includes(device.uuid)) {
+      this.logger.debug(`Excluding device ${device.deviceName} by ID: ${device.cid}/${device.uuid}`);
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
    * This function discovers and registers your devices as accessories
    */
   async discoverDevices() {
@@ -304,12 +356,16 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
       }
 
       // Get all devices
-      const devices = this.getAllDevices();
+      const devices = this.getAllDevices().filter(device => !this.shouldExcludeDevice(device));
+
+      // Track processed devices for cleanup
+      const processedDeviceUUIDs = new Set<string>();
 
       // Loop over the discovered devices and register each one
       for (const device of devices) {
         // Generate a unique id for the accessory
         const uuid = this.generateDeviceUUID(device);
+        processedDeviceUUIDs.add(uuid);
 
         // Check if an accessory already exists
         let accessory = this.accessories.find(acc => acc.UUID === uuid);
@@ -369,9 +425,9 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
         }
       }
 
-      // Remove platform accessories that no longer exist
+      // Remove platform accessories that no longer exist or are now excluded
       this.accessories
-        .filter(accessory => !devices.find(device => this.generateDeviceUUID(device) === accessory.UUID))
+        .filter(accessory => !processedDeviceUUIDs.has(accessory.UUID))
         .forEach(accessory => {
           this.logger.info('Removing existing accessory:', accessory.displayName);
           this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);

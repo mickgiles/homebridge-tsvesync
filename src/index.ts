@@ -6,5 +6,5 @@ import { TSVESyncPlatform } from './platform';
  * This method registers the platform with Homebridge
  */
 export = (api: API) => {
-  api.registerPlatform(PLUGIN_NAME, PLATFORM_NAME, TSVESyncPlatform);
+  api.registerPlatform(PLUGIN_NAME, PLATFORM_NAME, TSVESyncPlatform as any);
 }; 

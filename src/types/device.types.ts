@@ -88,4 +88,28 @@ export interface VeSyncOutlet extends VeSyncDeviceWithPower {
 
 export interface VeSyncSwitch extends VeSyncDeviceWithPower {
   power?: boolean;
+}
+
+export interface DeviceExclusion {
+  type?: string[];       // Device types to exclude (e.g., "fan", "outlet")
+  model?: string[];      // Device models to exclude (e.g., "Core300S", "LV600S")
+  name?: string[];       // Device names to exclude (exact match)
+  namePattern?: string[]; // Device names to exclude (regex patterns)
+  id?: string[];         // Device IDs to exclude (cid/uuid)
+}
+
+export interface PlatformConfig {
+  platform: string;
+  name: string;
+  username: string;
+  password: string;
+  updateInterval?: number;
+  debug?: boolean;
+  apiUrl?: string;
+  exclude?: DeviceExclusion;
+  retry?: {
+    maxRetries: number;
+    initialDelay?: number;
+    maxDelay?: number;
+  };
 } 

@@ -132,7 +132,14 @@ Add the following to your Homebridge `config.json`:
             "username": "YOUR_VESYNC_EMAIL",
             "password": "YOUR_VESYNC_PASSWORD",
             "updateInterval": 30,
-            "debug": false
+            "debug": false,
+            "exclude": {
+                "type": ["fan", "outlet"],
+                "model": ["Core300S", "LV600S"],
+                "name": ["Living Room Light"],
+                "namePattern": ["Bedroom.*"],
+                "id": ["cid123456"]
+            }
         }
     ]
 }
@@ -144,6 +151,64 @@ Add the following to your Homebridge `config.json`:
 * `name` (required): Can be anything, this is the name that will appear in your Homebridge log
 * `username` (required): Your VeSync account email
 * `password` (required): Your VeSync account password
+* `updateInterval` (optional): How often to update device states in seconds (default: 300)
+* `debug` (optional): Enable debug logging (default: false)
+
+### Device Exclusions
+
+You can exclude specific devices from being added to HomeKit using the `exclude` configuration. All exclusion options are optional and can be combined:
+
+* `type`: Array of device types to exclude. Valid types are:
+  * `fan` - All fan devices
+  * `outlet` - All outlet devices
+  * `switch` - All switch devices
+  * `bulb` - All light bulb devices
+  * `purifier` - All air purifier devices
+  * `humidifier` - All humidifier devices
+
+* `model`: Array of device models to exclude. Examples:
+  * `Core300S` - Levoit Core 300S Air Purifier
+  * `LV600S` - Levoit LV600S Humidifier
+  * `ESL100` - Etekcity ESL100 Light Bulb
+
+* `name`: Array of exact device names to exclude (case-sensitive)
+  * Matches the name shown in the VeSync app
+  * Must match exactly (including spaces and case)
+  * Example: `["Living Room Light", "Bedroom Fan"]`
+
+* `namePattern`: Array of regex patterns to match device names
+  * Uses JavaScript regular expressions
+  * Case-sensitive matching
+  * Examples:
+    * `"Bedroom.*"` - Excludes all devices with names starting with "Bedroom"
+    * `".*Light"` - Excludes all devices with names ending in "Light"
+    * `"(Kitchen|Living Room).*"` - Excludes all devices with names starting with "Kitchen" or "Living Room"
+
+* `id`: Array of device IDs to exclude
+  * Can use either the device's `cid` or `uuid`
+  * Useful for excluding specific devices when you have multiple of the same model
+  * You can find the ID in the VeSync app or Homebridge logs
+
+Example configuration with all exclusion options:
+```json
+{
+    "platforms": [
+        {
+            "platform": "TSVESyncPlatform",
+            "name": "TSVESync",
+            "username": "YOUR_VESYNC_EMAIL",
+            "password": "YOUR_VESYNC_PASSWORD",
+            "exclude": {
+                "type": ["fan", "outlet"],
+                "model": ["Core300S", "LV600S"],
+                "name": ["Living Room Light", "Kitchen Outlet"],
+                "namePattern": ["Bedroom.*", ".*Nightlight"],
+                "id": ["cid123456", "cid789012"]
+            }
+        }
+    ]
+}
+```
 
 ## Features
 
