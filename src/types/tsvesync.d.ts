@@ -37,7 +37,14 @@ declare module 'tsvesync' {
       debug?: boolean,
       redact?: boolean,
       apiUrl?: string,
-      customLogger?: Logger
+      customLogger?: Logger,
+      exclusions?: {
+        type?: string[];
+        model?: string[];
+        name?: string[];
+        namePattern?: string[];
+        id?: string[];
+      }
     );
 
     fans: VeSyncDeviceWithPower[];

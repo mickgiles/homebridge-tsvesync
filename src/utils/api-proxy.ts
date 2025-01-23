@@ -1,5 +1,6 @@
 import { VeSync } from 'tsvesync';
 import { PluginLogger } from './logger';
+import { DeviceExclusion } from '../types/device.types';
 
 const RATE_LIMIT_DELAY = 500; // 500ms between API calls
 const DEBOUNCE_DELAY = 5000; // 5 second debounce for rapid changes
@@ -152,9 +153,10 @@ export const createRateLimitedVeSync = (
   debug?: boolean,
   redact?: boolean,
   apiUrl?: string,
-  customLogger?: PluginLogger
+  customLogger?: PluginLogger,
+  exclusions?: DeviceExclusion
 ): VeSync => {
-  const client = new VeSync(username, password, timeZone, debug, redact, apiUrl, customLogger);
+  const client = new VeSync(username, password, timeZone, debug, redact, apiUrl, customLogger, exclusions);
   const rateLimiter = new RateLimiter(customLogger || new PluginLogger(console as any, debug || false));
   return createRateLimitedProxy(client, rateLimiter);
 }; 

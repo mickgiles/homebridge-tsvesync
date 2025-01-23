@@ -64,7 +64,8 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
       this.debug,
       true, // redact sensitive info
       config.apiUrl,
-      this.logger
+      this.logger,
+      config.exclude
     );
 
     this.logger.debug('Initialized platform with config:', {
@@ -430,7 +431,18 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
         .filter(accessory => !processedDeviceUUIDs.has(accessory.UUID))
         .forEach(accessory => {
           this.logger.info('Removing existing accessory:', accessory.displayName);
-          this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+          try {
+            // Remove from platform's accessories array first
+            const index = this.accessories.indexOf(accessory);
+            if (index > -1) {
+              this.accessories.splice(index, 1);
+            }
+            // Then try to unregister from the bridge
+            this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+          } catch (error) {
+            this.logger.debug(`Failed to unregister accessory ${accessory.displayName}, it may have already been removed:`, error);
+          }
+          // Always clean up the device accessory handler
           this.deviceAccessories.delete(accessory.UUID);
         });
 
