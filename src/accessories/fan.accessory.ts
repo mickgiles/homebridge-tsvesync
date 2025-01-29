@@ -220,27 +220,27 @@ export class FanAccessory extends BaseAccessory {
   }
 
   private async getRotationDirection(): Promise<CharacteristicValue> {
-    return 'rotationDirection' in this.device && this.device.rotationDirection === 'clockwise' 
+    return 'oscillation' in this.device && this.device.oscillation
       ? CLOCKWISE 
       : COUNTER_CLOCKWISE;
   }
 
   private async setRotationDirection(value: CharacteristicValue): Promise<void> {
     try {
-      if (!('setRotationDirection' in this.device)) {
-        throw new Error('Device does not support rotation direction');
+      if (!('setOscillation' in this.device)) {
+        throw new Error('Device does not support oscillation');
       }
 
-      const direction = value === CLOCKWISE ? 'clockwise' : 'counterclockwise';
-      const success = await (this.device as any).setRotationDirection(direction);
+      // Map CLOCKWISE to oscillation ON, COUNTER_CLOCKWISE to oscillation OFF
+      const shouldOscillate = value === CLOCKWISE;
+      const success = await (this.device as any).setOscillation(shouldOscillate);
       
       if (!success) {
-        throw new Error(`Failed to set rotation direction to ${direction}`);
+        throw new Error(`Failed to ${shouldOscillate ? 'enable' : 'disable'} oscillation`);
       }
-      
-      await this.persistDeviceState('rotationDirection', direction);
     } catch (error) {
       this.handleDeviceError('set rotation direction', error);
+      throw error;
     }
   }
 
