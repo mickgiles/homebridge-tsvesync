@@ -1,5 +1,11 @@
 import { VeSyncBaseDevice } from 'tsvesync';
 
+export interface FanConfig {
+  module: 'VeSyncAirBypass' | 'VeSyncHumidifier' | 'VeSyncWarmHumidifier' | 'VeSyncTowerFan' | 'VeSyncAirBaseV2';
+  features: string[];
+  levels?: number[];
+}
+
 export interface DeviceCapabilities {
   hasBrightness: boolean;
   hasColorTemp: boolean;

@@ -13,9 +13,35 @@ const MODE_AUTO = 1;
 const MODE_SLEEP = 2;
 const MODE_TURBO = 3;
 
+// Fan speed levels for different device types
+const FAN_SPEED_LEVELS: { [key: string]: number[] } = {
+  'LTF-F422S-KEU': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+  'LTF-F422S-WUSR': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+  'LTF-F422_WJP': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+  'LTF-F422S-WUS': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+  'Core200S': [1, 2, 3],
+  'Core300S': [1, 2, 3, 4],
+  'Core400S': [1, 2, 3, 4],
+  'Core600S': [1, 2, 3, 4],
+  'LAP-C201S-AUSR': [1, 2, 3],
+  'LAP-C202S-WUSR': [1, 2, 3],
+  'LAP-C301S-WJP': [1, 2, 3, 4],
+  'LAP-C302S-WUSB': [1, 2, 3, 4],
+  'LAP-C301S-WAAA': [1, 2, 3, 4],
+  'LAP-C401S-WJP': [1, 2, 3, 4],
+  'LAP-C401S-WUSR': [1, 2, 3, 4],
+  'LAP-C401S-WAAA': [1, 2, 3, 4],
+  'LAP-C601S-WUS': [1, 2, 3, 4],
+  'LAP-C601S-WUSR': [1, 2, 3, 4],
+  'LAP-C601S-WEU': [1, 2, 3, 4],
+  'LV-PUR131S': [1, 2, 3],
+  'LV-RH131S': [1, 2, 3]
+};
+
 export class FanAccessory extends BaseAccessory {
   protected readonly device: VeSyncFan;
   private readonly capabilities: DeviceCapabilities;
+  private readonly speedLevels: number[];
 
   constructor(
     platform: TSVESyncPlatform,
@@ -25,6 +51,7 @@ export class FanAccessory extends BaseAccessory {
     super(platform, accessory, device);
     this.device = device;
     this.capabilities = this.getDeviceCapabilities();
+    this.speedLevels = FAN_SPEED_LEVELS[this.device.deviceType] || [1, 2, 3, 4];
   }
 
   protected setupService(): void {
@@ -107,22 +134,14 @@ export class FanAccessory extends BaseAccessory {
       isActive ? 2 : 0
     );
 
-    // Update rotation speed - convert device speed (1-5) to HomeKit percentage (0-100)
+    // Update rotation speed
     let rotationSpeed = 0;
     if (isActive && fanDetails.speed !== undefined) {
-      switch (fanDetails.speed) {
-        case 1: rotationSpeed = 8; break;    // 8%
-        case 2: rotationSpeed = 17; break;   // 17%
-        case 3: rotationSpeed = 25; break;   // 25%
-        case 4: rotationSpeed = 33; break;   // 33%
-        case 5: rotationSpeed = 42; break;   // 42%
-        case 6: rotationSpeed = 50; break;   // 50%
-        case 7: rotationSpeed = 58; break;   // 58%
-        case 8: rotationSpeed = 67; break;   // 67%
-        case 9: rotationSpeed = 75; break;   // 75%
-        case 10: rotationSpeed = 83; break;  // 83%
-        case 11: rotationSpeed = 92; break;  // 92%
-        case 12: rotationSpeed = 100; break; // 100%
+      const speedIndex = this.speedLevels.indexOf(fanDetails.speed);
+      if (speedIndex !== -1) {
+        const maxLevel = this.speedLevels.length;
+        const levelSize = 100 / maxLevel;
+        rotationSpeed = Math.round((speedIndex + 1) * levelSize);
       }
     }
     this.updateCharacteristicValue(
@@ -192,33 +211,11 @@ export class FanAccessory extends BaseAccessory {
       return;
     }
 
-    // Convert HomeKit percentage (0-100) to device speed (1-5)
-    let speed: number;
-    if (percentage <= 8) {
-      speed = 1; // Speed 1 (8%)
-    } else if (percentage <= 17) {
-      speed = 2; // Speed 2 (17%)
-    } else if (percentage <= 25) {
-      speed = 3; // Speed 3 (25%)
-    } else if (percentage <= 33) {
-      speed = 4; // Speed 4 (33%)
-    } else if (percentage <= 42) {
-      speed = 5; // Speed 5 (42%)
-    } else if (percentage <= 50) {
-      speed = 6; // Speed 6 (50%)
-    } else if (percentage <= 58) {
-      speed = 7; // Speed 7 (58%)
-    } else if (percentage <= 67) {
-      speed = 8; // Speed 8 (67%)
-    } else if (percentage <= 75) {
-      speed = 9; // Speed 9 (75%)
-    } else if (percentage <= 83) {
-      speed = 10; // Speed 10 (83%)
-    } else if (percentage <= 92) {
-      speed = 11; // Speed 11 (92%)
-    } else {
-      speed = 12; // Speed 12 (100%)
-    }
+    // Convert HomeKit percentage to device speed level
+    const maxLevel = this.speedLevels.length;
+    const levelSize = 100 / maxLevel;
+    const levelIndex = Math.min(Math.floor(percentage / levelSize), maxLevel - 1);
+    const speed = this.speedLevels[levelIndex];
 
     await this.device.changeFanSpeed(speed);
   }
@@ -228,23 +225,16 @@ export class FanAccessory extends BaseAccessory {
       return 0;
     }
 
-    // Convert device speed (1-5) to HomeKit percentage (0-100)
-    switch (this.device.speed) {
-      case 0: return 0;    // 0 (Off)
-      case 1: return 8;    // 1 (8%)
-      case 2: return 17;   // 2 (17%)
-      case 3: return 25;   // 3 (25%)
-      case 4: return 33;   // 4 (33%)
-      case 5: return 42;   // 5 (42%)
-      case 6: return 50;   // 6 (50%)
-      case 7: return 58;   // 7 (58%)
-      case 8: return 67;   // 8 (67%)
-      case 9: return 75;   // 9 (75%)
-      case 10: return 83;  // 10 (83%)
-      case 11: return 92;  // 11 (92%)
-      case 12: return 100; // 12 (100%)
-      default: return 0;   // Off
+    // Convert device speed to HomeKit percentage
+    const currentSpeed = this.device.speed;
+    const speedIndex = this.speedLevels.indexOf(currentSpeed);
+    if (speedIndex === -1) {
+      return 0;
     }
+
+    const maxLevel = this.speedLevels.length;
+    const levelSize = 100 / maxLevel;
+    return Math.round((speedIndex + 1) * levelSize);
   }
 
   private async getRotationDirection(): Promise<CharacteristicValue> {
