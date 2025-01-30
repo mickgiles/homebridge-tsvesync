@@ -111,11 +111,18 @@ export class FanAccessory extends BaseAccessory {
     let rotationSpeed = 0;
     if (isActive && fanDetails.speed !== undefined) {
       switch (fanDetails.speed) {
-        case 1: rotationSpeed = 20; break;  // Sleep
-        case 2: rotationSpeed = 40; break;  // Low
-        case 3: rotationSpeed = 60; break;  // Medium
-        case 4: rotationSpeed = 80; break;  // High
-        case 5: rotationSpeed = 100; break; // Turbo
+        case 1: rotationSpeed = 8; break;    // 8%
+        case 2: rotationSpeed = 17; break;   // 17%
+        case 3: rotationSpeed = 25; break;   // 25%
+        case 4: rotationSpeed = 33; break;   // 33%
+        case 5: rotationSpeed = 42; break;   // 42%
+        case 6: rotationSpeed = 50; break;   // 50%
+        case 7: rotationSpeed = 58; break;   // 58%
+        case 8: rotationSpeed = 67; break;   // 67%
+        case 9: rotationSpeed = 75; break;   // 75%
+        case 10: rotationSpeed = 83; break;  // 83%
+        case 11: rotationSpeed = 92; break;  // 92%
+        case 12: rotationSpeed = 100; break; // 100%
       }
     }
     this.updateCharacteristicValue(
@@ -187,16 +194,30 @@ export class FanAccessory extends BaseAccessory {
 
     // Convert HomeKit percentage (0-100) to device speed (1-5)
     let speed: number;
-    if (percentage <= 20) {
-      speed = 1; // Sleep
-    } else if (percentage <= 40) {
-      speed = 2; // Low
-    } else if (percentage <= 60) {
-      speed = 3; // Medium
-    } else if (percentage <= 80) {
-      speed = 4; // High
+    if (percentage <= 8) {
+      speed = 1; // Speed 1 (8%)
+    } else if (percentage <= 17) {
+      speed = 2; // Speed 2 (17%)
+    } else if (percentage <= 25) {
+      speed = 3; // Speed 3 (25%)
+    } else if (percentage <= 33) {
+      speed = 4; // Speed 4 (33%)
+    } else if (percentage <= 42) {
+      speed = 5; // Speed 5 (42%)
+    } else if (percentage <= 50) {
+      speed = 6; // Speed 6 (50%)
+    } else if (percentage <= 58) {
+      speed = 7; // Speed 7 (58%)
+    } else if (percentage <= 67) {
+      speed = 8; // Speed 8 (67%)
+    } else if (percentage <= 75) {
+      speed = 9; // Speed 9 (75%)
+    } else if (percentage <= 83) {
+      speed = 10; // Speed 10 (83%)
+    } else if (percentage <= 92) {
+      speed = 11; // Speed 11 (92%)
     } else {
-      speed = 5; // Turbo
+      speed = 12; // Speed 12 (100%)
     }
 
     await this.device.changeFanSpeed(speed);
@@ -209,13 +230,20 @@ export class FanAccessory extends BaseAccessory {
 
     // Convert device speed (1-5) to HomeKit percentage (0-100)
     switch (this.device.speed) {
-      case 0: return 0;   // Off
-      case 1: return 20;  // Sleep
-      case 2: return 40;  // Low
-      case 3: return 60;  // Medium
-      case 4: return 80;  // High
-      case 5: return 100; // Turbo
-      default: return 0;
+      case 0: return 0;    // 0 (Off)
+      case 1: return 8;    // 1 (8%)
+      case 2: return 17;   // 2 (17%)
+      case 3: return 25;   // 3 (25%)
+      case 4: return 33;   // 4 (33%)
+      case 5: return 42;   // 5 (42%)
+      case 6: return 50;   // 6 (50%)
+      case 7: return 58;   // 7 (58%)
+      case 8: return 67;   // 8 (67%)
+      case 9: return 75;   // 9 (75%)
+      case 10: return 83;  // 10 (83%)
+      case 11: return 92;  // 11 (92%)
+      case 12: return 100; // 12 (100%)
+      default: return 0;   // Off
     }
   }
 
