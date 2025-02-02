@@ -3,6 +3,11 @@ import { BaseAccessory } from './base.accessory';
 import { TSVESyncPlatform } from '../platform';
 import { DeviceCapabilities, VeSyncHumidifier } from '../types/device.types';
 
+// Extended interface to include optional setMode method for humidifiers
+interface ExtendedVeSyncHumidifier extends VeSyncHumidifier {
+  setMode?(mode: 'manual'): Promise<boolean>;
+}
+
 export class HumidifierAccessory extends BaseAccessory {
   protected readonly device: VeSyncHumidifier;
   private readonly capabilities: DeviceCapabilities;
@@ -29,7 +34,14 @@ export class HumidifierAccessory extends BaseAccessory {
       this.setActive.bind(this)
     );
 
-    // Set up speed control
+    // Set up target state characteristic for mode mapping
+    this.setupCharacteristic(
+      this.platform.Characteristic.TargetHumidifierDehumidifierState,
+      async () => 1,
+      this.setTargetState.bind(this)
+    );
+
+    // Set up rotation speed characteristic
     this.setupCharacteristic(
       this.platform.Characteristic.RotationSpeed,
       this.getRotationSpeed.bind(this),
@@ -41,6 +53,29 @@ export class HumidifierAccessory extends BaseAccessory {
       this.platform.Characteristic.Name,
       async () => this.device.deviceName
     );
+
+    // Add Current Relative Humidity if supported
+    if (this.capabilities.hasHumidity) {
+      if (!this.service.testCharacteristic(this.platform.Characteristic.CurrentRelativeHumidity)) {
+        this.service.addCharacteristic(this.platform.Characteristic.CurrentRelativeHumidity);
+      }
+    }
+
+    // Add Water Level characteristic if supported (mapping inferred from water_lacks/water_tank_lifted)
+    if (this.capabilities.hasWaterLevel) {
+      if (!this.service.testCharacteristic(this.platform.Characteristic.WaterLevel)) {
+        this.service.addCharacteristic(this.platform.Characteristic.WaterLevel);
+      }
+    }
+
+    // Add Lock Physical Controls characteristic if supported
+    if (this.capabilities.hasChildLock) {
+      this.setupCharacteristic(
+        this.platform.Characteristic.LockPhysicalControls,
+        async () => false,
+        async (value: CharacteristicValue) => { throw new Error('Locking physical controls is not supported by the tsvesync API.'); }
+      );
+    }
   }
 
   /**
@@ -50,25 +85,32 @@ export class HumidifierAccessory extends BaseAccessory {
     const humidifierDetails = details as {
       deviceStatus: string;
       speed: number;
+      mode?: string;
+      humidity?: number;
+      water_lacks?: boolean;
+      water_tank_lifted?: boolean;
     };
 
-    // Update active state
     const isActive = humidifierDetails.deviceStatus === 'on';
+    // Update active state
     this.updateCharacteristicValue(
       this.platform.Characteristic.Active,
       isActive ? 1 : 0
     );
 
-    // Update current state (INACTIVE = 0, IDLE = 1, HUMIDIFYING = 2, DEHUMIDIFYING = 3)
+    // Update current state based on API mapping
+    // HomeKit states: 0 = INACTIVE, 1 = IDLE, 2 = HUMIDIFYING, 3 = DEHUMIDIFYING
+    // Mapping: if active and mode is 'manual' -> HUMIDIFYING (2), else INACTIVE (0)
+    const currentState = (isActive && humidifierDetails.mode === 'manual') ? 2 : 0;
     this.updateCharacteristicValue(
       this.platform.Characteristic.CurrentHumidifierDehumidifierState,
-      isActive ? 2 : 0
+      currentState
     );
 
-    // Update target state (HUMIDIFIER = 1, DEHUMIDIFIER = 2, AUTO = 0)
+    // Update target state; always humidifier mode (1) as only humidification is supported
     this.updateCharacteristicValue(
       this.platform.Characteristic.TargetHumidifierDehumidifierState,
-      1  // Always humidifier mode
+      1
     );
 
     // Update rotation speed - convert device speed (1-9) to HomeKit percentage (0-100)
@@ -90,6 +132,26 @@ export class HumidifierAccessory extends BaseAccessory {
       this.platform.Characteristic.RotationSpeed,
       rotationSpeed
     );
+
+    // Update relative humidity if supported
+    if (this.capabilities.hasHumidity && humidifierDetails.humidity !== undefined) {
+      this.updateCharacteristicValue(
+        this.platform.Characteristic.CurrentRelativeHumidity,
+        humidifierDetails.humidity
+      );
+    }
+
+    // Update water level if supported (inferred from water_lacks/water_tank_lifted)
+    if (this.capabilities.hasWaterLevel) {
+      const waterLow = humidifierDetails.water_lacks || humidifierDetails.water_tank_lifted;
+      if (this.service.getCharacteristic(this.platform.Characteristic.WaterLevel)) {
+        // Map water level as 0 for low water, 100 for sufficient water
+        this.updateCharacteristicValue(
+          this.platform.Characteristic.WaterLevel,
+          waterLow ? 0 : 100
+        );
+      }
+    }
   }
 
   protected getDeviceCapabilities(): DeviceCapabilities {
@@ -134,7 +196,7 @@ export class HumidifierAccessory extends BaseAccessory {
 
     // Convert device speed (1-9) to HomeKit percentage (0-100)
     switch (this.device.speed) {
-      case 0: return 0;   // Off
+      case 0: return 0;
       case 1: return 11;
       case 2: return 22;
       case 3: return 33;
@@ -145,6 +207,31 @@ export class HumidifierAccessory extends BaseAccessory {
       case 8: return 88;
       case 9: return 100;
       default: return 0;
+    }
+  }
+
+  private async setTargetState(value: CharacteristicValue): Promise<void> {
+    try {
+      // HomeKit Target State: 1 = Humidifier, 2 = Dehumidifier, 0 = Auto
+      const device = this.device as ExtendedVeSyncHumidifier;
+      if (value === 1) {
+        if (typeof device.setMode === 'function') {
+          const success = await device.setMode('manual');
+          if (!success) {
+            throw new Error('Failed to set device mode to humidification (manual)');
+          }
+        } else {
+          throw new Error('Device API does not support setMode operation');
+        }
+      } else if (value === 2) {
+        throw new Error('Dehumidification mode is not supported by this device');
+      } else {
+        throw new Error('Unsupported target state value');
+      }
+      // After setting, update the target state to reflect humidifier mode (1)
+      this.updateCharacteristicValue(this.platform.Characteristic.TargetHumidifierDehumidifierState, 1);
+    } catch (error) {
+      this.handleDeviceError('set target state', error);
     }
   }
 
