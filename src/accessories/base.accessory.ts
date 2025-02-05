@@ -42,7 +42,9 @@ export abstract class BaseAccessory {
       this.platform.config.retry
     );
 
-    // Note: setupAccessory is now called in initialize() instead of constructor
+    // Set up the accessory
+    this.setupAccessory();
+
     this.logger.debug('Accessory created', this.getLogContext());
   }
 
@@ -124,9 +126,6 @@ export abstract class BaseAccessory {
 
     this.isInitializing = true;
     try {
-      // Set up the accessory first
-      this.setupAccessory();
-      
       // Ensure platform is ready before proceeding
       await this.platform.isReady();
       
@@ -239,10 +238,6 @@ export abstract class BaseAccessory {
     characteristic: any,
     value: CharacteristicValue
   ): void {
-    if (!this.service) {
-      this.logger.debug('Service not initialized, calling setupAccessory', this.getLogContext());
-      this.setupAccessory();
-    }
     this.service.updateCharacteristic(characteristic, value);
     
     this.logger.stateChange({

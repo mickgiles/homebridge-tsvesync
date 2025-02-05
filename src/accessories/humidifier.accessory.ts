@@ -17,22 +17,9 @@ export class HumidifierAccessory extends BaseAccessory {
     accessory: PlatformAccessory,
     device: VeSyncHumidifier
   ) {
-    // Initialize capabilities
-    const capabilities: DeviceCapabilities = {
-      hasBrightness: false,
-      hasColorTemp: false,
-      hasColor: false,
-      hasSpeed: true,
-      hasHumidity: true,
-      hasAirQuality: false,
-      hasWaterLevel: true,
-      hasChildLock: true,
-      hasSwingMode: false,
-    };
-
     super(platform, accessory, device);
     this.device = device;
-    this.capabilities = capabilities;
+    this.capabilities = this.getDeviceCapabilities();
   }
 
   protected setupService(): void {
@@ -167,6 +154,20 @@ export class HumidifierAccessory extends BaseAccessory {
     }
   }
 
+  protected getDeviceCapabilities(): DeviceCapabilities {
+    return {
+      hasBrightness: false,
+      hasColorTemp: false,
+      hasColor: false,
+      hasSpeed: true,
+      hasHumidity: true,
+      hasAirQuality: false,
+      hasWaterLevel: true,
+      hasChildLock: true,
+      hasSwingMode: false,
+    };
+  }
+
   private async getActive(): Promise<CharacteristicValue> {
     return this.device.deviceStatus === 'on' ? 1 : 0;
   }
@@ -266,9 +267,5 @@ export class HumidifierAccessory extends BaseAccessory {
     }
 
     await this.device.changeFanSpeed(speed);
-  }
-
-  protected getDeviceCapabilities(): DeviceCapabilities {
-    return this.capabilities;
   }
 } 
