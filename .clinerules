@@ -39,6 +39,15 @@
 - Redact sensitive information in logs
 - Include operation context in log messages
 
+### File Editing Practices
+- Always commit working code before making significant changes
+- Make small, incremental changes rather than large rewrites
+- Initialize all properties in constructors with default values
+- Be cautious when modifying interface definitions
+- Validate type casting with explicit checks
+- Use version control for recovery if files become corrupted
+- See memory-bank/file-editing-guidelines.md for detailed guidelines
+
 ## Implementation Patterns
 
 ### Device Handling
@@ -133,3 +142,4 @@
 - State synchronization delays during high activity
 - Token refresh failures during network interruptions
 - Mapping complex device modes to HomeKit characteristics
+- File corruption during complex edits (see file-editing-guidelines.md)

@@ -29,6 +29,7 @@ interface ExtendedVeSyncHumidifier extends VeSyncHumidifier {
   mistLevel?: number;
   // Note: humidity must be non-optional to match VeSyncHumidifier interface
   humidity: number;
+  currentHumidity?: number; // Actual humidity reading in the room
   mode?: string;
   screenStatus?: 'on' | 'off';
   
@@ -421,17 +422,44 @@ export class HumidifierAccessory extends BaseAccessory {
     );
 
     // Update relative humidity if supported
-    if (this.capabilities && this.capabilities.hasHumidity && extendedDevice.humidity !== undefined) {
-      this.service.updateCharacteristic(
-        this.platform.Characteristic.CurrentRelativeHumidity,
-        extendedDevice.humidity
+    if (this.capabilities && this.capabilities.hasHumidity) {
+      // Get current humidity reading (actual humidity in the room)
+      const currentHumidity = extendedDevice.currentHumidity !== undefined ? 
+                             extendedDevice.currentHumidity : 
+                             extendedDevice.details?.current_humidity || 
+                             0;
+      
+      // [TEMP] Add logging for current humidity values
+      this.platform.log.warn(
+        `[TEMP_HUMIDITY_DEBUG] Device ${this.device.deviceName} - Current humidity values:` +
+        ` device.currentHumidity=${extendedDevice.currentHumidity},` +
+        ` details.current_humidity=${extendedDevice.details?.current_humidity},` +
+        ` using value=${currentHumidity}`
       );
       
-      // Update target humidity if available
-      const targetHumidity = extendedDevice.configuration?.auto_target_humidity || 
+      // Update current humidity characteristic if we have a valid reading
+      if (currentHumidity > 0) {
+        this.service.updateCharacteristic(
+          this.platform.Characteristic.CurrentRelativeHumidity,
+          currentHumidity
+        );
+      }
+      
+      // Get target humidity (humidity setting)
+      // According to API docs, humidifier.humidity returns auto_target_humidity from configuration
+      const targetHumidity = extendedDevice.humidity || 
+                            extendedDevice.configuration?.auto_target_humidity || 
                             extendedDevice.details?.target_humidity || 
-                            extendedDevice.targetHumidity || 
                             45; // Default to 45% if not available
+      
+      // [TEMP] Add logging for target humidity values
+      this.platform.log.warn(
+        `[TEMP_HUMIDITY_DEBUG] Device ${this.device.deviceName} - Target humidity values:` +
+        ` device.humidity=${extendedDevice.humidity},` +
+        ` configuration.auto_target_humidity=${extendedDevice.configuration?.auto_target_humidity},` +
+        ` details.target_humidity=${extendedDevice.details?.target_humidity},` +
+        ` final targetHumidity=${targetHumidity}`
+      );
       
       if (this.service.testCharacteristic(this.platform.Characteristic.RelativeHumidityHumidifierThreshold)) {
         this.service.updateCharacteristic(
@@ -881,22 +909,53 @@ export class HumidifierAccessory extends BaseAccessory {
   private async getTargetHumidity(): Promise<CharacteristicValue> {
     const extendedDevice = this.device as ExtendedVeSyncHumidifier;
     
-    // First check configuration for auto_target_humidity
+    // According to API docs, humidifier.humidity returns auto_target_humidity from configuration
+    if (typeof extendedDevice.humidity !== 'undefined') {
+      // [TEMP] Add logging for target humidity source
+      this.platform.log.warn(
+        `[TEMP_HUMIDITY_DEBUG] getTargetHumidity for ${this.device.deviceName}:` +
+        ` device.humidity=${extendedDevice.humidity},` +
+        ` configuration.auto_target_humidity=${extendedDevice.configuration?.auto_target_humidity},` +
+        ` details.target_humidity=${extendedDevice.details?.target_humidity},` +
+        ` returning from device.humidity=${extendedDevice.humidity}`
+      );
+      return extendedDevice.humidity;
+    }
+    
+    // Fall back to configuration for auto_target_humidity
     if (extendedDevice.configuration && typeof extendedDevice.configuration.auto_target_humidity !== 'undefined') {
+      // [TEMP] Add logging for target humidity source
+      this.platform.log.warn(
+        `[TEMP_HUMIDITY_DEBUG] getTargetHumidity for ${this.device.deviceName}:` +
+        ` device.humidity=${extendedDevice.humidity},` +
+        ` configuration.auto_target_humidity=${extendedDevice.configuration.auto_target_humidity},` +
+        ` details.target_humidity=${extendedDevice.details?.target_humidity},` +
+        ` returning from configuration=${extendedDevice.configuration.auto_target_humidity}`
+      );
       return extendedDevice.configuration.auto_target_humidity;
     }
     
     // Try to get target humidity from device details
     if (extendedDevice.details && typeof extendedDevice.details.target_humidity !== 'undefined') {
+      // [TEMP] Add logging for target humidity source
+      this.platform.log.warn(
+        `[TEMP_HUMIDITY_DEBUG] getTargetHumidity for ${this.device.deviceName}:` +
+        ` device.humidity=${extendedDevice.humidity},` +
+        ` configuration.auto_target_humidity=${extendedDevice.configuration?.auto_target_humidity},` +
+        ` details.target_humidity=${extendedDevice.details.target_humidity},` +
+        ` returning from details=${extendedDevice.details.target_humidity}`
+      );
       return extendedDevice.details.target_humidity;
     }
     
-    // Try to get target humidity from device property
-    if (typeof extendedDevice.targetHumidity !== 'undefined') {
-      return extendedDevice.targetHumidity;
-    }
-    
     // Default to 45% if no target humidity is available
+    this.platform.log.warn(
+      `[TEMP_HUMIDITY_DEBUG] getTargetHumidity for ${this.device.deviceName}:` +
+      ` device.humidity=${extendedDevice.humidity},` +
+      ` configuration.auto_target_humidity=${extendedDevice.configuration?.auto_target_humidity},` +
+      ` details.target_humidity=${extendedDevice.details?.target_humidity},` +
+      ` returning default=45`
+    );
     return 45;
   }
   
@@ -906,9 +965,25 @@ export class HumidifierAccessory extends BaseAccessory {
   private async setTargetHumidity(value: CharacteristicValue): Promise<void> {
     try {
       const targetHumidity = value as number;
+      
+      // [TEMP] Add logging for target humidity setting
+      this.platform.log.warn(
+        `[TEMP_HUMIDITY_DEBUG] setTargetHumidity for ${this.device.deviceName}:` +
+        ` requested value=${targetHumidity}`
+      );
+      
       this.platform.log.debug(`Setting target humidity to ${targetHumidity}% for device: ${this.device.deviceName}`);
       
       const extendedDevice = this.device as ExtendedVeSyncHumidifier;
+      
+      // [TEMP] Add logging for initial device state
+      this.platform.log.warn(
+        `[TEMP_HUMIDITY_DEBUG] setTargetHumidity initial state for ${this.device.deviceName}:` +
+        ` device.deviceStatus=${this.device.deviceStatus},` +
+        ` configuration.auto_target_humidity=${extendedDevice.configuration?.auto_target_humidity},` +
+        ` details.target_humidity=${extendedDevice.details?.target_humidity},` +
+        ` device.targetHumidity=${extendedDevice.targetHumidity}`
+      );
       
       // Check if device is off - if so, turn it on first
       if (this.device.deviceStatus !== 'on') {
@@ -926,11 +1001,29 @@ export class HumidifierAccessory extends BaseAccessory {
         // Use setHumidity for devices that support it
         this.platform.log.debug(`Setting humidity to ${targetHumidity}% using setHumidity: ${this.device.deviceName}`);
         success = await extendedDevice.setHumidity(targetHumidity);
+        
+        // [TEMP] Add logging for API method used
+        this.platform.log.warn(
+          `[TEMP_HUMIDITY_DEBUG] setTargetHumidity for ${this.device.deviceName}:` +
+          ` used method=setHumidity, success=${success}`
+        );
       } else if (typeof extendedDevice.setTargetHumidity === 'function') {
         // Use setTargetHumidity for devices that support it
         this.platform.log.debug(`Setting humidity to ${targetHumidity}% using setTargetHumidity: ${this.device.deviceName}`);
         success = await extendedDevice.setTargetHumidity(targetHumidity);
+        
+        // [TEMP] Add logging for API method used
+        this.platform.log.warn(
+          `[TEMP_HUMIDITY_DEBUG] setTargetHumidity for ${this.device.deviceName}:` +
+          ` used method=setTargetHumidity, success=${success}`
+        );
       } else {
+        // [TEMP] Add logging for missing API method
+        this.platform.log.warn(
+          `[TEMP_HUMIDITY_DEBUG] setTargetHumidity for ${this.device.deviceName}:` +
+          ` no suitable method found, setHumidity=${typeof extendedDevice.setHumidity},` +
+          ` setTargetHumidity=${typeof extendedDevice.setTargetHumidity}`
+        );
         throw new Error('Device API does not support setting target humidity');
       }
       
@@ -945,6 +1038,15 @@ export class HumidifierAccessory extends BaseAccessory {
         // Log the target humidity after setting
         const currentTarget = extendedDevice.details?.target_humidity || extendedDevice.targetHumidity;
         this.platform.log.debug(`Device ${this.device.deviceName} target humidity after setting: ${currentTarget}%`);
+        
+        // [TEMP] Add logging for device state after API call
+        this.platform.log.warn(
+          `[TEMP_HUMIDITY_DEBUG] setTargetHumidity result for ${this.device.deviceName}:` +
+          ` success=${success},` +
+          ` new configuration.auto_target_humidity=${extendedDevice.configuration?.auto_target_humidity},` +
+          ` new details.target_humidity=${extendedDevice.details?.target_humidity},` +
+          ` new device.targetHumidity=${extendedDevice.targetHumidity}`
+        );
       }
       
       // Update the target humidity characteristic
@@ -959,6 +1061,11 @@ export class HumidifierAccessory extends BaseAccessory {
       // Persist the target humidity
       await this.persistDeviceState('targetHumidity', targetHumidity);
     } catch (error) {
+      // [TEMP] Add logging for errors
+      this.platform.log.warn(
+        `[TEMP_HUMIDITY_DEBUG] setTargetHumidity error for ${this.device.deviceName}:` +
+        ` error=${error instanceof Error ? error.message : String(error)}`
+      );
       this.handleDeviceError('set target humidity', error);
     }
   }
