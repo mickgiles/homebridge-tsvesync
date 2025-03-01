@@ -129,7 +129,21 @@ export abstract class BaseAccessory {
       // Ensure platform is ready before proceeding
       await this.platform.isReady();
       
-      // Update states using device info we already have from getDevices
+      // Try to refresh the device details first
+      try {
+        // Use type assertion to access potential getDetails method
+        const deviceWithDetails = this.device as any;
+        if (typeof deviceWithDetails.getDetails === 'function') {
+          this.logger.debug('Refreshing device details during initialization', this.getLogContext());
+          await deviceWithDetails.getDetails();
+          this.logger.debug(`Device status after refresh: ${this.device.deviceStatus}`, this.getLogContext());
+        }
+      } catch (refreshError) {
+        this.logger.warn('Failed to refresh device details during initialization', 
+          this.getLogContext(), refreshError instanceof Error ? refreshError : new Error(String(refreshError)));
+      }
+      
+      // Update states using device info we have
       await this.updateDeviceSpecificStates(this.device);
       
       this.isInitialized = true;
@@ -143,12 +157,59 @@ export abstract class BaseAccessory {
     }
   }
 
+  // Cache for device details to reduce API calls
+  private deviceDetailsCache: any = null;
+  private lastDetailsFetch = 0;
+  private readonly CACHE_TTL = 60 * 1000; // 1 minute cache TTL
+
   /**
    * Sync the device state with VeSync
    */
   public async syncDeviceState(): Promise<void> {
     try {
-      // Update states using the device's internal state
+      // Try to refresh the device details first, using cache when possible
+      try {
+        // Use type assertion to access potential getDetails method
+        const deviceWithDetails = this.device as any;
+        if (typeof deviceWithDetails.getDetails === 'function') {
+          const now = Date.now();
+          const shouldUseCache = this.deviceDetailsCache !== null && 
+                                (now - this.lastDetailsFetch < this.CACHE_TTL);
+          
+          if (shouldUseCache) {
+            this.logger.debug('Using cached device details', this.getLogContext());
+            // Apply cached details to device if available
+            if (this.deviceDetailsCache) {
+              Object.assign(deviceWithDetails, this.deviceDetailsCache);
+            }
+          } else {
+            this.logger.debug('Refreshing device details during sync', this.getLogContext());
+            const refreshResult = await deviceWithDetails.getDetails();
+            
+            // Check if the API call was blocked due to quota
+            if (refreshResult === null) {
+              this.logger.warn('Device refresh skipped due to API quota limits', this.getLogContext());
+              // Continue with existing device state or cached state if available
+            } else {
+              this.logger.debug(`Device status after refresh: ${this.device.deviceStatus}`, this.getLogContext());
+              // Update cache with fresh data
+              this.deviceDetailsCache = { ...deviceWithDetails };
+              this.lastDetailsFetch = now;
+            }
+          }
+        }
+      } catch (refreshError) {
+        // Check if this is a quota error
+        const errorMsg = String(refreshError);
+        if (errorMsg.includes('quota') || errorMsg.includes('rate limit')) {
+          this.logger.warn('API quota exceeded during device refresh', this.getLogContext());
+        } else {
+          this.logger.warn('Failed to refresh device details during sync', 
+            this.getLogContext(), refreshError instanceof Error ? refreshError : new Error(String(refreshError)));
+        }
+      }
+      
+      // Update states using the device's internal state (even if refresh failed)
       await this.updateDeviceSpecificStates(this.device);
     } catch (error) {
       await this.handleDeviceError(
@@ -285,6 +346,12 @@ export abstract class BaseAccessory {
       return;
     }
 
+    // Handle quota limit error
+    if (error?.error?.code === -16906086 || error?.error?.msg?.includes('quota')) {
+      this.logger.warn(`API quota exceeded`, context, wrappedError);
+      return;
+    }
+
     // Handle rate limit error
     if (error?.message?.includes('rate limit') || error?.message?.includes('429')) {
       this.logger.warn(`Hit API rate limit (attempt ${retryCount})`, context, wrappedError);
@@ -301,4 +368,4 @@ export abstract class BaseAccessory {
     this.logger.error(message, context, wrappedError);
     this.needsRetry = true;
   }
-} 
+}

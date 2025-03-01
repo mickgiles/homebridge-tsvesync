@@ -48,3 +48,6 @@ debug.log
 
 # Optional eslint cache
 .eslintcache 
+
+memory-bank
+

@@ -65,7 +65,8 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
       true, // redact sensitive info
       config.apiUrl,
       this.logger,
-      config.exclude
+      config.exclude,
+      { quotaManagement: config.quotaManagement || { enabled: true } }
     );
 
     this.logger.debug('Initialized platform with config:', {
@@ -86,10 +87,15 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
         // Initialize platform
         await this.initializePlatform();
         
-        // Set up device update interval
-        this.deviceUpdateInterval = setInterval(() => {
-          this.updateDeviceStates();
-        }, this.updateInterval * 1000);
+    // Set up device update interval - default is 30 seconds, but we'll increase it to reduce API calls
+    const effectiveUpdateInterval = Math.max(this.updateInterval, 120); // Minimum 2 minutes (120 seconds)
+    this.deviceUpdateInterval = setInterval(() => {
+      this.updateDeviceStates();
+    }, effectiveUpdateInterval * 1000);
+    
+    if (effectiveUpdateInterval > this.updateInterval) {
+      this.logger.warn(`Increased update interval from ${this.updateInterval} to ${effectiveUpdateInterval} seconds to reduce API calls and prevent quota exhaustion`);
+    }
       } catch (error) {
         this.logger.error('Failed to initialize platform:', error);
         // Ensure initialization is resolved even on error
@@ -359,6 +365,12 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
       // Get all devices
       const devices = this.getAllDevices().filter(device => !this.shouldExcludeDevice(device));
 
+      // Update quota manager with device count
+      if (typeof (this.client as any).updateQuotaDeviceCount === 'function') {
+        (this.client as any).updateQuotaDeviceCount(devices.length);
+        this.logger.debug(`Updated quota manager with ${devices.length} devices`);
+      }
+
       // Track processed devices for cleanup
       const processedDeviceUUIDs = new Set<string>();
 
@@ -408,19 +420,26 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
         // Try to update device state with retries
         let stateRetryCount = 0;
         let stateSuccess = false;
-        while (!stateSuccess) {
+        while (!stateSuccess && stateRetryCount < 3) { // Limit retries to 3 attempts
           try {
             await deviceAccessory.syncDeviceState();
             stateSuccess = true;
           } catch (error) {
             stateRetryCount++;
-            const backoffTime = Math.min(5000 * Math.pow(2, stateRetryCount), 300000);
-            this.logger.warn(`Failed to sync device state for ${device.deviceName}, retry attempt ${stateRetryCount}. Waiting ${backoffTime/1000} seconds...`);
-            await new Promise(resolve => setTimeout(resolve, backoffTime));
-            
-            // Try to ensure we're still logged in before next attempt
-            if (!await this.ensureLogin()) {
-              continue;
+            // Only retry if we haven't hit the limit
+            if (stateRetryCount < 3) {
+              const backoffTime = Math.min(5000 * Math.pow(2, stateRetryCount), 30000);
+              this.logger.warn(`Failed to sync device state for ${device.deviceName}, retry attempt ${stateRetryCount}. Waiting ${backoffTime/1000} seconds...`);
+              await new Promise(resolve => setTimeout(resolve, backoffTime));
+              
+              // Try to ensure we're still logged in before next attempt
+              if (!await this.ensureLogin()) {
+                continue;
+              }
+            } else {
+              this.logger.error(`Failed to sync device state for ${device.deviceName} after ${stateRetryCount} attempts. Skipping.`);
+              // Continue with other devices even if this one fails
+              break;
             }
           }
         }
@@ -463,4 +482,4 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
     }
     return this.api.hap.uuid.generate(id);
   }
-} 
+}

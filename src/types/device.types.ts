@@ -118,4 +118,9 @@ export interface PlatformConfig {
     initialDelay?: number;
     maxDelay?: number;
   };
-} 
+  quotaManagement?: {
+    enabled: boolean;
+    bufferPercentage?: number;
+    priorityMethods?: string[];
+  };
+}

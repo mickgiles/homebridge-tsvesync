@@ -1,0 +1,135 @@
+# Cline Rules for homebridge-tsvesync
+
+## Project Patterns
+
+### Code Organization
+- TypeScript files use `.ts` extension
+- Test files are placed in `__tests__` directory with `.test.ts` extension
+- Device-specific accessories are in `accessories/` directory with `.accessory.ts` suffix
+- Type definitions are in `types/` directory
+- Utility functions are in `utils/` directory
+
+### Naming Conventions
+- Classes use PascalCase (e.g., `BaseAccessory`, `HumidifierAccessory`)
+- Interfaces use PascalCase with descriptive names (e.g., `DeviceCapabilities`)
+- Methods and variables use camelCase
+- Constants use UPPER_SNAKE_CASE for truly constant values
+- File names use kebab-case for general files, but camelCase for class files
+
+### Code Style
+- Use 2-space indentation
+- Prefer single quotes for strings
+- Use semicolons at the end of statements
+- Use explicit type annotations for function parameters and return types
+- Use async/await for asynchronous operations
+- Prefer interfaces over type aliases for object types
+- Use optional chaining and nullish coalescing when appropriate
+
+### Error Handling
+- Use try/catch blocks for API operations
+- Log errors with appropriate context
+- Implement retry mechanisms with exponential backoff
+- Provide meaningful error messages for debugging
+- Handle specific error types differently (network errors, auth errors, etc.)
+
+### Logging
+- Use the plugin's logger instance, not console.log
+- Include device context in log messages
+- Use appropriate log levels (debug, info, warn, error)
+- Redact sensitive information in logs
+- Include operation context in log messages
+
+## Implementation Patterns
+
+### Device Handling
+- All device accessories extend `BaseAccessory`
+- Device-specific logic is implemented in subclasses
+- Common functionality is in the base class
+- Use composition of interfaces for device capabilities
+- Map device states to HomeKit characteristics
+
+### API Communication
+- Use the tsvesync library for API calls
+- Implement rate limiting for API requests
+- Handle authentication token refresh
+- Use exponential backoff for failed requests
+- Cache device states to reduce API calls
+
+### State Management
+- Update device states periodically based on configuration
+- Persist device state in accessory context
+- Update HomeKit characteristics when device state changes
+- Handle state synchronization between HomeKit and VeSync
+
+### Testing
+- Use Jest for unit tests
+- Mock external dependencies
+- Test error handling paths
+- Use descriptive test names
+- Group related tests in describe blocks
+
+## Development Workflow
+
+### Building
+- Run `npm run build` to compile TypeScript to JavaScript
+- Output goes to `dist/` directory
+- Clean build directory before compilation
+
+### Testing
+- Run `npm test` to execute all tests
+- Run `npm run test:watch` for development
+- Run `npm run test:coverage` to check test coverage
+
+### Debugging
+- Enable debug mode in plugin configuration
+- Check Homebridge logs for detailed information
+- Use VS Code debugger with appropriate launch configuration
+- Test with real devices when possible
+
+### Deployment
+- Update version in package.json
+- Update CHANGELOG.md with version changes
+- Run tests before publishing
+- Use `npm publish` to publish to npm registry
+
+## User Support Patterns
+
+### Configuration Help
+- Guide users through config.json setup
+- Provide examples for different device types
+- Explain exclusion options clearly
+- Document all configuration parameters
+
+### Troubleshooting
+- Ask for debug logs when helping users
+- Check for common configuration issues first
+- Verify device compatibility
+- Check for network/connectivity issues
+- Verify VeSync account credentials
+
+### Feature Requests
+- Evaluate feasibility based on API capabilities
+- Consider HomeKit limitations
+- Prioritize based on user impact
+- Document in GitHub issues
+
+## Project-Specific Notes
+
+### VeSync API Quirks
+- Different device models have inconsistent API implementations
+- Some devices require specific mode settings before other operations
+- API rate limiting can be unpredictable
+- Authentication tokens expire after 1 hour
+- Some device features are not exposed via the API
+
+### HomeKit Limitations
+- Limited set of predefined accessory types
+- Restricted characteristic value ranges
+- No custom characteristics without using HAP-NodeJS directly
+- Limited support for complex device features
+
+### Common Issues
+- Rate limiting during device discovery with many devices
+- State synchronization delays during high activity
+- Token refresh failures during network interruptions
+- Mapping complex device modes to HomeKit characteristics

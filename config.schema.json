@@ -2,7 +2,7 @@
   "pluginAlias": "TSVESyncPlatform",
   "pluginType": "platform",
   "singular": true,
-  "headerDisplay": "Homebridge plugin for VeSync devices including Levoit air purifiers, humidifiers, and Etekcity smart outlets.",
+  "headerDisplay": "Homebridge plugin for VeSync devices including Levoit air purifiers humidifiers and Etekcity smart outlets.",
   "footerDisplay": "For help please visit the [GitHub repository](https://github.com/mickgiles/homebridge-tsvesync).",
   "schema": {
     "type": "object",
@@ -10,229 +10,170 @@
       "name": {
         "title": "Name",
         "type": "string",
-        "required": true,
-        "default": "TSVESync"
+        "default": "TSVESync",
+        "required": true
       },
       "username": {
-        "title": "Email",
+        "title": "VeSync Username",
         "type": "string",
         "required": true,
         "description": "Your VeSync account email address"
       },
       "password": {
-        "title": "Password",
+        "title": "VeSync Password",
         "type": "string",
         "required": true,
-        "description": "Your VeSync account password",
-        "typeahead": {
-          "source": []
-        }
+        "description": "Your VeSync account password"
       },
       "updateInterval": {
         "title": "Update Interval",
         "type": "integer",
-        "minimum": 60,
-        "maximum": 900,
-        "default": 300,
-        "required": false,
-        "description": "How often to update device states (in seconds). Default is 300 seconds (5 minutes). Minimum is 60 seconds to avoid API rate limits."
+        "default": 30,
+        "minimum": 10,
+        "maximum": 600,
+        "description": "How often to update device status (in seconds)"
       },
       "debug": {
-        "title": "Debug Logging",
+        "title": "Debug Mode",
         "type": "boolean",
-        "required": false,
         "default": false,
-        "description": "Enable debug logging for troubleshooting"
+        "description": "Enable debug logging"
+      },
+      "apiUrl": {
+        "title": "API URL",
+        "type": "string",
+        "description": "Custom VeSync API URL (advanced users only)"
       },
       "exclude": {
-        "title": "Device Exclusions",
+        "title": "Exclude Devices",
         "type": "object",
-        "required": false,
-        "description": "Configure which devices to exclude from HomeKit",
         "properties": {
           "type": {
-            "title": "Exclude Device Types",
+            "title": "Exclude by Type",
             "type": "array",
             "items": {
-              "title": "Device Type",
               "type": "string",
-              "enum": ["fan", "outlet", "switch", "bulb", "purifier", "humidifier"]
+              "enum": [
+                "fan",
+                "outlet",
+                "switch",
+                "bulb",
+                "humidifier",
+                "purifier"
+              ]
             },
             "uniqueItems": true,
-            "description": "Select device types to exclude from HomeKit",
-            "default": []
+            "description": "Exclude devices by type"
           },
           "model": {
-            "title": "Exclude Device Models",
+            "title": "Exclude by Model",
             "type": "array",
             "items": {
-              "title": "Device Model",
-              "type": "string",
-              "placeholder": "Core300S"
+              "type": "string"
             },
             "uniqueItems": true,
-            "description": "Enter device models to exclude (e.g., Core300S, LV600S, ESL100)",
-            "default": []
+            "description": "Exclude devices by model (e.g., 'Core300S', 'LV600S')"
           },
           "name": {
             "title": "Exclude by Name",
             "type": "array",
             "items": {
-              "title": "Device Name",
-              "type": "string",
-              "placeholder": "Living Room Light"
+              "type": "string"
             },
             "uniqueItems": true,
-            "description": "Enter exact device names to exclude (case-sensitive)",
-            "default": []
+            "description": "Exclude devices by exact name match"
           },
           "namePattern": {
             "title": "Exclude by Name Pattern",
             "type": "array",
             "items": {
-              "title": "Pattern",
-              "type": "string",
-              "placeholder": "Bedroom.*"
+              "type": "string"
             },
             "uniqueItems": true,
-            "description": "Enter regex patterns to match device names for exclusion (e.g., 'Bedroom.*' to exclude all bedroom devices)",
-            "default": []
+            "description": "Exclude devices by name pattern (regex)"
           },
           "id": {
-            "title": "Exclude by Device ID",
+            "title": "Exclude by ID",
             "type": "array",
             "items": {
-              "title": "Device ID",
-              "type": "string",
-              "placeholder": "cid123456"
+              "type": "string"
             },
             "uniqueItems": true,
-            "description": "Enter device IDs (cid/uuid) to exclude",
-            "default": []
+            "description": "Exclude devices by ID (cid/uuid)"
           }
         }
       },
       "retry": {
-        "title": "API Retry Configuration",
+        "title": "Retry Configuration",
         "type": "object",
-        "required": false,
-        "description": "Configure retry behavior for API calls",
         "properties": {
           "maxRetries": {
             "title": "Maximum Retries",
             "type": "integer",
+            "default": 3,
             "minimum": 1,
             "maximum": 10,
-            "default": 3,
-            "description": "Maximum number of retry attempts for failed API calls"
+            "description": "Maximum number of retry attempts for failed operations"
           },
           "initialDelay": {
-            "title": "Initial Retry Delay",
+            "title": "Initial Delay",
             "type": "integer",
-            "minimum": 1000,
-            "maximum": 10000,
             "default": 2000,
-            "description": "Initial delay between retries in milliseconds"
+            "minimum": 500,
+            "maximum": 10000,
+            "description": "Initial delay before first retry (in milliseconds)"
           },
           "maxDelay": {
-            "title": "Maximum Retry Delay",
+            "title": "Maximum Delay",
             "type": "integer",
-            "minimum": 5000,
-            "maximum": 30000,
             "default": 10000,
-            "description": "Maximum delay between retries in milliseconds"
+            "minimum": 1000,
+            "maximum": 60000,
+            "description": "Maximum delay between retries (in milliseconds)"
+          }
+        }
+      },
+      "quotaManagement": {
+        "title": "API Quota Management",
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "title": "Enable Quota Management",
+            "type": "boolean",
+            "default": true,
+            "description": "Enable API quota management to prevent exceeding VeSync's daily limits"
+          },
+          "bufferPercentage": {
+            "title": "Buffer Percentage",
+            "type": "integer",
+            "default": 95,
+            "minimum": 50,
+            "maximum": 100,
+            "description": "Percentage of the calculated quota to use (lower values provide more safety margin)"
+          },
+          "priorityMethods": {
+            "title": "Priority Methods",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [
+              "turnOn", 
+              "turnOff", 
+              "setMode", 
+              "setTargetHumidity", 
+              "setBrightness",
+              "setColorTemperature",
+              "setColor",
+              "changeFanSpeed",
+              "setOscillation",
+              "setChildLock"
+            ],
+            "uniqueItems": true,
+            "description": "API methods that will be allowed even when quota is exceeded"
           }
         }
       }
     }
-  },
-  "layout": [
-    "name",
-    "username",
-    "password",
-    "updateInterval",
-    "debug",
-    {
-      "key": "exclude",
-      "type": "section",
-      "title": "Device Exclusions",
-      "expandable": true,
-      "expanded": false,
-      "orderable": false,
-      "items": [
-        {
-          "key": "exclude.type",
-          "type": "array",
-          "title": "Device Types to Exclude",
-          "buttonText": "Add Device Type",
-          "items": [
-            {
-              "key": "exclude.type[]",
-              "type": "select"
-            }
-          ]
-        },
-        {
-          "key": "exclude.model",
-          "type": "array",
-          "title": "Device Models to Exclude",
-          "buttonText": "Add Device Model",
-          "items": [
-            {
-              "key": "exclude.model[]",
-              "type": "string"
-            }
-          ]
-        },
-        {
-          "key": "exclude.name",
-          "type": "array",
-          "title": "Device Names to Exclude",
-          "buttonText": "Add Device Name",
-          "items": [
-            {
-              "key": "exclude.name[]",
-              "type": "string"
-            }
-          ]
-        },
-        {
-          "key": "exclude.namePattern",
-          "type": "array",
-          "title": "Name Patterns to Exclude",
-          "buttonText": "Add Name Pattern",
-          "items": [
-            {
-              "key": "exclude.namePattern[]",
-              "type": "string"
-            }
-          ]
-        },
-        {
-          "key": "exclude.id",
-          "type": "array",
-          "title": "Device IDs to Exclude",
-          "buttonText": "Add Device ID",
-          "items": [
-            {
-              "key": "exclude.id[]",
-              "type": "string"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "key": "retry",
-      "type": "section",
-      "title": "API Retry Settings",
-      "expandable": true,
-      "expanded": false,
-      "items": [
-        "retry.maxRetries",
-        "retry.initialDelay",
-        "retry.maxDelay"
-      ]
-    }
-  ]
-} 
+  }
+}
