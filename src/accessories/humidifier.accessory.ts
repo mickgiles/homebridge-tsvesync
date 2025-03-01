@@ -113,6 +113,13 @@ export class HumidifierAccessory extends BaseAccessory {
     // Get or create the humidifier service
     this.service = this.accessory.getService(this.platform.Service.HumidifierDehumidifier) ||
       this.accessory.addService(this.platform.Service.HumidifierDehumidifier);
+      
+    // Initialize all characteristics with explicit values
+    this.service.updateCharacteristic(this.platform.Characteristic.CurrentRelativeHumidity, 40);
+    this.service.updateCharacteristic(this.platform.Characteristic.RelativeHumidityHumidifierThreshold, 60);
+    this.service.updateCharacteristic(this.platform.Characteristic.CurrentHumidifierDehumidifierState, 1);
+    this.service.updateCharacteristic(this.platform.Characteristic.TargetHumidifierDehumidifierState, 1);
+    this.platform.log.debug('Initialized humidifier characteristics with explicit values');
 
     // Set up required characteristics
     this.setupCharacteristic(
