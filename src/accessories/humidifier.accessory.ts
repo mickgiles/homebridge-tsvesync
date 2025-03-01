@@ -11,9 +11,11 @@ interface ExtendedVeSyncHumidifier extends VeSyncHumidifier {
   
   // Night light properties and methods
   nightLightBrightness?: number;
+  nightLightStatus?: string;
   setNightLightBrightness?(brightness: number): Promise<boolean>;
+  setNightLight?(enabled: boolean, brightness?: number): Promise<boolean>;
   
-  // Humid200300S specific methods (from API documentation)
+  // Common methods across humidifier types
   setMistLevel?(level: number): Promise<boolean>;
   setHumidity?(humidity: number): Promise<boolean>;
   setAutoMode?(): Promise<boolean>;
@@ -22,18 +24,35 @@ interface ExtendedVeSyncHumidifier extends VeSyncHumidifier {
   setDisplay?(on: boolean): Promise<boolean>;
   turnOnDisplay?(): Promise<boolean>;
   turnOffDisplay?(): Promise<boolean>;
+  setIndicatorLightSwitch?(on: boolean): Promise<boolean>;
+  
+  // Automatic stop methods
   automaticStopOn?(): Promise<boolean>;
   automaticStopOff?(): Promise<boolean>;
+  setAutomaticStop?(enabled: boolean): Promise<boolean>;
   
-  // Humid200300S specific properties
+  // Superior6000S specific methods
+  setDryingModeEnabled?(enabled: boolean): Promise<boolean>;
+  
+  // Common properties
   mistLevel?: number;
   // Note: humidity must be non-optional to match VeSyncHumidifier interface
   humidity: number;
   currentHumidity?: number; // Actual humidity reading in the room
   mode?: string;
   screenStatus?: 'on' | 'off';
+  enabled?: boolean; // Used by Humid200S for power control
+  powerSwitch?: boolean; // Used by Humid1000S and Superior6000S for power control
   
-  // For Humid200300S specific details
+  // Superior6000S specific properties
+  temperature?: number;
+  filterLifePercentage?: number;
+  dryingModeEnabled?: boolean;
+  dryingModeState?: string | null;
+  dryingModeLevel?: string | null;
+  dryingModeSecondsRemaining?: number;
+  
+  // For device-specific details
   details?: {
     target_humidity?: number;
     night_light_brightness?: number;
@@ -42,6 +61,9 @@ interface ExtendedVeSyncHumidifier extends VeSyncHumidifier {
     water_tank_lifted?: boolean;
     humidity_high?: boolean;
     automatic_stop?: boolean;
+    automatic_stop_configured?: boolean;
+    temperature?: number;
+    filter_life?: number;
   };
   
   // Device configuration object
@@ -59,8 +81,17 @@ interface ExtendedVeSyncHumidifier extends VeSyncHumidifier {
 export class HumidifierAccessory extends BaseAccessory {
   protected readonly device: VeSyncHumidifier;
   private capabilities: DeviceCapabilities; // Removed readonly to allow re-initialization
+  
+  // Device type flags
+  private isHumid200S: boolean;
   private isHumid200300S: boolean;
+  private isHumid1000S: boolean;
+  private isSuperior6000S: boolean;
+  
+  // Services
   private lightService?: Service;
+  private temperatureService?: Service;
+  private filterService?: Service;
 
   constructor(
     platform: TSVESyncPlatform,
@@ -83,12 +114,44 @@ export class HumidifierAccessory extends BaseAccessory {
       hasSwingMode: false,
     };
     
-    // Detect if this is a Humid200300S device
+    // Detect device type
+    this.isHumid200S = this.detectHumid200S();
     this.isHumid200300S = this.detectHumid200300S();
+    this.isHumid1000S = this.detectHumid1000S();
+    this.isSuperior6000S = this.detectSuperior6000S();
     
-    if (this.isHumid200300S) {
+    // Log detected device type
+    if (this.isHumid200S) {
+      this.platform.log.debug(`Detected Humid200S device: ${this.device.deviceName}`);
+    } else if (this.isHumid200300S) {
       this.platform.log.debug(`Detected Humid200300S device: ${this.device.deviceName}`);
+    } else if (this.isHumid1000S) {
+      this.platform.log.debug(`Detected Humid1000S device: ${this.device.deviceName}`);
+    } else if (this.isSuperior6000S) {
+      this.platform.log.debug(`Detected Superior6000S device: ${this.device.deviceName}`);
+    } else {
+      this.platform.log.debug(`Unknown humidifier type: ${this.device.deviceName}, using default implementation`);
     }
+  }
+  
+  /**
+   * Detect if the device is a Humid200S
+   */
+  private detectHumid200S(): boolean {
+    const deviceType = this.device.deviceType.toUpperCase();
+    
+    // Classic200S is a Humid200S device
+    if (deviceType.includes('CLASSIC200S')) {
+      return true;
+    }
+    
+    // Check for mist level range 1-3 which is specific to Humid200S
+    const extendedDevice = this.device as ExtendedVeSyncHumidifier;
+    if (extendedDevice.mistLevel !== undefined && extendedDevice.mistLevel <= 3) {
+      return true;
+    }
+    
+    return false;
   }
   
   /**
@@ -102,9 +165,74 @@ export class HumidifierAccessory extends BaseAccessory {
       return true;
     }
     
-    // Check device type for Classic200S or Classic300S
+    // Check device type for Classic300S or Dual200S
     const deviceType = this.device.deviceType.toUpperCase();
-    return deviceType.includes('CLASSIC200S') || deviceType.includes('CLASSIC300S');
+    if (deviceType.includes('CLASSIC300S') || deviceType.includes('DUAL200S')) {
+      return true;
+    }
+    
+    // Check for LUH-A601S, LUH-A602S, LUH-O451S, LUH-O601S series
+    if (deviceType.includes('LUH-A601S') || 
+        deviceType.includes('LUH-A602S') || 
+        deviceType.includes('LUH-O451S') || 
+        deviceType.includes('LUH-O601S')) {
+      return true;
+    }
+    
+    return false;
+  }
+  
+  /**
+   * Detect if the device is a Humid1000S
+   */
+  private detectHumid1000S(): boolean {
+    const deviceType = this.device.deviceType.toUpperCase();
+    
+    // Check for LUH-M101S series
+    if (deviceType.includes('LUH-M101S-WUS') || deviceType.includes('LUH-M101S-WEUR')) {
+      return true;
+    }
+    
+    // Check for OasisMist1000S
+    if (deviceType.includes('OASISMIST1000S')) {
+      return true;
+    }
+    
+    // Check for powerSwitch field and night light control
+    const extendedDevice = this.device as ExtendedVeSyncHumidifier;
+    if (extendedDevice.powerSwitch !== undefined && 
+        typeof extendedDevice.setNightLight === 'function') {
+      return true;
+    }
+    
+    return false;
+  }
+  
+  /**
+   * Detect if the device is a Superior6000S
+   */
+  private detectSuperior6000S(): boolean {
+    const deviceType = this.device.deviceType.toUpperCase();
+    
+    // Check for LEH-S601S series
+    if (deviceType.includes('LEH-S601S-WUS') || deviceType.includes('LEH-S601S-WUSR')) {
+      return true;
+    }
+    
+    // Check for Superior6000S
+    if (deviceType.includes('SUPERIOR6000S')) {
+      return true;
+    }
+    
+    // Check for temperature or drying mode properties
+    const extendedDevice = this.device as ExtendedVeSyncHumidifier;
+    if (extendedDevice.temperature !== undefined || 
+        extendedDevice.dryingModeEnabled !== undefined ||
+        extendedDevice.filterLifePercentage !== undefined) {
+      return true;
+    }
+    
+    return false;
   }
 
   protected setupService(): void {
@@ -218,14 +346,20 @@ export class HumidifierAccessory extends BaseAccessory {
       );
     }
     
-    // Add night light service for Humid200300S devices
-    if (this.isHumid200300S) {
+    // Add night light service for devices that support it
+    if (this.isHumid200300S || this.isHumid1000S) {
       this.setupNightLightService();
+    }
+    
+    // Add temperature sensor service for Superior6000S
+    if (this.isSuperior6000S) {
+      this.setupTemperatureService();
+      this.setupFilterService();
     }
   }
   
   /**
-   * Set up night light service for Humid200300S devices
+   * Set up night light service for devices that support it
    */
   private setupNightLightService(): void {
     this.platform.log.debug(`Setting up night light service for device: ${this.device.deviceName}`);
@@ -252,6 +386,121 @@ export class HumidifierAccessory extends BaseAccessory {
       this.lightService
     );
   }
+  
+  /**
+   * Set up temperature sensor service for Superior6000S
+   */
+  private setupTemperatureService(): void {
+    this.platform.log.debug(`Setting up temperature sensor service for device: ${this.device.deviceName}`);
+    
+    // Get or create the temperature sensor service
+    this.temperatureService = this.accessory.getService(this.platform.Service.TemperatureSensor) ||
+      this.accessory.addService(this.platform.Service.TemperatureSensor);
+    
+    // Set up current temperature characteristic
+    this.setupCharacteristic(
+      this.platform.Characteristic.CurrentTemperature,
+      this.getTemperature.bind(this),
+      undefined,
+      {
+        minValue: -50,
+        maxValue: 100,
+        minStep: 0.1
+      },
+      this.temperatureService
+    );
+    
+    // Set name for the temperature sensor
+    this.setupCharacteristic(
+      this.platform.Characteristic.Name,
+      async () => `${this.device.deviceName} Temperature`,
+      undefined,
+      undefined,
+      this.temperatureService
+    );
+  }
+  
+  /**
+   * Get temperature for Superior6000S
+   */
+  private async getTemperature(): Promise<CharacteristicValue> {
+    const extendedDevice = this.device as ExtendedVeSyncHumidifier;
+    
+    // Get temperature from device
+    const temperature = extendedDevice.temperature || 
+                       (extendedDevice.details && extendedDevice.details.temperature) || 
+                       20; // Default to 20°C if not available
+    
+    return temperature;
+  }
+  
+  /**
+   * Set up filter maintenance service for Superior6000S
+   */
+  private setupFilterService(): void {
+    this.platform.log.debug(`Setting up filter maintenance service for device: ${this.device.deviceName}`);
+    
+    // Get or create the filter maintenance service
+    this.filterService = this.accessory.getService(this.platform.Service.FilterMaintenance) ||
+      this.accessory.addService(this.platform.Service.FilterMaintenance);
+    
+    // Set up filter change indication characteristic
+    this.setupCharacteristic(
+      this.platform.Characteristic.FilterChangeIndication,
+      this.getFilterChangeIndication.bind(this),
+      undefined,
+      undefined,
+      this.filterService
+    );
+    
+    // Set up filter life level characteristic
+    this.setupCharacteristic(
+      this.platform.Characteristic.FilterLifeLevel,
+      this.getFilterLifeLevel.bind(this),
+      undefined,
+      undefined,
+      this.filterService
+    );
+    
+    // Set name for the filter service
+    this.setupCharacteristic(
+      this.platform.Characteristic.Name,
+      async () => `${this.device.deviceName} Filter`,
+      undefined,
+      undefined,
+      this.filterService
+    );
+  }
+  
+  /**
+   * Get filter change indication for Superior6000S
+   */
+  private async getFilterChangeIndication(): Promise<CharacteristicValue> {
+    const extendedDevice = this.device as ExtendedVeSyncHumidifier;
+    
+    // Get filter life percentage
+    const filterLife = extendedDevice.filterLifePercentage || 
+                      (extendedDevice.details && extendedDevice.details.filter_life) || 
+                      100; // Default to 100% if not available
+    
+    // Return 1 (CHANGE_FILTER) if filter life is below 10%, otherwise 0 (FILTER_OK)
+    return filterLife < 10 ? 1 : 0;
+  }
+  
+  /**
+   * Get filter life level for Superior6000S
+   */
+  private async getFilterLifeLevel(): Promise<CharacteristicValue> {
+    const extendedDevice = this.device as ExtendedVeSyncHumidifier;
+    
+    // Get filter life percentage
+    const filterLife = extendedDevice.filterLifePercentage || 
+                      (extendedDevice.details && extendedDevice.details.filter_life) || 
+                      100; // Default to 100% if not available
+    
+    return filterLife;
+  }
+  
   
   /**
    * Get night light on state
@@ -523,8 +772,8 @@ export class HumidifierAccessory extends BaseAccessory {
       }
     }
     
-    // Update night light characteristics for Humid200300S devices
-    if (this.isHumid200300S && this.lightService) {
+    // Update night light characteristics for devices that support it
+    if ((this.isHumid200300S || this.isHumid1000S) && this.lightService) {
       const brightness = extendedDevice.nightLightBrightness || 
         (extendedDevice.details && extendedDevice.details.night_light_brightness) || 0;
       
@@ -538,6 +787,35 @@ export class HumidifierAccessory extends BaseAccessory {
       this.lightService.updateCharacteristic(
         this.platform.Characteristic.Brightness,
         brightness
+      );
+    }
+    
+    // Update temperature for Superior6000S
+    if (this.isSuperior6000S && this.temperatureService) {
+      const temperature = extendedDevice.temperature || 
+        (extendedDevice.details && extendedDevice.details.temperature) || 
+        20; // Default to 20°C if not available
+      
+      this.temperatureService.updateCharacteristic(
+        this.platform.Characteristic.CurrentTemperature,
+        temperature
+      );
+    }
+    
+    // Update filter life for Superior6000S
+    if (this.isSuperior6000S && this.filterService) {
+      const filterLife = extendedDevice.filterLifePercentage || 
+        (extendedDevice.details && extendedDevice.details.filter_life) || 
+        100; // Default to 100% if not available
+      
+      this.filterService.updateCharacteristic(
+        this.platform.Characteristic.FilterLifeLevel,
+        filterLife
+      );
+      
+      this.filterService.updateCharacteristic(
+        this.platform.Characteristic.FilterChangeIndication,
+        filterLife < 10 ? 1 : 0 // 1 = CHANGE_FILTER, 0 = FILTER_OK
       );
     }
   }
@@ -633,16 +911,18 @@ export class HumidifierAccessory extends BaseAccessory {
       
       let success = false;
       
-      // Try to turn the device on/off using the appropriate method
+      // Try to turn the device on/off using the appropriate method based on device type
       if (isOn) {
         // Turn on the device
         this.platform.log.debug(`Attempting to turn ON device: ${this.device.deviceName}`);
+        
+        // Use the appropriate method based on device type
         success = await this.device.turnOn();
         
         // If successful, set the device to manual mode
         if (success) {
-          // For Humid200300S devices, use the specific setManualMode method if available
-          if (this.isHumid200300S && typeof extendedDevice.setManualMode === 'function') {
+          // For devices with specific mode setting methods, use them
+          if (typeof extendedDevice.setManualMode === 'function') {
             this.platform.log.debug(`Setting device to manual mode using setManualMode: ${this.device.deviceName}`);
             const modeSuccess = await extendedDevice.setManualMode();
             this.platform.log.debug(`Set manual mode result: ${modeSuccess ? 'success' : 'failed'}`);
@@ -947,13 +1227,22 @@ export class HumidifierAccessory extends BaseAccessory {
         speed = 9;
       }
   
-      // Check if this is a Humid200300S device and use setMistLevel if available
+      // Adjust speed based on device type
       const extendedDevice = this.device as ExtendedVeSyncHumidifier;
       let success = false;
       
-      if (this.isHumid200300S && typeof extendedDevice.setMistLevel === 'function') {
-        // Use setMistLevel for Humid200300S devices
-        this.platform.log.debug(`Setting mist level to ${speed} for Humid200300S device: ${this.device.deviceName}`);
+      // For Humid200S devices, limit mist level to 1-3
+      if (this.isHumid200S) {
+        // Limit speed to 1-3 for Humid200S devices
+        speed = Math.min(speed, 3);
+        this.platform.log.debug(`Limiting mist level to ${speed} for Humid200S device: ${this.device.deviceName}`);
+      }
+      
+      // Use the appropriate method based on device type
+      if ((this.isHumid200S || this.isHumid200300S || this.isHumid1000S || this.isSuperior6000S) && 
+          typeof extendedDevice.setMistLevel === 'function') {
+        // Use setMistLevel for devices that support it
+        this.platform.log.debug(`Setting mist level to ${speed} for device: ${this.device.deviceName}`);
         success = await extendedDevice.setMistLevel(speed);
       } else {
         // Fall back to changeFanSpeed for other humidifier types

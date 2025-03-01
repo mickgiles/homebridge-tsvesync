@@ -5,7 +5,7 @@ import { DeviceFactory } from './utils/device-factory';
 import { BaseAccessory } from './accessories/base.accessory';
 import { PluginLogger } from './utils/logger';
 import { createRateLimitedVeSync } from './utils/api-proxy';
-import { DeviceExclusion, PlatformConfig as TSVESyncPlatformConfig } from './types/device.types';
+import { PlatformConfig as TSVESyncPlatformConfig } from './types/device.types';
 
 /**
  * HomebridgePlatform
