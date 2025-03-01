@@ -511,12 +511,15 @@ export class HumidifierAccessory extends BaseAccessory {
       
       const waterLow = waterLacks || waterTankLifted;
       
+      // Note: VeSync devices only support a boolean water_lacks property, not a percentage water level
+      // We map this to 0% or 100% for HomeKit's WaterLevel characteristic
       if (this.service.getCharacteristic(this.platform.Characteristic.WaterLevel)) {
         // Map water level as 0 for low water, 100 for sufficient water
         this.service.updateCharacteristic(
           this.platform.Characteristic.WaterLevel,
           waterLow ? 0 : 100
         );
+        this.platform.log.debug(`Water level for ${this.device.deviceName}: ${waterLow ? 'Low (0%)' : 'OK (100%)'}`);
       }
     }
     
