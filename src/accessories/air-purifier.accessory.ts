@@ -703,6 +703,16 @@ export class AirPurifierAccessory extends BaseAccessory {
       const success = isOn ? await this.device.turnOn() : await this.device.turnOff();
       
       if (!success) {
+        // For LV-PUR131S, success=false might mean device is already in desired state
+        if (this.isAir131Device) {
+          this.platform.log.debug(`${this.device.deviceName}: turn${isOn ? 'On' : 'Off'}() returned false - device may already be ${isOn ? 'on' : 'off'}`);
+          // Check actual device state
+          const actualState = this.device.deviceStatus === 'on';
+          if (actualState === isOn) {
+            this.platform.log.debug(`${this.device.deviceName}: Device is already in desired state (${isOn ? 'on' : 'off'})`);
+            return; // Don't throw error if already in desired state
+          }
+        }
         throw new Error(`Failed to turn ${isOn ? 'on' : 'off'} device`);
       }
       
