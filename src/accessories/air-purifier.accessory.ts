@@ -628,6 +628,25 @@ export class AirPurifierAccessory extends BaseAccessory {
       
       const extendedDevice = this.device as ExtendedVeSyncAirPurifier;
       
+      // Check if device is off and turn it on first
+      if (this.device.deviceStatus !== 'on') {
+        this.platform.log.debug(`Device ${this.device.deviceName} is off, turning on before setting speed`);
+        const turnOnSuccess = await this.device.turnOn();
+        if (!turnOnSuccess) {
+          // For LV-PUR131S, this might return false if already on, so check actual state
+          if (this.isAir131Device && this.device.deviceStatus === 'on') {
+            this.platform.log.debug(`${this.device.deviceName}: Device is now on`);
+          } else {
+            throw new Error('Failed to turn on device');
+          }
+        }
+        // Wait a bit for the device to turn on
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Update device state to get fresh mode information
+        await this.updateDeviceSpecificStates(this.device);
+      }
+      
       // Check if fan speed control is supported in current mode
       if (!this.isFeatureSupportedInCurrentMode('fan_speed')) {
         this.platform.log.warn(`Fan speed control not supported in ${extendedDevice.mode} mode for device: ${this.device.deviceName}`);
@@ -640,9 +659,13 @@ export class AirPurifierAccessory extends BaseAccessory {
           if (typeof extendedDevice.manualMode === 'function') {
             const modeSuccess = await extendedDevice.manualMode();
             this.platform.log.debug(`Set manual mode result: ${modeSuccess ? 'success' : 'failed'}`);
+            // Wait for mode change to take effect
+            await new Promise(resolve => setTimeout(resolve, 1000));
           } else if (typeof extendedDevice.setMode === 'function') {
             const modeSuccess = await extendedDevice.setMode('manual');
             this.platform.log.debug(`Set manual mode result: ${modeSuccess ? 'success' : 'failed'}`);
+            // Wait for mode change to take effect
+            await new Promise(resolve => setTimeout(resolve, 1000));
           }
         }
       }
