@@ -75,7 +75,7 @@ export class AirPurifierAccessory extends BaseAccessory {
     } else if (this.isAir131Device) {
       this.platform.log.debug(`Detected Air131 device: ${this.device.deviceName} (${deviceType})`);
     } else {
-      this.platform.log.debug(`Unknown air purifier type: ${this.device.deviceName} (${deviceType})`);
+      // Device type not specifically recognized, but will use default handling
     }
   }
 
@@ -276,7 +276,7 @@ export class AirPurifierAccessory extends BaseAccessory {
     } else if (this.device.deviceType.includes('Core300S')) {
       // Explicitly ensure Core300S has both AUTO and MANUAL modes
       // Force the mode toggle to be visible for Core300S devices
-      this.platform.log.debug(`Explicitly enabling mode toggle for Core300S device: ${this.device.deviceName}`);
+      // Enable mode toggle for Core300S device
       
       // First remove any existing characteristic to ensure clean setup
       if (this.service.testCharacteristic(this.platform.Characteristic.TargetAirPurifierState)) {
@@ -333,7 +333,7 @@ export class AirPurifierAccessory extends BaseAccessory {
     // Set up speed control with special handling for Core200S and Core300S
     if (this.device.deviceType.includes('Core200S') || this.device.deviceType.includes('Core300S')) {
       // For Core200S and Core300S, set up rotation speed characteristic manually
-      this.platform.log.debug(`Explicitly setting up rotation speed for ${this.device.deviceName}`);
+      // Set up rotation speed for Core200S/Core300S
       
       // First remove any existing characteristic to ensure clean setup
       if (this.service.testCharacteristic(this.platform.Characteristic.RotationSpeed)) {
