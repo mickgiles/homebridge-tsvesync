@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.0.89 (2025-07-30)
+
+### Fixed
+- **Critical**: Resolved authentication issues for German and European users
+- Updated to tsvesync v1.0.89 which includes regional API endpoint support
+- Fixed "app version is too low" error (code -11012022) that prevented EU users from accessing their devices
+- Improved compatibility with VeSync regional API servers
+
+### Changed
+- Enhanced automatic regional API endpoint detection based on user timezone
+- Improved error handling and logging for authentication failures
+- Better support for users in European, Asian, and Oceania regions
+
+### Dependencies
+- Updated tsvesync from 1.0.88 to 1.0.89
+
 ## 1.0.88 (2025-07-30)
 
 ### Fixed
