@@ -205,8 +205,8 @@ export class AirPurifierAccessory extends BaseAccessory {
     // For devices with 3 speed levels
     if (maxSpeed === 3) {
       switch (speed) {
-        case 1: return 33;  // Low -> 33%
-        case 2: return 67;  // Medium -> 67%
+        case 1: return 33.33;  // Low -> 33.33%
+        case 2: return 66.67;  // Medium -> 66.67%
         case 3: return 100; // High -> 100%
         default: return 0;
       }
@@ -291,9 +291,9 @@ export class AirPurifierAccessory extends BaseAccessory {
     
     // For devices with 3 speed levels
     if (maxSpeed === 3) {
-      if (percentage <= 33) {
+      if (percentage <= 33.34) {
         return 1; // Low
-      } else if (percentage <= 67) {
+      } else if (percentage <= 66.67) {
         return 2; // Medium
       } else {
         return 3; // High
