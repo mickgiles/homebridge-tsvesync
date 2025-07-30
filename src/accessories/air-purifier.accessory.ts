@@ -210,6 +210,55 @@ export class AirPurifierAccessory extends BaseAccessory {
   }
   
   /**
+   * Updates the rotation speed characteristic for Air131 devices immediately after turning on.
+   * This ensures the UI shows the restored speed instead of 0, providing better user experience.
+   * 
+   * Air131 devices remember their last speed setting when turned back on, but the characteristic
+   * update can be delayed. This method proactively updates the HomeKit characteristic to reflect
+   * the actual device speed.
+   * 
+   * @private
+   * @returns {Promise<void>} Promise that resolves when the update is complete
+   * @throws Will log errors through handleDeviceError but won't propagate them to avoid
+   *         disrupting the main turn-on operation
+   */
+  private async updateAir131RotationSpeedAfterTurnOn(): Promise<void> {
+    try {
+      // Validate device and service state
+      if (!this.device || !this.service) {
+        this.platform.log.warn(`${this.device?.deviceName || 'Unknown'}: Cannot update rotation speed - device or service not available`);
+        return;
+      }
+
+      // Check if device has a valid speed value
+      if (typeof this.device.speed !== 'number' || this.device.speed <= 0) {
+        this.platform.log.debug(`${this.device.deviceName}: No valid speed to restore (speed: ${this.device.speed})`);
+        return;
+      }
+
+      // Convert device speed to percentage with validation
+      const percentage = this.speedToPercentage(this.device.speed);
+      
+      if (typeof percentage !== 'number' || isNaN(percentage) || percentage < 0 || percentage > 100) {
+        this.platform.log.warn(`${this.device.deviceName}: Invalid percentage calculated (${percentage}) from speed ${this.device.speed}`);
+        return;
+      }
+
+      // Update the HomeKit characteristic
+      this.service.updateCharacteristic(
+        this.platform.Characteristic.RotationSpeed,
+        percentage
+      );
+
+      this.platform.log.debug(
+        `${this.device.deviceName}: Updated rotation speed to ${percentage}% (speed: ${this.device.speed}) after turning on`
+      );
+    } catch (error) {
+      this.handleDeviceError('update Air131 rotation speed after turn on', error);
+    }
+  }
+
+  /**
    * Convert percentage to device speed
    */
   private percentageToSpeed(percentage: number): number {
@@ -743,6 +792,10 @@ export class AirPurifierAccessory extends BaseAccessory {
       if (!isOn) {
         this.lastSetSpeed = 0;
         this.lastSetPercentage = 0;
+      } else if (isOn && this.isAir131Device) {
+        // For Air131 devices, immediately update rotation speed characteristic
+        // to show the restored speed instead of 0
+        await this.updateAir131RotationSpeedAfterTurnOn();
       }
       
       // Update device state and characteristics
