@@ -175,6 +175,23 @@ export class AirPurifierAccessory extends BaseAccessory {
   }
 
   /**
+   * Calculate the appropriate step size for discrete speed levels
+   */
+  private calculateRotationSpeedStep(): number {
+    const maxSpeed = this.getMaxFanSpeed();
+    
+    // For devices with discrete speed levels, set appropriate step size
+    if (maxSpeed === 3) {
+      return 33.33; // Creates exact positions: 0%, 33.33%, 66.67%, 100%
+    } else if (maxSpeed === 4) {
+      return 25; // Creates exact positions: 0%, 25%, 50%, 75%, 100%
+    }
+    
+    // Default to continuous slider for other devices
+    return 1;
+  }
+
+  /**
    * Convert device speed to percentage
    */
   private speedToPercentage(speed: number): number {
@@ -393,10 +410,12 @@ export class AirPurifierAccessory extends BaseAccessory {
       
       // Re-add the characteristic with proper properties
       const rotationSpeedChar = this.service.addCharacteristic(this.platform.Characteristic.RotationSpeed);
+      const minStep = this.calculateRotationSpeedStep();
+      
       rotationSpeedChar.setProps({
         minValue: 0,
         maxValue: 100,
-        minStep: 1,
+        minStep: minStep,
         perms: [this.platform.Characteristic.Perms.PAIRED_READ, this.platform.Characteristic.Perms.PAIRED_WRITE, this.platform.Characteristic.Perms.NOTIFY]
       });
       
@@ -422,11 +441,18 @@ export class AirPurifierAccessory extends BaseAccessory {
         }
       });
     } else {
-      // For other devices, use the standard setup
+      // For other devices, use the standard setup with appropriate step size
+      const minStep = this.calculateRotationSpeedStep();
+      
       this.setupCharacteristic(
         this.platform.Characteristic.RotationSpeed,
         this.getRotationSpeed.bind(this),
-        this.setRotationSpeed.bind(this)
+        this.setRotationSpeed.bind(this),
+        {
+          minValue: 0,
+          maxValue: 100,
+          minStep: minStep
+        }
       );
     }
 

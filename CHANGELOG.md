@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.0.88 (2025-07-30)
+
+### Fixed
+- Fixed "app version is too low" API error by updating to VeSync app version 5.6.53
+- Updated to tsvesync v1.0.88 which includes the critical APP_VERSION update
+
+### Dependencies
+- Updated tsvesync from 1.0.87 to 1.0.88
+
+## 1.0.87 (2025-07-30)
+
+### Fixed
+- Fixed HomeKit speed slider showing continuous values for devices with discrete speed levels
+- Air131 (LV-PUR131S, LV-RH131S) now correctly shows 3 speed positions (33%, 67%, 100%) instead of continuous 0-100%
+- Devices with 4 speed levels now show proper 25% increments
+- Improved speed characteristic configuration for all air purifier models
+
+### Changed
+- Added `calculateRotationSpeedStep()` method to determine appropriate slider step sizes
+- HomeKit RotationSpeed characteristic now uses discrete steps for devices with fixed speed levels
+- Maintained continuous slider (1% steps) for devices that support variable speed control
+
 ## 1.0.68 (2025-02-28)
 
 ### Added
