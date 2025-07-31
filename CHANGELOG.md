@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.0.90 (2025-07-31)
+
+### Fixed
+- **Breaking Change**: Updated to tsvesync v1.0.90 which removes regional API endpoint support
+- All users now use the US API endpoint for improved reliability and authentication
+- Fixes persistent authentication issues for German and European users
+- Resolves "app version is too low" and "illegal argument" errors
+
+### Changed
+- Simplified API configuration by removing regional endpoint complexity
+- Timezone parameter is still accepted for backward compatibility but no longer affects API routing
+- Enhanced authentication reliability by using single, stable endpoint
+
+### Dependencies
+- Updated tsvesync from 1.0.89 to 1.0.90
+
+### Migration Notes
+- **Breaking Change**: If you were using `setRegionalEndpoint()` or `getRegionalEndpoint()` functions directly, these have been removed
+- Most users will not be affected as the plugin automatically handled endpoint selection
+- All functionality remains the same, just with improved reliability
+
 ## 1.0.89 (2025-07-30)
 
 ### Fixed
