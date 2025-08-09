@@ -20,13 +20,17 @@ interface ExtendedVeSyncAirPurifier extends VeSyncAirPurifier {
   hasFeature?(feature: string): boolean;
   isFeatureSupportedInCurrentMode?(feature: string): boolean;
   getMaxFanSpeed?(): number;
+  // Filter life property from VeSyncFan base class (inherited from VeSyncAirPurifier)
+  // filterLife: number; // Already defined in base interface
   details?: {
-    filter_life?: number;
+    filter_life?: number | { percent: number };
     child_lock?: boolean;
     air_quality_value?: number;
-    air_quality?: string;
+    air_quality?: string | number;
     screen_status?: 'on' | 'off';
     pm25?: number;
+    pm10?: number;
+    pm1?: number;
   };
 }
 
@@ -37,6 +41,7 @@ export class AirPurifierAccessory extends BaseAccessory {
   private isAirBaseV2Device: boolean;
   private isAir131Device: boolean;
   private airQualityService?: Service;
+  private filterService?: Service;
   private lastSetSpeed: number = 0; // Track the last speed we set
   private lastSetPercentage: number = 0; // Track the last percentage we set
   private skipNextUpdate: boolean = false; // Flag to skip the next update
@@ -85,33 +90,87 @@ export class AirPurifierAccessory extends BaseAccessory {
   private hasFeature(feature: string): boolean {
     const extendedDevice = this.device as unknown as ExtendedVeSyncAirPurifier;
     
+    // Log device type for debugging
+    this.platform.log.debug(`${this.device.deviceName}: Checking hasFeature('${feature}') for device type: ${this.device.deviceType}`);
+    
     // Use device's native hasFeature method if available
     if (typeof extendedDevice.hasFeature === 'function') {
-      return extendedDevice.hasFeature(feature);
+      const result = extendedDevice.hasFeature(feature);
+      this.platform.log.debug(`${this.device.deviceName}: Native hasFeature('${feature}') returned: ${result}`);
+      
+      // For filter_life, be extra defensive - if native method says false but we think it should be true, override
+      if (!result && feature === 'filter_life') {
+        const deviceType = this.device.deviceType;
+        // Check if this looks like a device type that should support filter_life
+        if (deviceType.includes('Core') || 
+            deviceType.includes('LAP-') || 
+            deviceType.includes('LV-') || 
+            deviceType.includes('Vital')) {
+          this.platform.log.warn(`${this.device.deviceName}: Device type ${deviceType} should support filter_life but native hasFeature returned false. Overriding to true.`);
+          return true;
+        }
+      }
+      
+      return result;
     }
     
     // Fallback feature detection based on device type
     switch (feature) {
       case 'air_quality':
-        // Explicitly disable air quality features
-        return false;
+        // Enable air quality features for devices that support it
+        // Check if device has air quality data available
+        const airQualityDevice = this.device as unknown as ExtendedVeSyncAirPurifier;
+        const hasAirQuality = !!(airQualityDevice.details?.air_quality_value !== undefined || 
+                 airQualityDevice.details?.pm25 !== undefined || 
+                 airQualityDevice.details?.air_quality !== undefined);
+        this.platform.log.debug(`${this.device.deviceName}: Fallback hasFeature('${feature}') returned: ${hasAirQuality}`);
+        return hasAirQuality;
         
       case 'child_lock':
         // Explicitly disable child lock features
+        this.platform.log.debug(`${this.device.deviceName}: Fallback hasFeature('${feature}') returned: false (explicitly disabled)`);
         return false;
         
       case 'display':
         // Explicitly disable display control features
+        this.platform.log.debug(`${this.device.deviceName}: Fallback hasFeature('${feature}') returned: false (explicitly disabled)`);
         return false;
         
       case 'filter_life':
-        // Explicitly disable filter life reporting
-        return false;
+        // For air purifiers, enable filter life features based on device type patterns
+        const deviceType = this.device.deviceType;
+        
+        // Check device type patterns that should support filter_life
+        const supportsFilterByType = deviceType.includes('Core') || 
+                                    deviceType.includes('LAP-') || 
+                                    deviceType.includes('LV-') || 
+                                    deviceType.includes('Vital');
+        
+        if (supportsFilterByType) {
+          this.platform.log.debug(`${this.device.deviceName}: Device type ${deviceType} supports filter_life by pattern matching`);
+          return true;
+        }
+        
+        // Fallback: Check if filter_life data exists in any format
+        const filterDevice = this.device as unknown as ExtendedVeSyncAirPurifier;
+        const filterLife = filterDevice.details?.filter_life;
+        const hasFilterLife = !!(filterLife !== undefined && 
+                 (typeof filterLife === 'number' || 
+                  (typeof filterLife === 'object' && filterLife !== null && 'percent' in filterLife)));
+        
+        // Also check for filterLife property from VeSyncFan base class
+        const hasFilterLifeProperty = typeof extendedDevice.filterLife === 'number';
+        const result = hasFilterLife || hasFilterLifeProperty;
+        
+        this.platform.log.debug(`${this.device.deviceName}: Fallback hasFeature('${feature}') - details.filter_life: ${JSON.stringify(filterLife)}, device.filterLife: ${extendedDevice.filterLife}, result: ${result}`);
+        return result;
         
       case 'fan_speed':
+        this.platform.log.debug(`${this.device.deviceName}: Fallback hasFeature('${feature}') returned: true`);
         return true;
         
       default:
+        this.platform.log.debug(`${this.device.deviceName}: Fallback hasFeature('${feature}') returned: false (unknown feature)`);
         return false;
     }
   }
@@ -462,10 +521,251 @@ export class AirPurifierAccessory extends BaseAccessory {
       async () => this.device.deviceName
     );
     
-    // Air quality sensor service has been disabled for all devices
+    // Set up air quality sensor service if supported
+    this.platform.log.info(`${this.device.deviceName}: Checking air_quality feature...`);
+    if (this.hasFeature('air_quality')) {
+      this.platform.log.info(`${this.device.deviceName}: Setting up air quality service`);
+      this.setupAirQualityService();
+    } else {
+      this.platform.log.info(`${this.device.deviceName}: Air quality not supported, skipping air quality service`);
+    }
+    
+    // Set up filter maintenance service if supported
+    this.platform.log.info(`${this.device.deviceName}: Checking filter_life feature...`);
+    if (this.hasFeature('filter_life')) {
+      this.platform.log.info(`${this.device.deviceName}: Setting up filter maintenance service`);
+      this.setupFilterService();
+    } else {
+      this.platform.log.info(`${this.device.deviceName}: Filter life not supported, skipping filter maintenance service`);
+    }
   }
   
-  // Air quality sensor service has been removed
+  /**
+   * Set up the air quality sensor service
+   */
+  private setupAirQualityService(): void {
+    this.platform.log.debug(`Setting up air quality service for ${this.device.deviceName}`);
+    
+    // Get or create the air quality sensor service
+    this.airQualityService = this.accessory.getService(this.platform.Service.AirQualitySensor) ||
+      this.accessory.addService(this.platform.Service.AirQualitySensor);
+
+    // Set up required air quality characteristic
+    this.setupCharacteristic(
+      this.platform.Characteristic.AirQuality,
+      this.getAirQuality.bind(this),
+      undefined,
+      {},
+      this.airQualityService
+    );
+
+    // Set up optional PM2.5 density characteristic
+    this.setupCharacteristic(
+      this.platform.Characteristic.PM2_5Density,
+      this.getPM25Density.bind(this),
+      undefined,
+      {
+        minValue: 0,
+        maxValue: 1000,
+        minStep: 1
+      },
+      this.airQualityService
+    );
+
+    // Set up optional PM10 density characteristic (if available)
+    const extendedDevice = this.device as unknown as ExtendedVeSyncAirPurifier;
+    if (extendedDevice.details?.pm10 !== undefined) {
+      this.setupCharacteristic(
+        this.platform.Characteristic.PM10Density,
+        this.getPM10Density.bind(this),
+        undefined,
+        {
+          minValue: 0,
+          maxValue: 1000,
+          minStep: 1
+        },
+        this.airQualityService
+      );
+    }
+  }
+
+  /**
+   * Set up the filter maintenance service
+   */
+  private setupFilterService(): void {
+    this.platform.log.info(`Setting up filter maintenance service for ${this.device.deviceName}`);
+    
+    // Log filter life data for debugging
+    const extendedDevice = this.device as unknown as ExtendedVeSyncAirPurifier;
+    const filterLifeData = extendedDevice.details?.filter_life;
+    this.platform.log.info(`Filter life data: ${JSON.stringify(filterLifeData)} (type: ${typeof filterLifeData})`);
+    this.platform.log.info(`Device filterLife property: ${extendedDevice.filterLife} (type: ${typeof extendedDevice.filterLife})`);
+    
+    // Get or create the filter maintenance service (match humidifier implementation)
+    this.filterService = this.accessory.getService(this.platform.Service.FilterMaintenance) ||
+      this.accessory.addService(this.platform.Service.FilterMaintenance);
+      
+    this.platform.log.info(`Filter maintenance service ${this.filterService ? 'created/found' : 'FAILED to create'} for ${this.device.deviceName}`);
+    
+    if (this.filterService) {
+      this.platform.log.info(`Filter service UUID: ${this.filterService.UUID}, displayName: ${this.filterService.displayName}`);
+    }
+
+    // Set up required filter change indication characteristic
+    this.setupCharacteristic(
+      this.platform.Characteristic.FilterChangeIndication,
+      this.getFilterChangeIndication.bind(this),
+      undefined,
+      {},
+      this.filterService
+    );
+    
+    this.platform.log.info(`Set up FilterChangeIndication characteristic`);
+
+    // Set up optional filter life level characteristic
+    this.setupCharacteristic(
+      this.platform.Characteristic.FilterLifeLevel,
+      this.getFilterLifeLevel.bind(this),
+      undefined,
+      {
+        minValue: 0,
+        maxValue: 100,
+        minStep: 1
+      },
+      this.filterService
+    );
+    
+    this.platform.log.info(`Set up FilterLifeLevel characteristic`);
+
+    // Set service name using setupCharacteristic like the humidifier
+    this.setupCharacteristic(
+      this.platform.Characteristic.Name,
+      async () => `${this.device.deviceName} Filter`,
+      undefined,
+      {},
+      this.filterService
+    );
+    
+    this.platform.log.info(`Set up Name characteristic for filter service`);
+    
+    // Log all services on the accessory to verify filter service is registered
+    const services = this.accessory.services;
+    if (services && services.length > 0) {
+      this.platform.log.info(`All services on accessory ${this.device.deviceName}:`);
+      services.forEach(service => {
+        this.platform.log.info(`  - ${service.displayName || 'Unnamed'} (UUID: ${service.UUID})`);
+      });
+    } else {
+      this.platform.log.info(`No services found on accessory ${this.device.deviceName}`);
+    }
+  }
+
+  /**
+   * Get air quality level for HomeKit
+   */
+  private async getAirQuality(): Promise<CharacteristicValue> {
+    const extendedDevice = this.device as unknown as ExtendedVeSyncAirPurifier;
+    
+    // Get PM2.5 value from device
+    const pm25 = extendedDevice.details?.air_quality_value ?? 
+                 extendedDevice.details?.pm25 ?? 0;
+    
+    // Convert to HomeKit air quality scale using existing method
+    return this.convertAirQualityToHomeKit(pm25);
+  }
+
+  /**
+   * Get PM2.5 density
+   */
+  private async getPM25Density(): Promise<CharacteristicValue> {
+    const extendedDevice = this.device as unknown as ExtendedVeSyncAirPurifier;
+    
+    const pm25 = extendedDevice.details?.air_quality_value ?? 
+                 extendedDevice.details?.pm25 ?? 0;
+    
+    // Ensure value is within HomeKit limits (0-1000)
+    return Math.min(1000, Math.max(0, pm25));
+  }
+
+  /**
+   * Get PM10 density
+   */
+  private async getPM10Density(): Promise<CharacteristicValue> {
+    const extendedDevice = this.device as unknown as ExtendedVeSyncAirPurifier;
+    
+    const pm10 = extendedDevice.details?.pm10 ?? 0;
+    
+    // Ensure value is within HomeKit limits (0-1000)
+    return Math.min(1000, Math.max(0, pm10));
+  }
+
+  /**
+   * Get filter change indication
+   */
+  private async getFilterChangeIndication(): Promise<CharacteristicValue> {
+    const extendedDevice = this.device as unknown as ExtendedVeSyncAirPurifier;
+    
+    // Use the filterLife property from the VeSync device, which already handles different formats
+    // Fall back to manual parsing if filterLife property is not available
+    let filterLife = 100; // Default to 100% if no filter life data
+    
+    if (typeof extendedDevice.filterLife === 'number' && !isNaN(extendedDevice.filterLife)) {
+      // Use the built-in filterLife property from VeSyncFan
+      filterLife = extendedDevice.filterLife;
+    } else {
+      // Fallback: manually parse details.filter_life for compatibility
+      const filterLifeData = extendedDevice.details?.filter_life;
+      
+      if (typeof filterLifeData === 'number' && !isNaN(filterLifeData)) {
+        filterLife = filterLifeData;
+      } else if (typeof filterLifeData === 'object' && filterLifeData !== null && 'percent' in filterLifeData) {
+        const percent = (filterLifeData as { percent: number }).percent;
+        filterLife = (typeof percent === 'number' && !isNaN(percent)) ? percent : 100;
+      }
+    }
+    
+    // Handle NaN, null, undefined cases
+    if (isNaN(filterLife) || filterLife === null || filterLife === undefined) {
+      filterLife = 100; // Default to 100 (filter OK) for invalid values in change indication
+    }
+    
+    // Indicate filter change needed when life is below 10%
+    return filterLife < 10 ? 1 : 0; // 0=FILTER_OK, 1=CHANGE_FILTER
+  }
+
+  /**
+   * Get filter life level
+   */
+  private async getFilterLifeLevel(): Promise<CharacteristicValue> {
+    const extendedDevice = this.device as unknown as ExtendedVeSyncAirPurifier;
+    
+    // Use the filterLife property from the VeSync device, which already handles different formats
+    // Fall back to manual parsing if filterLife property is not available
+    let filterLife = 100; // Default to 100% if no filter life data
+    
+    if (typeof extendedDevice.filterLife === 'number' && !isNaN(extendedDevice.filterLife)) {
+      // Use the built-in filterLife property from VeSyncFan
+      filterLife = extendedDevice.filterLife;
+    } else {
+      // Fallback: manually parse details.filter_life for compatibility
+      const filterLifeData = extendedDevice.details?.filter_life;
+      
+      if (typeof filterLifeData === 'number' && !isNaN(filterLifeData)) {
+        filterLife = filterLifeData;
+      } else if (typeof filterLifeData === 'object' && filterLifeData !== null && 'percent' in filterLifeData) {
+        const percent = (filterLifeData as { percent: number }).percent;
+        filterLife = (typeof percent === 'number' && !isNaN(percent)) ? percent : 100;
+      }
+    }
+    
+    // Handle NaN, null, undefined cases
+    if (isNaN(filterLife) || filterLife === null || filterLife === undefined) {
+      filterLife = 0; // Default to 0 for invalid values
+    }
+    
+    // Ensure value is within HomeKit limits (0-100) and round to nearest integer
+    return Math.round(Math.min(100, Math.max(0, filterLife)));
+  }
   
   /**
    * Get current state (INACTIVE = 0, IDLE = 1, PURIFYING_AIR = 2)
@@ -583,7 +883,80 @@ export class AirPurifierAccessory extends BaseAccessory {
       this.lastSetPercentage = 0;
     }
     
-    // Air quality updates have been removed
+    // Update air quality characteristics if service exists
+    if (this.airQualityService && this.hasFeature('air_quality')) {
+      const extendedDevice = this.device as unknown as ExtendedVeSyncAirPurifier;
+      
+      // Update air quality level
+      const pm25 = extendedDevice.details?.air_quality_value ?? 
+                   extendedDevice.details?.pm25 ?? 0;
+      const airQualityLevel = this.convertAirQualityToHomeKit(pm25);
+      
+      this.airQualityService.updateCharacteristic(
+        this.platform.Characteristic.AirQuality,
+        airQualityLevel
+      );
+      
+      // Update PM2.5 density
+      this.airQualityService.updateCharacteristic(
+        this.platform.Characteristic.PM2_5Density,
+        Math.min(1000, Math.max(0, pm25))
+      );
+      
+      // Update PM10 density if available
+      if (extendedDevice.details?.pm10 !== undefined) {
+        this.airQualityService.updateCharacteristic(
+          this.platform.Characteristic.PM10Density,
+          Math.min(1000, Math.max(0, extendedDevice.details.pm10))
+        );
+      }
+    }
+    
+    // Set up filter service if not already created and device supports it
+    if (!this.filterService && this.hasFeature('filter_life')) {
+      this.platform.log.info(`${this.device.deviceName}: Creating filter service during state update (was not created during setup)`);
+      this.setupFilterService();
+    }
+    
+    // Update filter characteristics if service exists
+    if (this.filterService && this.hasFeature('filter_life')) {
+      const extendedDevice = this.device as unknown as ExtendedVeSyncAirPurifier;
+      
+      // Use the same logic as the getter methods
+      let filterLife = 100; // Default to 100% if no filter life data
+      
+      if (typeof extendedDevice.filterLife === 'number' && !isNaN(extendedDevice.filterLife)) {
+        // Use the built-in filterLife property from VeSyncFan
+        filterLife = extendedDevice.filterLife;
+      } else {
+        // Fallback: manually parse details.filter_life for compatibility
+        const filterLifeData = extendedDevice.details?.filter_life;
+        
+        if (typeof filterLifeData === 'number' && !isNaN(filterLifeData)) {
+          filterLife = filterLifeData;
+        } else if (typeof filterLifeData === 'object' && filterLifeData !== null && 'percent' in filterLifeData) {
+          const percent = filterLifeData.percent;
+          filterLife = (typeof percent === 'number' && !isNaN(percent)) ? percent : 100;
+        }
+      }
+      
+      // Handle NaN, null, undefined cases
+      if (isNaN(filterLife) || filterLife === null || filterLife === undefined) {
+        filterLife = 100; // Default to 100% for invalid values
+      }
+      
+      // Update filter change indication
+      this.filterService.updateCharacteristic(
+        this.platform.Characteristic.FilterChangeIndication,
+        filterLife < 10 ? 1 : 0
+      );
+      
+      // Update filter life level
+      this.filterService.updateCharacteristic(
+        this.platform.Characteristic.FilterLifeLevel,
+        Math.min(100, Math.max(0, filterLife))
+      );
+    }
   }
 
   /**

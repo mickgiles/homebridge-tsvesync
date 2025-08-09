@@ -1,5 +1,74 @@
 # Changelog
 
+## 1.0.95 (2025-08-09)
+
+### Added
+- **Air Quality Monitoring**: Complete HomeKit AirQualitySensor service integration for air purifiers
+  - Added AirQuality characteristic with PM2.5-based quality levels (Excellent/Good/Fair/Poor/Very Poor)
+  - Added PM2_5Density characteristic showing real-time PM2.5 measurements in μg/m³
+  - Added PM10Density characteristic for devices that support PM10 monitoring
+  - Automatic air quality service setup for devices with air quality monitoring capabilities
+  - Real-time air quality updates synchronized with device state changes
+- **Filter Maintenance**: HomeKit FilterMaintenance service for filter life tracking
+  - Added FilterChangeIndication characteristic (alerts when filter needs replacement at <10% life)
+  - Added FilterLifeLevel characteristic showing current filter life percentage (0-100%)
+  - Automatic filter service setup for all supported air purifiers
+  - Smart filter life parsing supporting both direct values and object formats from different device types
+- **Enhanced Feature Detection**: Improved automatic feature detection for air purifiers
+  - Dynamic air quality feature detection based on device capabilities and available data
+  - Enhanced filter life feature detection with device type pattern matching
+  - Comprehensive logging for feature detection and service setup processes
+  - Robust fallback mechanisms for devices with varying API response formats
+
+### Changed
+- **Device Capability Detection**: Enhanced automatic service setup based on device features
+  - Improved `hasFeature()` method with better device type recognition and data validation
+  - Added runtime feature detection based on actual device API response data
+  - Enhanced logging throughout the accessory setup process for better troubleshooting
+- **Air Quality Integration**: Comprehensive air quality monitoring implementation
+  - Replaced disabled air quality features with full HomeKit AirQualitySensor service support
+  - Added PM2.5 to HomeKit air quality level conversion using EPA AQI standards
+  - Enhanced characteristic value constraints and validation for air quality data
+- **Filter Life Management**: Robust filter maintenance service implementation
+  - Smart handling of different filter life data formats (Air131 objects vs direct numbers)
+  - Added comprehensive error handling and default values for missing filter data
+  - Enhanced filter service creation and characteristic setup with proper naming
+- **Test Infrastructure**: Expanded test utilities for air quality and filter features
+  - Added mock air purifier factory with air quality and filter simulation
+  - Created comprehensive test scenarios for different air quality levels and filter conditions
+  - Enhanced test helpers with air quality and filter life test data generators
+
+### Fixed
+- **Air Quality Service Setup**: Resolved air quality service initialization and updates
+  - Fixed air quality service creation and characteristic configuration
+  - Improved PM2.5 density value handling and HomeKit compatibility
+  - Enhanced air quality level calculation and real-time updates
+- **Filter Service Integration**: Fixed filter maintenance service setup and operation
+  - Resolved filter service creation and characteristic binding issues
+  - Improved filter life percentage calculation and change indication logic
+  - Enhanced filter service naming and HomeKit integration
+- **Feature Detection Reliability**: Improved device feature detection accuracy
+  - Fixed feature detection for different device types and API response variations
+  - Enhanced fallback mechanisms for devices with incomplete feature data
+  - Improved logging and error handling for feature detection failures
+
+### Dependencies
+- Updated tsvesync from 1.0.94 to 1.0.95 for enhanced air quality and filter life support
+
+### HomeKit Integration Notes
+- **New Services**: Air purifiers now expose additional HomeKit services:
+  - **AirQualitySensor**: Shows air quality level, PM2.5, and PM10 density (where available)
+  - **FilterMaintenance**: Tracks filter life and alerts when replacement is needed
+- **Compatibility**: New services are automatically detected and only appear for supported devices
+- **User Experience**: Home app will show air quality readings and filter status alongside existing controls
+- **No Breaking Changes**: Existing air purifier functionality remains unchanged
+
+### Migration Notes
+- No configuration changes required - new services are automatically detected
+- Existing air purifier accessories will gain air quality and filter services after restart
+- Filter replacement notifications will appear in Home app when filter life drops below 10%
+- Air quality readings provide real-time PM2.5 and air quality level monitoring
+
 ## 1.0.90 (2025-07-31)
 
 ### Fixed

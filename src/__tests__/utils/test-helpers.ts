@@ -57,11 +57,20 @@ export const createMockRetryManager = (): jest.Mocked<RetryManager> => {
  */
 export const createMockService = () => ({
   getCharacteristic: jest.fn().mockReturnValue({
-    onSet: jest.fn(),
-    onGet: jest.fn(),
-    updateValue: jest.fn(),
+    onSet: jest.fn().mockReturnThis(),
+    onGet: jest.fn().mockReturnThis(),
+    updateValue: jest.fn().mockReturnThis(),
+    setProps: jest.fn().mockReturnThis(),
   }),
   setCharacteristic: jest.fn().mockReturnThis(),
+  testCharacteristic: jest.fn().mockReturnValue(false),
+  removeCharacteristic: jest.fn().mockReturnThis(),
+  addCharacteristic: jest.fn().mockReturnValue({
+    onSet: jest.fn().mockReturnThis(),
+    onGet: jest.fn().mockReturnThis(),
+    updateValue: jest.fn().mockReturnThis(),
+    setProps: jest.fn().mockReturnThis(),
+  }),
 });
 
 /**
@@ -466,6 +475,11 @@ export const createMockFan = (config: MockFanConfig = {}): jest.Mocked<VeSyncFan
       state.mode = mode;
       mockFan.mode = state.mode;
       return true;
+    }),
+    setSwingMode: jest.fn().mockImplementation(async (enabled: boolean) => {
+      state.oscillationState = enabled;
+      mockFan.oscillationState = state.oscillationState;
+      return true;
     })
   } as unknown as jest.Mocked<VeSyncFan>;
 
@@ -523,4 +537,235 @@ export const createMockBulb = (config: MockBulbConfig = {}): jest.Mocked<VeSyncB
     setColorTemperature: jest.fn().mockResolvedValue(true),
     setColor: jest.fn().mockResolvedValue(true),
   } as unknown as jest.Mocked<VeSyncBulb>;
+};
+
+/**
+ * Type for mock air purifier configuration
+ */
+export interface MockAirPurifierConfig {
+  deviceName?: string;
+  deviceType?: string;
+  cid?: string;
+  uuid?: string;
+  airQualityValue?: number;
+  pm1?: number;
+  pm10?: number;
+  aqPercent?: number;
+  filterLife?: number | { percent: number };
+  hasAirQuality?: boolean;
+  hasFilter?: boolean;
+}
+
+/**
+ * Creates a mock air purifier with air quality and filter features
+ */
+export const createMockAirPurifier = (config: MockAirPurifierConfig = {}): jest.Mocked<VeSyncFan> => {
+  const state = {
+    deviceStatus: 'on',
+    speed: 3,
+    mode: 'auto' as 'normal' | 'auto' | 'sleep' | 'turbo',
+    airQualityValue: config.airQualityValue || 25,
+    pm1: config.pm1 || 15,
+    pm10: config.pm10 || 35,
+    aqPercent: config.aqPercent || 80,
+    filterLife: typeof config.filterLife === 'object' ? config.filterLife.percent : (config.filterLife || 75),
+  };
+
+  const mockAirPurifier = {
+    deviceName: config.deviceName || 'Test Air Purifier',
+    deviceType: config.deviceType || 'Core300S',
+    cid: config.cid || 'test-cid',
+    uuid: config.uuid || 'test-uuid',
+    deviceStatus: state.deviceStatus,
+    speed: state.speed,
+    mode: state.mode,
+    maxSpeed: 4,
+    rotationDirection: 'clockwise' as 'clockwise' | 'counterclockwise',
+    oscillationState: false,
+    childLock: false,
+    airQualityValue: state.airQualityValue,
+    pm1: state.pm1,
+    pm10: state.pm10,
+    aqPercent: state.aqPercent,
+    filterLife: state.filterLife,
+    subDeviceNo: 0,
+    isSubDevice: false,
+    deviceRegion: 'US',
+    configModule: 'VeSyncAirBypass',
+    macId: '00:11:22:33:44:55',
+    deviceCategory: 'fan',
+    connectionStatus: 'online',
+    hasFeature: jest.fn().mockImplementation((feature: string) => {
+      if (feature === 'air_quality') return config.hasAirQuality !== false;
+      if (feature === 'filter_life') return config.hasFilter !== false;
+      return true;
+    }),
+    getDetails: jest.fn().mockImplementation(async () => {
+      return {
+        deviceStatus: state.deviceStatus,
+        speed: state.speed,
+        mode: state.mode,
+        air_quality_value: state.airQualityValue,
+        pm1: state.pm1,
+        pm10: state.pm10,
+        aq_percent: state.aqPercent,
+        filter_life: config.filterLife || state.filterLife
+      };
+    }),
+    setApiBaseUrl: jest.fn(),
+    turnOn: jest.fn().mockImplementation(async () => {
+      state.deviceStatus = 'on';
+      mockAirPurifier.deviceStatus = state.deviceStatus;
+      return true;
+    }),
+    turnOff: jest.fn().mockImplementation(async () => {
+      state.deviceStatus = 'off';
+      mockAirPurifier.deviceStatus = state.deviceStatus;
+      return true;
+    }),
+    changeFanSpeed: jest.fn().mockImplementation(async (speed: number) => {
+      state.speed = speed;
+      mockAirPurifier.speed = state.speed;
+      return true;
+    }),
+    changeMode: jest.fn().mockImplementation(async (mode: 'normal' | 'auto' | 'sleep' | 'turbo') => {
+      state.mode = mode;
+      mockAirPurifier.mode = state.mode;
+      return true;
+    }),
+    setMode: jest.fn().mockImplementation(async (mode: 'normal' | 'auto' | 'sleep' | 'turbo') => {
+      state.mode = mode;
+      mockAirPurifier.mode = state.mode;
+      return true;
+    }),
+    setRotationDirection: jest.fn().mockImplementation(async (direction: 'clockwise' | 'counterclockwise') => {
+      mockAirPurifier.rotationDirection = direction;
+      return true;
+    }),
+    setOscillation: jest.fn().mockImplementation(async (enabled: boolean) => {
+      mockAirPurifier.oscillationState = enabled;
+      return true;
+    }),
+    setChildLock: jest.fn().mockImplementation(async (enabled: boolean) => {
+      mockAirPurifier.childLock = enabled;
+      return true;
+    }),
+    setSwingMode: jest.fn().mockImplementation(async (enabled: boolean) => {
+      mockAirPurifier.oscillationState = enabled;
+      return true;
+    })
+  } as unknown as jest.Mocked<VeSyncFan>;
+
+  return mockAirPurifier;
+};
+
+/**
+ * Air quality test scenarios for different conditions
+ */
+export const airQualityScenarios = {
+  excellent: {
+    pm25: 8,
+    pm1: 5,
+    pm10: 12,
+    level: 1,
+    description: 'Excellent air quality'
+  },
+  good: {
+    pm25: 22,
+    pm1: 15,
+    pm10: 28,
+    level: 2,
+    description: 'Good air quality'
+  },
+  fair: {
+    pm25: 42,
+    pm1: 30,
+    pm10: 55,
+    level: 3,
+    description: 'Fair air quality'
+  },
+  poor: {
+    pm25: 85,
+    pm1: 60,
+    pm10: 120,
+    level: 4,
+    description: 'Poor air quality'
+  },
+  veryPoor: {
+    pm25: 200,
+    pm1: 150,
+    pm10: 300,
+    level: 5,
+    description: 'Very poor air quality'
+  }
+};
+
+/**
+ * Filter life test scenarios
+ */
+export const filterLifeScenarios = {
+  new: {
+    percent: 100,
+    needsReplacement: false,
+    description: 'New filter'
+  },
+  good: {
+    percent: 75,
+    needsReplacement: false,
+    description: 'Good filter condition'
+  },
+  fair: {
+    percent: 50,
+    needsReplacement: false,
+    description: 'Fair filter condition'
+  },
+  low: {
+    percent: 15,
+    needsReplacement: false,
+    description: 'Low filter life'
+  },
+  critical: {
+    percent: 8,
+    needsReplacement: true,
+    description: 'Critical filter life'
+  },
+  empty: {
+    percent: 0,
+    needsReplacement: true,
+    description: 'Filter needs replacement'
+  }
+};
+
+/**
+ * Creates air quality test data for device mocking
+ */
+export const createAirQualityTestData = (scenario: keyof typeof airQualityScenarios) => {
+  const data = airQualityScenarios[scenario];
+  return {
+    air_quality: data.level,
+    air_quality_value: data.pm25,
+    pm1: data.pm1,
+    pm10: data.pm10,
+    aq_percent: Math.max(0, 100 - data.pm25), // Rough approximation
+  };
+};
+
+/**
+ * Creates filter life test data for device mocking
+ */
+export const createFilterLifeTestData = (scenario: keyof typeof filterLifeScenarios, format: 'number' | 'object' = 'number') => {
+  const data = filterLifeScenarios[scenario];
+  
+  if (format === 'object') {
+    return {
+      filter_life: {
+        percent: data.percent,
+        replace_indicator: data.needsReplacement
+      }
+    };
+  }
+  
+  return {
+    filter_life: data.percent
+  };
 }; 
