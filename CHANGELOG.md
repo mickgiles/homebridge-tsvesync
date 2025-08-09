@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.96 (2025-08-09)
+
+### Changed
+- **Logging Improvements**: Reduced log verbosity for air quality and filter maintenance features
+  - Changed informational logs to debug level for cleaner output during device setup and operation
+  - Preserved error and warning logs for important issues and troubleshooting
+  - Affects air quality service setup, filter maintenance service setup, and related feature detection logging
+
 ## 1.0.95 (2025-08-09)
 
 ### Added
