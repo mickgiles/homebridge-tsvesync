@@ -2,6 +2,12 @@
 
 This is a Homebridge plugin that allows you to control your VeSync/Levoit/Etekcity devices through HomeKit. It provides native HomeKit integration for a wide range of VeSync-enabled devices.
 
+## 🆕 Recent Updates
+
+- **Enhanced Authentication Support**: Now supports the new VeSync authentication flow (pyvesync PR #340) with automatic fallback to legacy authentication
+- **Regional API Support**: Automatic detection and routing for US and EU regional endpoints
+- **Improved Compatibility**: Better error handling and automatic recovery for API changes
+
 ## Supported Devices
 
 ### Air Purifiers
@@ -223,10 +229,48 @@ Example configuration with all exclusion options:
 
 ## Troubleshooting
 
-1. Make sure your VeSync credentials are correct
-2. Check the Homebridge logs for any error messages
-3. Ensure your devices are properly set up in the VeSync app
-4. Verify your devices are running the latest firmware
+### Authentication Issues
+
+If you're experiencing authentication problems, you can test your credentials and determine your authentication type using the included test script:
+
+```bash
+# Test your VeSync authentication
+./scripts/vesync-auth-test.sh
+
+# Or provide credentials directly
+./scripts/vesync-auth-test.sh user@example.com password
+
+# For detailed output
+./scripts/vesync-auth-test.sh -v
+```
+
+The script will:
+- Test both NEW and LEGACY authentication methods
+- Detect your account's regional endpoint (US/EU)
+- Provide clear recommendations for configuration
+- Show any error codes with explanations
+
+### Common Issues
+
+1. **Authentication Failed**
+   - Verify your VeSync credentials are correct
+   - Try logging into the VeSync app to confirm they work
+   - Run the authentication test script to diagnose issues
+
+2. **Devices Not Appearing**
+   - Check the Homebridge logs for any error messages
+   - Ensure your devices are properly set up in the VeSync app
+   - Verify your devices are running the latest firmware
+
+3. **Regional Issues (EU Users)**
+   - The plugin automatically detects and uses the correct regional endpoint
+   - EU accounts will automatically use `smartapi.vesync.eu`
+   - US/CA/MX/JP accounts use `smartapi.vesync.com`
+
+4. **API Rate Limiting**
+   - The plugin includes automatic rate limiting
+   - If you see quota errors, increase the `updateInterval` in your config
+   - Premium accounts have higher quotas than free accounts
 5. Check that your devices are online in the VeSync app
 
 ## Development
