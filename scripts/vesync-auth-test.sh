@@ -446,13 +446,13 @@ test_regional_authentication() {
     local failed_regions=""
     local cross_region_errors=""
     
-    # Declare global variables to store individual region results
+    # Initialize global variables to store individual region results
     if [[ "$auth_type" == "new" ]]; then
-        declare -g NEW_AUTH_US_RESULT=1
-        declare -g NEW_AUTH_EU_RESULT=1
+        NEW_AUTH_US_RESULT=1
+        NEW_AUTH_EU_RESULT=1
     else
-        declare -g LEGACY_AUTH_US_RESULT=1
-        declare -g LEGACY_AUTH_EU_RESULT=1
+        LEGACY_AUTH_US_RESULT=1
+        LEGACY_AUTH_EU_RESULT=1
     fi
     
     for i in "${!regions[@]}"; do
@@ -594,15 +594,30 @@ print_final_summary() {
     fi
     echo ""
     
+    # Determine authentication type based on individual region results
+    local new_auth_works=false
+    local legacy_auth_works=false
+    
+    # Check if NEW auth worked in any region
+    if [[ "${NEW_AUTH_US_RESULT:-1}" == "0" || "${NEW_AUTH_EU_RESULT:-1}" == "0" ]]; then
+        new_auth_works=true
+    fi
+    
+    # Check if LEGACY auth worked in any region
+    if [[ "${LEGACY_AUTH_US_RESULT:-1}" == "0" || "${LEGACY_AUTH_EU_RESULT:-1}" == "0" ]]; then
+        legacy_auth_works=true
+    fi
+    
     # Determine authentication type
-    if [[ "$new_auth_result" == "0" ]]; then
+    if [[ "$new_auth_works" == "true" ]]; then
         echo -e "  ${GREEN}${SUCCESS}${NC} ${BOLD}Authentication Type: NEW (PR #340)${NC}"
         echo -e "  ${ARROW} Your account supports the new two-step authentication flow"
         echo -e "  ${ARROW} Compatible with pyvesync PR #340"
         echo -e "  ${ARROW} Uses VeSync app version 5.6.60 or higher"
         
-    elif [[ "$legacy_auth_result" == "0" ]]; then
-        if [[ "$new_auth_result" == "2" ]]; then
+    elif [[ "$legacy_auth_works" == "true" ]]; then
+        # Check if new auth explicitly required legacy (returned code 2)
+        if [[ "${NEW_AUTH_US_RESULT:-1}" == "2" || "${NEW_AUTH_EU_RESULT:-1}" == "2" ]]; then
             echo -e "  ${BLUE}${INFO}${NC} ${BOLD}Authentication Type: LEGACY ONLY${NC}"
             echo -e "  ${ARROW} Account explicitly requires legacy authentication"
         else
@@ -613,7 +628,7 @@ print_final_summary() {
         echo -e "  ${ARROW} Compatible with existing pyvesync implementations"
         echo -e "  ${ARROW} Uses VeSync app version 2.8.6"
         
-    elif [[ "$new_auth_result" == "3" || "$legacy_auth_result" == "3" ]]; then
+    elif [[ "${NEW_AUTH_US_RESULT:-1}" == "3" || "${NEW_AUTH_EU_RESULT:-1}" == "3" || "${LEGACY_AUTH_US_RESULT:-1}" == "3" || "${LEGACY_AUTH_EU_RESULT:-1}" == "3" ]]; then
         echo -e "  ${YELLOW}${WARNING}${NC} ${BOLD}Authentication Type: REGION MISMATCH${NC}"
         echo -e "  ${ARROW} Cross-region authentication errors detected"
         echo -e "  ${ARROW} Try different regional endpoints:"
@@ -741,10 +756,10 @@ main() {
     # Print final summary and recommendations
     print_final_summary "$new_auth_result" "$legacy_auth_result" "$guessed_region"
     
-    # Exit with appropriate code
-    if [[ "$new_auth_result" == "0" || "$legacy_auth_result" == "0" ]]; then
+    # Exit with appropriate code based on individual results
+    if [[ "${NEW_AUTH_US_RESULT:-1}" == "0" || "${NEW_AUTH_EU_RESULT:-1}" == "0" || "${LEGACY_AUTH_US_RESULT:-1}" == "0" || "${LEGACY_AUTH_EU_RESULT:-1}" == "0" ]]; then
         exit 0  # Success
-    elif [[ "$new_auth_result" == "3" || "$legacy_auth_result" == "3" ]]; then
+    elif [[ "${NEW_AUTH_US_RESULT:-1}" == "3" || "${NEW_AUTH_EU_RESULT:-1}" == "3" || "${LEGACY_AUTH_US_RESULT:-1}" == "3" || "${LEGACY_AUTH_EU_RESULT:-1}" == "3" ]]; then
         exit 3  # Region mismatch
     else
         exit 1  # Authentication failed
