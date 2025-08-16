@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.0.97 (2025-08-16)
+
+### Added
+- **Enhanced Authentication Reliability**: Updated to tsvesync v1.0.97 with improved authentication system
+  - Automatic support for new two-step VeSync authentication flow with legacy fallback
+  - Enhanced cross-region authentication support for international users
+  - Improved authentication error recovery and retry mechanisms
+- **Regional API Support**: Automatic detection and routing for global VeSync API endpoints
+  - Enhanced support for EU users with automatic endpoint switching
+  - Improved authentication reliability for users in different geographical regions
+  - Better handling of cross-region authentication errors and automatic fallback
+
+### Fixed
+- **Authentication Issues**: Resolved authentication problems affecting international users
+  - Fixed "app version is too low" errors with updated VeSync API compatibility
+  - Improved authentication success rates for users in EU and other regions
+  - Enhanced token refresh and session management reliability
+- **API Compatibility**: Updated VeSync API version support for improved stability
+  - Better handling of VeSync API changes and authentication protocol updates
+  - Improved compatibility with latest VeSync mobile app authentication methods
+
+### Dependencies
+- Updated tsvesync from 1.0.96 to 1.0.97 for enhanced authentication and regional support
+
+### Migration Notes
+- No configuration changes required - authentication improvements are automatic
+- Enhanced authentication reliability should improve connection stability for all users
+- International users should experience better authentication success rates
+- Existing device functionality remains unchanged with improved underlying reliability
+
 ## 1.0.96 (2025-08-09)
 
 ### Changed
