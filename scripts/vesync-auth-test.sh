@@ -308,7 +308,18 @@ test_new_authentication() {
                 
                 local timestamp2=$(date +%s)
                 local biz_token=$(extract_json_value "$auth_response" "result.bizToken")
-                local token_payload="{\"method\":\"loginByAuthorizeCode4Vesync\",\"authorizeCode\":\"$authorize_code\",\"acceptLanguage\":\"en\",\"accountID\":\"\",\"clientInfo\":\"SM N9005\",\"clientType\":\"vesyncApp\",\"clientVersion\":\"VeSync 5.6.60\",\"debugMode\":false,\"emailSubscriptions\":false,\"osInfo\":\"Android\",\"terminalId\":\"$TERMINAL_ID\",\"timeZone\":\"America/New_York\",\"token\":\"\",\"bizToken\":\"$biz_token\",\"regionChange\":\"\",\"userCountryCode\":\"$region\",\"traceId\":\"APP${APP_ID}${timestamp2}\"}"
+                
+                # Build token payload - omit bizToken if null/empty
+                local token_payload="{\"method\":\"loginByAuthorizeCode4Vesync\",\"authorizeCode\":\"$authorize_code\",\"acceptLanguage\":\"en\",\"clientInfo\":\"SM N9005\",\"clientType\":\"vesyncApp\",\"clientVersion\":\"VeSync 5.6.60\",\"debugMode\":false,\"emailSubscriptions\":false,\"osInfo\":\"Android\",\"terminalId\":\"$TERMINAL_ID\",\"timeZone\":\"America/New_York\",\"userCountryCode\":\"$region\",\"traceId\":\"APP${APP_ID}${timestamp2}\"}"
+                
+                # Only add bizToken if it exists and is not "null"
+                if [[ -n "$biz_token" && "$biz_token" != "null" ]]; then
+                    # Insert bizToken before userCountryCode
+                    token_payload="${token_payload/\"userCountryCode\"/\"bizToken\":\"$biz_token\",\"userCountryCode\"}"
+                fi
+                
+                log "DEBUG" "Token exchange payload: $token_payload"
+                log "DEBUG" "Token exchange endpoint: $base_url/user/api/accountManage/v1/loginByAuthorizeCode4Vesync"
                 
                 local token_response=$(curl -s --connect-timeout $DEFAULT_TIMEOUT --max-time $DEFAULT_TIMEOUT \
                     -X POST \

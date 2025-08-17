@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.98 (2025-08-17)
+
+### Fixed
+- **Authentication Stability**: Updated to tsvesync v1.0.98 with enhanced authentication flow fixes
+  - Resolved bizToken handling issues in VeSync authentication requests
+  - Improved reliability of new two-step authentication flow with better error handling
+  - Enhanced terminalId generation consistency across authentication steps
+  - Fixed authentication payload structure to better match VeSync API requirements
+- **Testing Infrastructure**: Updated authentication testing script for better reliability
+  - Enhanced test script to properly handle null bizToken scenarios
+  - Improved authentication flow validation and error reporting
+
 ## 1.0.97 (2025-08-16)
 
 ### Added
