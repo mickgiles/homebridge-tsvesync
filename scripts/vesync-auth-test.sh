@@ -343,6 +343,55 @@ test_new_authentication() {
                     echo -e "   ${ARROW} Account ID: $(redact_pii "$account_id" "account_id")"
                     echo -e "   ${ARROW} Country: ${country_code:-unknown}"
                     return 0
+                elif [[ "$token_code" == "-11260022" ]]; then
+                    # Handle cross-region error with retry (like pyvesync PR #340)
+                    echo -e "${YELLOW}${WARNING}${NC} Cross-region error detected, attempting retry..."
+                    
+                    local region_change_token=$(extract_json_value "$token_response" "result.bizToken")
+                    local new_country_code=$(extract_json_value "$token_response" "result.countryCode")
+                    
+                    if [[ -n "$region_change_token" && "$region_change_token" != "null" ]]; then
+                        echo -e "   ${ARROW} Got region change token from error response"
+                        echo -e "   ${ARROW} New country code: ${new_country_code:-unknown}"
+                        
+                        # Step 2 Retry: Use region change token
+                        echo -e "\n${CYAN}Testing Step 2 Retry: With region change token...${NC}"
+                        
+                        local timestamp3=$(date +%s)
+                        local retry_payload="{\"method\":\"loginByAuthorizeCode4Vesync\",\"authorizeCode\":\"$authorize_code\",\"acceptLanguage\":\"en\",\"clientInfo\":\"SM N9005\",\"clientType\":\"vesyncApp\",\"clientVersion\":\"VeSync 5.6.60\",\"debugMode\":false,\"emailSubscriptions\":false,\"osInfo\":\"Android\",\"terminalId\":\"$TERMINAL_ID\",\"timeZone\":\"America/New_York\",\"bizToken\":\"$region_change_token\",\"regionChange\":\"last_region\",\"userCountryCode\":\"${new_country_code:-$region}\",\"traceId\":\"APP${APP_ID}${timestamp3}\"}"
+                        
+                        log "DEBUG" "Retry payload: $retry_payload"
+                        
+                        local retry_response=$(curl -s --connect-timeout $DEFAULT_TIMEOUT --max-time $DEFAULT_TIMEOUT \
+                            -X POST \
+                            -H "Content-Type: application/json" \
+                            -H "Accept: application/json" \
+                            -H "User-Agent: VeSync/5.6.60 (Android; SM N9005)" \
+                            -d "$retry_payload" \
+                            "$base_url/user/api/accountManage/v1/loginByAuthorizeCode4Vesync" 2>/dev/null || echo '{"error":"network_error"}')
+                        
+                        save_debug_response "$retry_response" "new_auth_${region_lower2}_step2_retry"
+                        
+                        local retry_code=$(extract_json_value "$retry_response" "code")
+                        local retry_token=$(extract_json_value "$retry_response" "result.token")
+                        local retry_account_id=$(extract_json_value "$retry_response" "result.accountID")
+                        local retry_country=$(extract_json_value "$retry_response" "result.countryCode")
+                        
+                        if [[ "$retry_code" == "0" && -n "$retry_token" && "$retry_token" != "null" ]]; then
+                            echo -e "${GREEN}${SUCCESS}${NC} NEW Authentication Step 2 Retry successful!"
+                            echo -e "   ${ARROW} Token: $(redact_pii "$retry_token" "token")"
+                            echo -e "   ${ARROW} Account ID: $(redact_pii "$retry_account_id" "account_id")"
+                            echo -e "   ${ARROW} Country: ${retry_country:-$new_country_code}"
+                            return 0
+                        else
+                            echo -e "${RED}${FAILURE}${NC} NEW Authentication Step 2 Retry failed"
+                            explain_error_code "$retry_code" "$(extract_json_value "$retry_response" "msg")"
+                            return 1
+                        fi
+                    else
+                        echo -e "${RED}${FAILURE}${NC} No region change token in error response"
+                        return 1
+                    fi
                 else
                     echo -e "${RED}${FAILURE}${NC} NEW Authentication Step 2 failed"
                     explain_error_code "$token_code" "$response_msg"

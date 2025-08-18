@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.0.99 (2025-08-18)
+
+### Fixed
+- **Session Management**: Fixed token expiry handling to properly recognize VeSync JWT tokens as valid for 30 days
+  - Updated TOKEN_EXPIRY from 1 hour to 25 days to prevent unnecessary re-authentication
+  - Reduced authentication frequency from hourly to every 25 days for improved stability
+  - Enhanced session management with proper JWT token lifetime recognition
+- **Cross-Region Authentication**: Updated to tsvesync v1.0.99 with enhanced cross-region retry logic
+  - Improved authentication reliability for international users with automatic region switching
+  - Enhanced authentication script with cross-region error handling and automatic retry mechanisms
+  - Better handling of cross-region authentication errors with intelligent fallback
+- **Authentication Script**: Enhanced vesync-auth-test.sh with cross-region retry handling
+  - Added automatic detection and retry for cross-region authentication errors
+  - Improved error handling with region change token support
+  - Enhanced debugging capabilities for cross-region authentication scenarios
+
+### Dependencies
+- Updated tsvesync from 1.0.98 to 1.0.99 for enhanced cross-region authentication support
+
+### Migration Notes
+- No configuration changes required - authentication improvements are automatic
+- Users should experience significantly reduced authentication requests (from hourly to every 25 days)
+- International users should experience better authentication success rates with cross-region support
+- Existing device functionality remains unchanged with improved underlying session management
+
 ## 1.0.98 (2025-08-17)
 
 ### Fixed

@@ -30,7 +30,9 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
   private initializationResolver!: () => void;
   private isInitialized = false;
   private readonly logger!: PluginLogger;
-  private readonly TOKEN_EXPIRY = 60 * 60 * 1000; // 1 hour in milliseconds
+  // VeSync JWT tokens are valid for 30 days (verified by decoding the JWT)
+  // We'll refresh at 25 days to ensure we never hit expiration
+  private readonly TOKEN_EXPIRY = 25 * 24 * 60 * 60 * 1000; // 25 days in milliseconds
   private lastTokenRefresh: Date = new Date(0);
 
   constructor(
