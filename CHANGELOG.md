@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.0.100 (2025-08-23)
+
+### Fixed
+- **Cross-Region Authentication Reliability**: Updated to tsvesync v1.0.100 with critical authentication retry fix
+  - Fixed timing issue in cross-region authentication retry logic where API URL was restored too early
+  - Improved authentication success rates for EU accounts and cross-region authentication scenarios
+  - Enhanced retry mechanism now properly completes all attempts before restoring original API base URL
+  - Better debug logging for cross-region authentication troubleshooting and monitoring
+- **Authentication Script Enhancement**: Improved authentication test script reliability
+  - Fixed retry logic that was preventing successful cross-region authentication despite script success indication
+  - Better handling of authentication flow state during cross-region retry attempts
+
+### Dependencies
+- Updated tsvesync from 1.0.99 to 1.0.100 for enhanced cross-region authentication reliability
+
+### Migration Notes
+- No configuration changes required - authentication reliability improvements are automatic
+- EU and cross-region users should experience significantly improved authentication success rates
+- Enhanced error handling provides better visibility into authentication retry processes
+- Existing device functionality remains unchanged with improved underlying authentication stability
+
 ## 1.0.99 (2025-08-18)
 
 ### Fixed
