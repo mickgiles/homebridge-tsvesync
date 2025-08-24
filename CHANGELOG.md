@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.0.101 (2025-08-24)
+
+### Fixed
+- **Critical Authentication Fix**: Updated to tsvesync v1.0.101 with critical cross-region authentication bug fix
+  - Fixed timing issue where `setApiBaseUrl()` restoration was happening before retry attempts
+  - Resolves `-11261022 "access region conflict error"` that affected EU and international accounts
+  - Significantly improves authentication success rates for non-US new accounts
+  - Enhanced retry mechanism ensures proper endpoint usage during cross-region authentication
+
+### Dependencies
+- Updated tsvesync from 1.0.100 to 1.0.101 for critical authentication bug fix
+
+### Migration Notes
+- No configuration changes required - authentication reliability improvements are automatic
+- Users experiencing authentication failures should see immediate improvement
+
 ## 1.0.100 (2025-08-23)
 
 ### Fixed
