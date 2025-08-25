@@ -9,6 +9,11 @@
   - EU accounts now authenticate automatically in ~2.5 seconds with intelligent region detection and switching
   - Resolves persistent authentication failures that completely prevented EU users from using the plugin
   - No configuration changes required - authentication improvements work automatically
+- **Improved Bad Credential Handling**: Enhanced authentication error detection for faster failure response
+  - Invalid credentials now fail fast in 0.1-1.3 seconds (previously took up to 7.5 seconds)
+  - System detects credential error codes and stops retrying immediately for invalid username/password scenarios
+  - Clear error messages for authentication failures with specific error code recognition
+  - Eliminates unnecessary retry loops for obviously bad credentials, improving user experience
 
 ### Changed
 - **Enhanced Cross-Region Reliability**: Improved authentication flow for international users
