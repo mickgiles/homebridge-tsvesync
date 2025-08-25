@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.0.102 (2025-08-25)
+
+### Fixed
+- **Critical EU Authentication Resolution**: Updated to tsvesync v1.0.102 with complete EU authentication fix
+  - EU users can now authenticate successfully using correct regional endpoint (smartapi.vesync.eu)
+  - Fixed Step 2 authentication for EU accounts - now uses correct 'DE' country code instead of 'US'
+  - Resolves persistent authentication failures for European Homebridge users
+  - Enhanced authentication reliability for international users with proper country code mapping
+- **Enhanced Regional Support**: Improved cross-region authentication handling
+  - Better handling of cross-region authentication errors with automatic region switching
+  - Enhanced constructor options support for region parameter configuration
+  - Improved debugging capabilities for authentication flow troubleshooting
+
+### Dependencies
+- Updated tsvesync from 1.0.101 to 1.0.102 for critical EU authentication resolution
+
+### HomeKit Integration Notes
+- **EU User Impact**: European users should experience immediate improvement in authentication reliability
+- **Regional Compatibility**: Enhanced support for users in different geographical regions
+- **No Configuration Changes**: Authentication improvements are automatic and require no configuration changes
+- **Enhanced Debugging**: Better error reporting and debugging capabilities for authentication issues
+
+### Migration Notes
+- No configuration changes required - EU authentication improvements are automatic
+- European users experiencing authentication failures should see immediate resolution
+- Existing device functionality remains unchanged with improved underlying authentication stability
+- Enhanced regional support provides better reliability for international users
+
 ## 1.0.101 (2025-08-24)
 
 ### Fixed
