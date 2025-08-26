@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.105 (2025-08-26)
+
+### Changed
+- **Improved Country Code UI**: Country list now sorted alphabetically for easier navigation
+  - Users can now quickly find their country in the Homebridge UI dropdown
+  - All 76 countries remain available, just in alphabetical order
+  - Makes configuration significantly more user-friendly for international users
+
 ## 1.0.104 (2025-08-26)
 
 ### Added
