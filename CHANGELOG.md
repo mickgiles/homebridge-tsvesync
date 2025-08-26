@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.0.106 (2025-08-26)
+
+### Fixed
+- **CRITICAL: International Account Device Discovery**: Fixed device discovery for international accounts
+  - Inherits critical endpoint switching bug fix from tsvesync v1.0.106
+  - After successful authentication, maintains the endpoint that authenticated successfully
+  - Fixes AU/NZ/Asia-Pacific accounts that authenticate via EU endpoint
+  - Resolves "no devices found" issues for international users whose accounts authenticate via unexpected regional endpoints
+  - International users should now see their devices properly in HomeKit
+
+### Dependencies
+- Updated tsvesync from 1.0.105 to 1.0.106 for critical international account fix
+
+### Migration Notes
+- **International Users**: This release should resolve device discovery issues
+- **All Users**: No configuration changes required - the fix is automatic
+- If you were experiencing device discovery issues, restart Homebridge to apply the fix
+
 ## 1.0.105 (2025-08-26)
 
 ### Changed
