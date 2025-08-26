@@ -245,6 +245,7 @@ export const createRateLimitedVeSync = (
   customLogger?: PluginLogger,
   exclusions?: DeviceExclusion,
   config?: {
+    countryCode?: string;
     quotaManagement?: {
       enabled: boolean;
       bufferPercentage?: number;
@@ -252,7 +253,15 @@ export const createRateLimitedVeSync = (
     }
   }
 ): VeSync => {
-  const client = new VeSync(username, password, timeZone, debug, redact, apiUrl, customLogger, exclusions);
+  // Use the new options object pattern for VeSync constructor
+  const client = new (VeSync as any)(username, password, timeZone, {
+    debug: debug,
+    redact: redact,
+    apiUrl: apiUrl,
+    customLogger: customLogger,
+    excludeConfig: exclusions,
+    countryCode: config?.countryCode || 'US'  // Default to US
+  });
   const logger = customLogger || new PluginLogger(console as any, debug || false);
   
   // Create rate limiter with quota management if enabled

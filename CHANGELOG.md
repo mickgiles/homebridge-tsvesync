@@ -1,5 +1,43 @@
 # Changelog
 
+## 1.0.104 (2025-08-26)
+
+### Added
+- **Country Code Configuration**: New country code setting for international account support
+  - Added comprehensive country code dropdown in Homebridge UI with 80+ countries
+  - Full list of country names mapped to ISO country codes for easy selection
+  - Smart endpoint selection based on country codes (EU countries → EU endpoint, others → US endpoint)
+  - Default country code set to 'US' for backward compatibility
+
+### Fixed
+- **International Authentication**: Complete fix for accounts worldwide
+  - Australian and New Zealand accounts now authenticate correctly with US endpoint + country codes
+  - All Asia-Pacific accounts (JP, SG, CN, KR) now work properly
+  - European accounts continue to work with EU endpoint
+  - Fixed constructor issues with country code parameter passing
+
+### Changed
+- **Enhanced Error Messages**: Improved user guidance for authentication issues
+  - Clear instructions when country code configuration is needed
+  - Helpful error messages listing common country codes (AU, NZ, JP, etc.)
+  - Warning messages for country code mismatches with specific fix instructions
+  - Better cross-region error handling with actionable guidance
+
+### Documentation
+- Added comprehensive International Account Support section to README
+- Added country code configuration instructions with examples
+- Added troubleshooting guide for country code related errors
+- Updated configuration examples to include country code field
+
+### Dependencies
+- Updated tsvesync from 1.0.103 to 1.0.104 for international account support
+
+### Migration Notes
+- **US Users**: No action required - default 'US' country code maintains backward compatibility
+- **International Users**: Set your country code in Homebridge UI or config.json for proper authentication
+- **EU Users**: Continue to work automatically with EU country codes
+- **AU/NZ Users**: Must set country code to 'AU' or 'NZ' respectively
+
 ## 1.0.103 (2025-08-25)
 
 ### Fixed

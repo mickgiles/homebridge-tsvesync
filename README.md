@@ -4,9 +4,11 @@ This is a Homebridge plugin that allows you to control your VeSync/Levoit/Etekci
 
 ## 🆕 Recent Updates
 
-- **Enhanced Authentication Support**: Now supports the new VeSync authentication flow (pyvesync PR #340) with automatic fallback to legacy authentication
+- **International Account Support**: Full support for accounts worldwide! Australian, New Zealand, European, and Asian users can now authenticate successfully
+- **Country Code Configuration**: New country code dropdown in Homebridge UI for easy international account setup
+- **Enhanced Authentication**: Supports the new VeSync authentication flow (pyvesync PR #340) with automatic fallback to legacy authentication
 - **Regional API Support**: Automatic detection and routing for US and EU regional endpoints
-- **Improved Compatibility**: Better error handling and automatic recovery for API changes
+- **Improved Error Messages**: Clear guidance when authentication fails, including specific instructions for country code configuration
 
 ## Supported Devices
 
@@ -137,6 +139,7 @@ Add the following to your Homebridge `config.json`:
             "name": "TSVESync",
             "username": "YOUR_VESYNC_EMAIL",
             "password": "YOUR_VESYNC_PASSWORD",
+            "countryCode": "US",
             "updateInterval": 30,
             "debug": false,
             "exclude": {
@@ -157,6 +160,10 @@ Add the following to your Homebridge `config.json`:
 * `name` (required): Can be anything, this is the name that will appear in your Homebridge log
 * `username` (required): Your VeSync account email
 * `password` (required): Your VeSync account password
+* `countryCode` (optional): Your country code - **IMPORTANT for international users!** (default: "US")
+  * Use the dropdown in Homebridge UI to select your country
+  * Must match the country where your VeSync account was created
+  * See [International Account Support](#international-account-support) section below
 * `updateInterval` (optional): How often to update device states in seconds (default: 300)
 * `debug` (optional): Enable debug logging (default: false)
 
@@ -227,6 +234,85 @@ Example configuration with all exclusion options:
 * RGB and white color control (supported bulbs)
 * Fan speed and mode control (purifiers and fans)
 
+## International Account Support
+
+### Important for Non-US Users
+
+If your VeSync account was created outside the United States, you **must** configure your country code for authentication to work properly.
+
+#### How to Configure Your Country Code
+
+**Option 1: Using Homebridge UI (Recommended)**
+1. Navigate to your Homebridge UI
+2. Go to the TSVESync plugin settings
+3. Click on the "Country Code" dropdown
+4. Select your country from the list
+5. Save and restart Homebridge
+
+**Option 2: Manual Configuration**
+Add the `countryCode` field to your config.json:
+
+```json
+{
+    "platforms": [
+        {
+            "platform": "TSVESyncPlatform",
+            "name": "TSVESync",
+            "username": "YOUR_EMAIL",
+            "password": "YOUR_PASSWORD",
+            "countryCode": "AU"  // Replace with your country code
+        }
+    ]
+}
+```
+
+#### Common Country Codes
+
+**Americas (US endpoint):**
+- 🇺🇸 United States: `US` (default)
+- 🇨🇦 Canada: `CA`
+- 🇲🇽 Mexico: `MX`
+
+**Europe (EU endpoint):**
+- 🇬🇧 United Kingdom: `GB`
+- 🇩🇪 Germany: `DE`
+- 🇫🇷 France: `FR`
+- 🇮🇹 Italy: `IT`
+- 🇪🇸 Spain: `ES`
+- 🇳🇱 Netherlands: `NL`
+- 🇸🇪 Sweden: `SE`
+- 🇳🇴 Norway: `NO`
+- 🇩🇰 Denmark: `DK`
+- 🇫🇮 Finland: `FI`
+- 🇵🇱 Poland: `PL`
+- All other European countries
+
+**Asia-Pacific (US endpoint):**
+- 🇦🇺 Australia: `AU`
+- 🇳🇿 New Zealand: `NZ`
+- 🇯🇵 Japan: `JP`
+- 🇸🇬 Singapore: `SG`
+- 🇨🇳 China: `CN`
+- 🇰🇷 South Korea: `KR`
+
+#### How It Works
+
+1. **European accounts** are automatically routed to the EU endpoint (`smartapi.vesync.eu`)
+2. **All other accounts** use the US endpoint (`smartapi.vesync.com`)
+3. The country code must match where your VeSync account was created
+4. If you see "country code mismatch" errors, you need to set your country code
+
+#### Common Error Messages and Solutions
+
+**"COUNTRY CODE MISMATCH DETECTED"**
+- Solution: Set your country code in the plugin configuration
+
+**"Both US and EU endpoints rejected your account"**
+- Solution: You must specify your country code - the plugin cannot automatically detect it
+
+**"Cross-region error"**
+- Solution: Your account is trying to authenticate with the wrong regional endpoint. Set your country code.
+
 ## Troubleshooting
 
 ### Authentication Issues
@@ -253,25 +339,37 @@ The script will:
 ### Common Issues
 
 1. **Authentication Failed**
+   - **For international users**: Check if you need to set your country code (see [International Account Support](#international-account-support))
    - Verify your VeSync credentials are correct
    - Try logging into the VeSync app to confirm they work
    - Run the authentication test script to diagnose issues
 
-2. **Devices Not Appearing**
+2. **"Country Code Mismatch" or "Cross-Region Error"**
+   - You need to configure your country code in the plugin settings
+   - See the [International Account Support](#international-account-support) section above
+   - The country code must match where your VeSync account was created
+
+3. **Devices Not Appearing**
    - Check the Homebridge logs for any error messages
    - Ensure your devices are properly set up in the VeSync app
    - Verify your devices are running the latest firmware
+   - For international users, ensure your country code is set correctly
 
-3. **Regional Issues (EU Users)**
-   - The plugin automatically detects and uses the correct regional endpoint
-   - EU accounts will automatically use `smartapi.vesync.eu`
-   - US/CA/MX/JP accounts use `smartapi.vesync.com`
+4. **Regional Issues**
+   - The plugin automatically routes to the correct endpoint based on your country code
+   - EU accounts (with EU country codes) use `smartapi.vesync.eu`
+   - All other accounts use `smartapi.vesync.com`
+   - Australian/NZ users: Use your country code (AU/NZ) with the US endpoint
 
-4. **API Rate Limiting**
+5. **API Rate Limiting**
    - The plugin includes automatic rate limiting
    - If you see quota errors, increase the `updateInterval` in your config
    - Premium accounts have higher quotas than free accounts
-5. Check that your devices are online in the VeSync app
+
+6. **General Tips**
+   - Check that your devices are online in the VeSync app
+   - Enable debug mode to see detailed API communication
+   - Restart Homebridge after changing configuration
 
 ## Development
 

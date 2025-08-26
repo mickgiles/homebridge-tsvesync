@@ -68,7 +68,10 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
       config.apiUrl,
       this.logger,
       config.exclude,
-      { quotaManagement: config.quotaManagement || { enabled: true } }
+      { 
+        countryCode: config.countryCode,
+        quotaManagement: config.quotaManagement || { enabled: true } 
+      }
     );
 
     this.logger.debug('Initialized platform with config:', {

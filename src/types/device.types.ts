@@ -112,6 +112,7 @@ export interface PlatformConfig {
   updateInterval?: number;
   debug?: boolean;
   apiUrl?: string;
+  countryCode?: string;  // Optional country code for non-US/EU regions (e.g., 'AU', 'JP', 'NZ')
   exclude?: DeviceExclusion;
   retry?: {
     maxRetries: number;
