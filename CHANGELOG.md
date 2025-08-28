@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.0.118 (2025-08-28)
+
+### Fixed
+- **Filter Characteristics Not Appearing**: Fixed Core300S filter life and mode characteristics not appearing in HomeKit despite being correctly detected
+  - **🎯 Root Cause**: setupCharacteristic method uses getCharacteristic() which only works if the characteristic already exists
+  - **✅ Solution**: Added explicit addCharacteristic() calls for FilterChangeIndication and FilterLifeLevel before configuring them
+  - **🔧 Missing Features Restored**: Core300S now properly displays filter life percentage and change indicator in HomeKit
+  - **📱 HomeKit Impact**: Filter characteristics are now visible for all air purifiers with filter_life feature
+- **Core300S Mode Switch Simplified**: Removed complex remove/re-add logic for TargetAirPurifierState that was causing issues
+  - **🛠️ Simplified Setup**: Now uses same characteristic setup pattern as other devices
+  - **🔄 Consistent Behavior**: Mode switching (Auto/Manual) now works reliably across all device types
+  - **📊 Better Logging**: Added info-level logs when creating new characteristics to track proper initialization
+
+### Improved
+- **Characteristic Addition Safety**: Added checks to prevent duplicate characteristic addition
+  - **🔍 Smart Detection**: Uses testCharacteristic() to check if characteristics exist before adding
+  - **⚡ Performance**: Avoids unnecessary characteristic operations
+- **User Action Required**: Users may need to remove and re-add affected devices in HomeKit for new characteristics to appear
+
 ## 1.0.117 (2025-08-28)
 
 ### Fixed

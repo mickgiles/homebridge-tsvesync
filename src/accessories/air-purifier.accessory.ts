@@ -435,56 +435,25 @@ export class AirPurifierAccessory extends BaseAccessory {
       targetStateChar.setProps({
         validValues: [0] // MANUAL only
       });
-    } else if (this.device.deviceType.includes('Core300S')) {
-      // Explicitly ensure Core300S has both AUTO and MANUAL modes
-      // Force the mode toggle to be visible for Core300S devices
-      // Enable mode toggle for Core300S device
-      
-      // First remove any existing characteristic to ensure clean setup
-      if (this.service.testCharacteristic(this.platform.Characteristic.TargetAirPurifierState)) {
-        this.service.removeCharacteristic(
-          this.service.getCharacteristic(this.platform.Characteristic.TargetAirPurifierState)
-        );
-      }
-      
-      // Re-add the characteristic with proper properties
-      const newTargetStateChar = this.service.addCharacteristic(this.platform.Characteristic.TargetAirPurifierState);
-      newTargetStateChar.setProps({
-        validValues: [0, 1], // MANUAL and AUTO
-        perms: [this.platform.Characteristic.Perms.PAIRED_READ, this.platform.Characteristic.Perms.PAIRED_WRITE, this.platform.Characteristic.Perms.NOTIFY]
-      });
-      
-      // Set up the characteristic handlers
-      newTargetStateChar.onGet(async () => {
-        try {
-          const value = await this.getTargetState();
-          return value;
-        } catch (error) {
-          this.platform.log.error(`Error getting target state: ${error}`);
-          throw error;
-        }
-      });
-      
-      newTargetStateChar.onSet(async (value) => {
-        try {
-          await this.setTargetState(value);
-        } catch (error) {
-          this.platform.log.error(`Error setting target state: ${error}`);
-          throw error;
-        }
-      });
+      this.platform.log.info(`${this.device.deviceName}: Configured for MANUAL mode only (Core200S)`);
     } else {
+      // For Core300S and all other devices with auto_mode, allow both AUTO and MANUAL
       targetStateChar.setProps({
         validValues: [0, 1] // MANUAL and AUTO
       });
       
-      // Set up the characteristic handlers for non-Core300S devices
-      this.setupCharacteristic(
-        this.platform.Characteristic.TargetAirPurifierState,
-        this.getTargetState.bind(this),
-        this.setTargetState.bind(this)
-      );
+      // Log specifically for Core300S to help debug
+      if (this.device.deviceType.includes('Core300S')) {
+        this.platform.log.info(`${this.device.deviceName}: Configured for AUTO and MANUAL modes (Core300S)`);
+      }
     }
+    
+    // Set up the characteristic handlers for all devices
+    this.setupCharacteristic(
+      this.platform.Characteristic.TargetAirPurifierState,
+      this.getTargetState.bind(this),
+      this.setTargetState.bind(this)
+    );
 
     // Set up current state
     this.setupCharacteristic(
@@ -605,18 +574,30 @@ export class AirPurifierAccessory extends BaseAccessory {
     if (hasFilterLife) {
       this.platform.log.debug(`${this.device.deviceName} (${this.device.deviceType}): Adding filter characteristics to AirPurifier service`);
       
-      // Add FilterChangeIndication characteristic
+      // Add FilterChangeIndication characteristic if it doesn't exist
+      if (!this.service.testCharacteristic(this.platform.Characteristic.FilterChangeIndication)) {
+        this.service.addCharacteristic(this.platform.Characteristic.FilterChangeIndication);
+        this.platform.log.info(`${this.device.deviceName}: Created FilterChangeIndication characteristic`);
+      }
+      
+      // Set up the handlers for FilterChangeIndication
       this.setupCharacteristic(
         this.platform.Characteristic.FilterChangeIndication,
         this.getFilterChangeIndication.bind(this),
         undefined,
         {},
-        this.service  // Use main AirPurifier service, not separate filter service
+        this.service
       );
       
-      this.platform.log.debug(`${this.device.deviceName}: Added FilterChangeIndication characteristic`);
+      this.platform.log.debug(`${this.device.deviceName}: Configured FilterChangeIndication characteristic`);
       
-      // Add FilterLifeLevel characteristic
+      // Add FilterLifeLevel characteristic if it doesn't exist
+      if (!this.service.testCharacteristic(this.platform.Characteristic.FilterLifeLevel)) {
+        this.service.addCharacteristic(this.platform.Characteristic.FilterLifeLevel);
+        this.platform.log.info(`${this.device.deviceName}: Created FilterLifeLevel characteristic`);
+      }
+      
+      // Set up the handlers for FilterLifeLevel
       this.setupCharacteristic(
         this.platform.Characteristic.FilterLifeLevel,
         this.getFilterLifeLevel.bind(this),
@@ -626,10 +607,10 @@ export class AirPurifierAccessory extends BaseAccessory {
           maxValue: 100,
           minStep: 1
         },
-        this.service  // Use main AirPurifier service
+        this.service
       );
       
-      this.platform.log.debug(`${this.device.deviceName}: Added FilterLifeLevel characteristic`);
+      this.platform.log.debug(`${this.device.deviceName}: Configured FilterLifeLevel characteristic`);
     } else {
       this.platform.log.debug(`${this.device.deviceName}: Filter life not supported, skipping filter characteristics`);
     }
