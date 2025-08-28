@@ -197,34 +197,36 @@ const createRateLimitedProxy = (target: any, rateLimiter: RateLimiter, deviceId?
         return value;
       }
 
-      // Return a proxied function that applies rate limiting
+      // Check if this method should bypass rate limiting entirely
+      const methodName = prop.toString();
+      
+      // Methods that bypass all rate limiting and debouncing
+      const bypassMethods = [
+        // Getters and internal methods
+        'get', 'getService', 'getCharacteristic',
+        // State accessors
+        'deviceStatus', 'speed', 'brightness', 'colorTemp',
+        'mode', 'filterLife', 'airQuality', 'airQualityValue', 'screenStatus',
+        'childLock', 'pm1', 'pm10', 'humidity', 'mistLevel',
+        // Event handlers
+        'onSet', 'onGet', 'addListener', 'removeListener',
+        // Controlled interval methods
+        'update',
+        // Feature detection and configuration methods (don't make API calls)
+        'hasFeature', 'getMaxFanSpeed', 'isFeatureSupportedInCurrentMode'
+      ];
+      
+      // If it's a bypass method, return the original function directly (NOT wrapped in async)
+      if (bypassMethods.includes(methodName)) {
+        return value;  // Return the ORIGINAL function, not wrapped!
+      }
+      
+      // Otherwise, return a proxied async function that applies rate limiting
       return async function(...args: any[]) {
-        const methodName = prop.toString();
-
-        // Methods that bypass all rate limiting and debouncing
-        const bypassMethods = [
-          // Getters and internal methods
-          'get', 'getService', 'getCharacteristic',
-          // State accessors
-          'deviceStatus', 'speed', 'brightness', 'colorTemp',
-          'mode', 'filterLife', 'airQuality', 'airQualityValue', 'screenStatus',
-          'childLock', 'pm1', 'pm10', 'humidity', 'mistLevel',
-          // Event handlers
-          'onSet', 'onGet', 'addListener', 'removeListener',
-          // Controlled interval methods
-          'update',
-          // Feature detection and configuration methods (don't make API calls)
-          'hasFeature', 'getMaxFanSpeed', 'isFeatureSupportedInCurrentMode'
-        ];
-
         // Methods that should only be rate limited (no debouncing)
         const noDebounceAPIMethods = [
           'ignored'
         ];
-
-        if (bypassMethods.includes(methodName)) {
-          return value.apply(target, args);
-        }
 
         if (noDebounceAPIMethods.includes(methodName)) {
           await rateLimiter.rateLimit(methodName);

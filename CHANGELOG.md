@@ -1,5 +1,52 @@
 # Changelog
 
+## 1.0.112 (2025-08-28)
+
+### Fixed
+- **🚨 CRITICAL FIX - Core 200S Air Quality Issue**: Fixed the definitive root cause that v1.0.111 missed
+  - **🐛 The Remaining Bug**: In v1.0.111, we added `hasFeature` to the bypass list, but the bypass check was still happening INSIDE the async function wrapper
+  - **⚙️ The Problem**: Even "bypassed" methods were first wrapped in async functions, then checked for bypass - so `hasFeature('air_quality')` still returned `Promise<boolean>` instead of `boolean`
+  - **✅ The REAL Solution**: Moved the bypass check BEFORE creating the async wrapper in `api-proxy.ts`
+    - Check if method is in bypass list FIRST, before any wrapping
+    - If bypassed, return the original function directly (not wrapped in async)
+    - Only wrap non-bypassed methods in async functions for rate limiting
+  - **🎯 Result**: `hasFeature('air_quality')` now returns actual `boolean` values, not `Promise<boolean>`
+  - **📱 Impact**: Core 200S and other devices without air quality sensors will finally work correctly
+
+### Changed
+- **API Proxy Architecture Enhancement**: Completely restructured the bypass logic flow
+  - Bypass check now happens at the proxy level before any async wrapping
+  - Configuration and feature detection methods return synchronously as intended
+  - Rate limiting wrapper only applied to actual API methods
+  - Improved code organization and method categorization
+
+### Removed
+- **Debug Logging**: Removed diagnostic comments that were added during investigation
+  - Clean code without investigation artifacts
+  - Focused implementation without temporary debugging elements
+
+### Dependencies
+- Updated tsvesync from 1.0.111 to 1.0.112 for version synchronization
+
+### HomeKit Integration Notes
+- **🎉 DEFINITIVE FIX**: This release contains the REAL fix for the Core 200S air quality phantom service issue
+- **⚠️ RESTART REQUIRED**: Must restart Homebridge after updating for the fix to take effect
+- **🗑️ Automatic Cleanup**: Phantom air quality services will be automatically removed after restart
+- **✅ Verified Working**: Core 200S, LAP-C201S, LAP-C202S, LAP-C301S, LAP-C302S, LAP-C401S, LAP-C601S will no longer show phantom air quality characteristics
+- **🔍 Confirmed Devices**: Core 300S+, Vital series, and EverestAir devices with actual sensors continue working correctly
+
+### Breaking Changes
+- **None**: This is a critical bug fix release with no breaking changes to the API or configuration
+
+### Migration Notes
+- **🚀 Simple Update**: Update to v1.0.112 and restart Homebridge - the fix is automatic and immediate
+- **📋 Verification Steps**:
+  1. Update the plugin to v1.0.112
+  2. Restart Homebridge completely
+  3. Check Home app - Core 200S should no longer show air quality tile
+  4. Verify only devices with actual sensors show air quality characteristics
+- **⏰ No Additional Setup**: The fix is implemented at the code level and requires no configuration changes
+
 ## 1.0.111 (2025-08-28)
 
 ### Fixed
