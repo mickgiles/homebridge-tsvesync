@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.0.107 (2025-08-28)
+
+### Fixed
+- **Air Quality Sensor Configuration**: Enhanced device compatibility with accurate air quality sensor detection
+  - Inherits air quality sensor configuration fixes from tsvesync v1.0.107
+  - Removed air quality service for devices without physical sensors (LAP-C series, Core200S, LV-RH131S)
+  - Kept air quality service for devices with confirmed hardware sensors (Core300S/400S/600S, Vital series, EverestAir series, LV-PUR131S)
+  - HomeKit now only displays air quality data for devices that actually support it
+  - Eliminates user confusion from non-functional air quality readings and invalid sensor data
+  - Improves device accuracy and prevents HomeKit showing "unavailable" air quality characteristics
+
+### Dependencies
+- Updated tsvesync from 1.0.106 to 1.0.107 for air quality sensor configuration fixes
+
+### HomeKit Integration Notes
+- **Improved Device Accuracy**: Air quality services now only appear for devices with actual hardware sensors
+- **Better User Experience**: Eliminates confusing "unavailable" air quality readings in Home app
+- **Device-Specific Features**: Each device model now correctly reflects its actual sensor capabilities
+- **No Configuration Required**: Changes are automatic and based on device hardware specifications
+
+### Migration Notes
+- **No Action Required**: Air quality service changes are automatic based on device capabilities
+- **Existing Functionality**: All other device features remain unchanged
+- **Service Updates**: Devices without air quality sensors will no longer show air quality services after restart
+- **Enhanced Accuracy**: Devices with air quality sensors continue to work with improved reliability
+
 ## 1.0.106 (2025-08-26)
 
 ### Fixed
