@@ -1,5 +1,41 @@
 # Changelog
 
+## 1.0.114 (2025-08-28)
+
+### Fixed
+- **Air Quality Sensor Detection**: Resolved issue where air purifiers without physical air quality sensors were incorrectly showing air quality characteristics in HomeKit
+  - **🎯 Devices Fixed**: Core200S, Core Mini, Core P350, Vital 100/100S, Vista 200, LV-H128, LV-H132, LV-RH131S no longer show phantom air quality services
+  - **🔧 Root Cause**: API proxy was wrapping synchronous methods like `hasFeature()` as async functions, causing them to return Promises instead of boolean values
+  - **✅ Solution**: Fixed `hasFeature()` method in api-proxy.ts to return synchronous boolean values, ensuring proper feature detection
+  - **🧹 Cache Cleanup**: Properly removes cached air quality services from accessories that don't support air quality sensors
+
+### Changed
+- **Logging Improvements**: Reduced verbose air quality diagnostic logging from warning to debug level
+  - **📝 Impact**: Normal operation logs are cleaner while diagnostic information remains available in debug mode
+  - **🔍 Debug Access**: Enable debug logging in Homebridge config to see detailed air quality detection information
+  - **📊 Log Categories**: Changed 5 warning-level diagnostic messages to debug level for quieter operation
+
+### Technical Details
+- **Proxy Enhancement**: Enhanced API proxy to handle synchronous method bypassing correctly
+- **Service Management**: Improved accessory service caching and cleanup for devices without air quality sensors
+- **Feature Detection**: Restored proper boolean return values for device capability checking methods
+
+### HomeKit Integration Notes
+- **🏠 User Impact**: Air purifiers without air quality sensors no longer show confusing "unavailable" air quality readings in Home app
+- **⚡ Performance**: No performance impact - fix maintains all existing functionality while correcting erroneous service exposure
+- **🔄 Automatic**: Update will automatically clean up phantom services on next Homebridge restart
+
+### Migration Notes
+- **🚀 Seamless Update**: No configuration changes required - phantom services are automatically removed
+- **📋 Verification Steps**:
+  1. Update plugin to v1.0.114
+  2. Restart Homebridge
+  3. Check affected devices in Home app - air quality should only appear on devices that actually have sensors
+  4. Enable debug logging if you want to see detailed feature detection information
+
+### Dependencies
+- Maintained tsvesync at 1.0.113 (will be updated to 1.0.114 once published)
+
 ## 1.0.113 (2025-08-28)
 
 ### Fixed
