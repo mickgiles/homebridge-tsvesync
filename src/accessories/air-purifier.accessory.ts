@@ -120,15 +120,23 @@ export class AirPurifierAccessory extends BaseAccessory {
       }
       
       // For filter_life, be extra defensive - if native method says false but we think it should be true, override
-      if (!result && feature === 'filter_life') {
+      if (feature === 'filter_life') {
         const deviceType = this.device.deviceType;
-        // Check if this looks like a device type that should support filter_life
-        if (deviceType.includes('Core') || 
-            deviceType.includes('LAP-') || 
-            deviceType.includes('LV-') || 
-            deviceType.includes('Vital')) {
-          this.platform.log.warn(`${this.device.deviceName}: Device type ${deviceType} should support filter_life but native hasFeature returned false. Overriding to true.`);
-          return true;
+        this.platform.log.debug(`${this.device.deviceName} (${deviceType}): Native hasFeature('filter_life') returned: ${result}`);
+        
+        if (!result) {
+          // Check if this looks like a device type that should support filter_life
+          if (deviceType.includes('Core') || 
+              deviceType.includes('300S') ||  // Add explicit check for 300S
+              deviceType.includes('200S') ||  // Add explicit check for 200S
+              deviceType.includes('400S') ||  // Add explicit check for 400S
+              deviceType.includes('600S') ||  // Add explicit check for 600S
+              deviceType.includes('LAP-') || 
+              deviceType.includes('LV-') || 
+              deviceType.includes('Vital')) {
+            this.platform.log.warn(`${this.device.deviceName}: Device type ${deviceType} should support filter_life but native hasFeature returned false. Overriding to true.`);
+            return true;
+          }
         }
       }
       
@@ -160,6 +168,10 @@ export class AirPurifierAccessory extends BaseAccessory {
         
         // Check device type patterns that should support filter_life
         const supportsFilterByType = deviceType.includes('Core') || 
+                                    deviceType.includes('300S') ||  // Explicit check for 300S
+                                    deviceType.includes('200S') ||  // Explicit check for 200S
+                                    deviceType.includes('400S') ||  // Explicit check for 400S
+                                    deviceType.includes('600S') ||  // Explicit check for 600S
                                     deviceType.includes('LAP-') || 
                                     deviceType.includes('LV-') || 
                                     deviceType.includes('Vital');
@@ -574,9 +586,12 @@ export class AirPurifierAccessory extends BaseAccessory {
     }
     
     // Add filter characteristics directly to air purifier service if supported
-    this.platform.log.debug(`${this.device.deviceName}: Checking filter_life feature...`);
-    if (this.hasFeature('filter_life')) {
-      this.platform.log.debug(`${this.device.deviceName}: Adding filter characteristics to AirPurifier service`);
+    this.platform.log.debug(`${this.device.deviceName} (${this.device.deviceType}): Checking filter_life feature...`);
+    const hasFilterLife = this.hasFeature('filter_life');
+    this.platform.log.info(`${this.device.deviceName} (${this.device.deviceType}): hasFeature('filter_life') returned: ${hasFilterLife}`);
+    
+    if (hasFilterLife) {
+      this.platform.log.debug(`${this.device.deviceName} (${this.device.deviceType}): Adding filter characteristics to AirPurifier service`);
       
       // Add FilterChangeIndication characteristic
       this.setupCharacteristic(

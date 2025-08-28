@@ -1,5 +1,43 @@
 # Changelog
 
+## 1.0.116 (2025-08-28)
+
+### Fixed
+- **Core300S Filter Life Detection**: Fixed Core300S and other Core series air purifiers not showing filter life characteristics due to device type detection issues
+  - **🎯 Root Cause**: Some Core series devices report without the "Core" prefix (e.g., "300S" instead of "Core300S", "LAP-C301S" instead of standard pattern)
+  - **✅ Solution**: Added explicit device type patterns for Core300S and other Core series models that may report without the "Core" prefix
+  - **🧹 Enhanced Detection**: Improved pattern matching to catch variants like "300S", "200S", "400S", "600S" without requiring "Core" prefix
+  - **🔧 Defensive Logic**: Enhanced filter life override logic to ensure all Core series devices get filter life support even if native detection fails
+  - **📱 HomeKit Impact**: Core300S, LAP-C301S, LAP-C302S, and other Core series variants now properly display filter life in Home app
+
+### Improved
+- **Enhanced Device Type Detection**: Expanded device type pattern matching for Core series air purifiers
+  - **📊 Pattern Matching**: Enhanced both the hasFeature override logic and fallback detection to catch all Core series variants
+  - **🔍 Debugging Support**: Added detailed logging to show exact device type strings and filter feature detection results
+  - **📝 Enhanced Logging**: Info-level logs now show hasFeature('filter_life') results for easier troubleshooting
+  - **🎯 Filter Life Override**: Improved defensive logic to ensure all Core series devices get filter life support
+
+### Technical Details
+- **Device Type Patterns**: Added explicit checks for Core series models that may report as just model numbers
+- **Logging Enhancement**: Filter life detection now shows device type in parentheses for all filter-related log messages
+- **Pattern Detection**: Enhanced both override and fallback detection paths to catch device type string variations from VeSync API
+- **Resilient Detection**: Filter life detection now more resilient to device type string variations
+
+### Affected Devices
+This fix ensures filter life works for all Core series variants:
+- **Core200S** (and variants reporting as "200S")
+- **Core300S** (and variants reporting as "300S", "LAP-C301S", "LAP-C302S")
+- **Core400S** (and variants reporting as "400S")  
+- **Core600S** (and variants reporting as "600S")
+
+### Debugging
+After updating, check logs for messages like:
+- `[Device Name] (DeviceType): hasFeature('filter_life') returned: true/false`
+- This shows the exact device type string and whether filter life is enabled
+
+### Dependencies
+- **📦 tsvesync**: Updated from 1.0.115 to 1.0.116 for synchronized release versioning
+
 ## 1.0.115 (2025-08-28)
 
 ### Fixed
