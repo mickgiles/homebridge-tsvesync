@@ -34,7 +34,7 @@
   4. Enable debug logging if you want to see detailed feature detection information
 
 ### Dependencies
-- Maintained tsvesync at 1.0.113 (will be updated to 1.0.114 once published)
+- Updated tsvesync from 1.0.113 to 1.0.114 for synchronized release versioning
 
 ## 1.0.113 (2025-08-28)
 
