@@ -1,5 +1,45 @@
 # Changelog
 
+## 1.0.111 (2025-08-28)
+
+### Fixed
+- **🔧 Core 200S Air Quality Detection Bug**: Fixed the definitive root cause of the Core 200S air quality sensor issue
+  - **The Bug**: `hasFeature('air_quality')` was returning a `Promise<boolean>` instead of a synchronous `boolean` because the API proxy wrapped ALL device methods as async functions for rate limiting
+  - **The Problem**: Since `Promise` objects are always truthy when evaluated in boolean contexts, ALL devices appeared to have air quality sensors, causing phantom air quality services to be created for devices like Core 200S that don't have physical sensors
+  - **The Solution**: Added configuration and feature detection methods to the proxy bypass list in `api-proxy.ts` since they don't make API calls and should return synchronously
+  - **Methods Added to Bypass**: `hasFeature`, `getMaxFanSpeed`, `isFeatureSupportedInCurrentMode`, and property getters: `mode`, `filterLife`, `airQuality`, `airQualityValue`, `screenStatus`, `childLock`, `pm1`, `pm10`, `humidity`, `mistLevel`
+  - **Impact**: Core 200S, LAP-C201S, LAP-C202S, LAP-C301S, LAP-C302S, LAP-C401S, LAP-C601S and other devices without physical air quality sensors will no longer show phantom air quality characteristics in HomeKit
+  - **Devices Confirmed Working**: Core 300S, Core 400S, Core 600S, Vital100S, Vital200S, and EverestAir devices with actual air quality sensors continue to work correctly
+
+### Changed
+- **API Proxy Architecture**: Improved the rate limiting proxy to distinguish between API methods and configuration methods
+  - Configuration methods that don't make network calls now bypass all rate limiting and return synchronously
+  - API methods continue to be rate limited and debounced as before
+  - Enhanced method categorization for better performance and reliability
+
+### Removed
+- **Diagnostic Logging**: Removed the enhanced diagnostic logging added in v1.0.110 as the root cause has been identified and fixed
+  - No longer needed now that the underlying Promise/boolean issue has been resolved
+  - Reduces log noise for normal operation
+
+### Dependencies
+- Updated tsvesync from 1.0.110 to 1.0.111 for version synchronization
+
+### HomeKit Integration Notes
+- **✅ Definitive Fix**: This release contains the definitive fix for the Core 200S air quality phantom service issue
+- **🏠 Correct HomeKit Behavior**: Devices without physical air quality sensors will no longer show air quality characteristics in the Home app
+- **📱 No Manual Action Required**: The fix is automatic and will take effect after plugin restart
+- **🔄 Service Cleanup**: Phantom air quality services will be automatically removed during the next HomeKit accessory initialization
+
+### Breaking Changes
+- **None**: This is a bug fix release with no breaking changes to the API or configuration
+
+### Migration Notes
+- **✅ Automatic Fix**: Simply update to v1.0.111 and restart Homebridge - the fix is automatic
+- **🗑️ Service Cleanup**: If you had phantom air quality services, they will be removed automatically after restart
+- **📋 Verification**: Check your Home app - devices like Core 200S should no longer show air quality tiles
+- **🔍 Device Support**: Only devices with actual hardware air quality sensors (Core 300S+, Vital series, EverestAir) will show air quality characteristics
+
 ## 1.0.110 (2025-08-28)
 
 ### Added

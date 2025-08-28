@@ -207,10 +207,14 @@ const createRateLimitedProxy = (target: any, rateLimiter: RateLimiter, deviceId?
           'get', 'getService', 'getCharacteristic',
           // State accessors
           'deviceStatus', 'speed', 'brightness', 'colorTemp',
+          'mode', 'filterLife', 'airQuality', 'airQualityValue', 'screenStatus',
+          'childLock', 'pm1', 'pm10', 'humidity', 'mistLevel',
           // Event handlers
           'onSet', 'onGet', 'addListener', 'removeListener',
           // Controlled interval methods
-          'update'
+          'update',
+          // Feature detection and configuration methods (don't make API calls)
+          'hasFeature', 'getMaxFanSpeed', 'isFeatureSupportedInCurrentMode'
         ];
 
         // Methods that should only be rate limited (no debouncing)
