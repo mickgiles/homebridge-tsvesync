@@ -1,5 +1,43 @@
 # Changelog
 
+## 1.0.115 (2025-08-28)
+
+### Fixed
+- **🏠 Filter Life Display**: Fixed filter life characteristics not displaying in HomeKit by moving them from the separate FilterMaintenance service to the main AirPurifier service
+  - **🎯 Root Cause**: FilterMaintenance service was not properly recognized by HomeKit, causing filter characteristics to be hidden
+  - **✅ Solution**: Moved FilterChangeIndication and FilterLifeLevel characteristics directly to AirPurifier service (matches working implementations)
+  - **🧹 Service Cleanup**: Automatically removes old FilterMaintenance services from cached accessories during migration
+  - **📱 HomeKit Impact**: Filter life percentage and change indication now properly display in Home app on air purifier accessory
+
+### Improved
+- **🔧 Code Organization**: Created centralized `extractFilterLife()` helper method to eliminate code duplication
+  - **📊 Data Parsing**: Maintains robust support for multiple filter data formats (number vs object with percent property)
+  - **🎯 Error Handling**: Consistent fallback to 100% filter life for invalid or missing data
+  - **🔄 State Updates**: Simplified filter characteristic updates to use main service instead of separate service
+  - **📝 Logging**: Enhanced debug logging for filter service migration and characteristic setup
+
+### Technical Details
+- **🏗️ Service Architecture**: Filter characteristics now added directly to AirPurifier service instead of separate FilterMaintenance service
+- **⚖️ Specification Trade-off**: This approach violates HomeKit specification but works correctly in practice (confirmed by reference implementations)
+- **🔔 Filter Alerts**: Filter change indication still triggers at <10% life remaining as per HomeKit standards
+- **🎛️ Device Compatibility**: All currently supported devices maintain correct filter_life feature mapping
+
+### Affected Devices
+All air purifiers with filter life support now properly display filter status in HomeKit:
+- **Core Series**: Core200S, Core300S, Core400S, Core600S
+- **LAP Series**: LAP-C201S, LAP-C301S, LAP-C401S, LAP-C601S, LAP-V102S, LAP-V201S, and all other LAP models
+- **Legacy Models**: LV-PUR131S, LV-RH131S
+- **📊 Filter Data**: Supports both numeric and object-based filter life formats from VeSync API
+
+### Migration Notes
+- **🚀 Homebridge Restart Required**: Filter life display requires Homebridge restart after update
+- **🧹 Automatic Cleanup**: Old FilterMaintenance services will be automatically removed from cached accessories
+- **📱 Home App Changes**: Filter life will now appear directly on the air purifier accessory instead of a separate service
+- **✅ Zero Config**: No configuration changes required - migration is fully automatic
+
+### Dependencies
+- **📦 tsvesync**: Updated from 1.0.114 to 1.0.115 for synchronized release versioning
+
 ## 1.0.114 (2025-08-28)
 
 ### Fixed

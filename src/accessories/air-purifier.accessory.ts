@@ -41,7 +41,6 @@ export class AirPurifierAccessory extends BaseAccessory {
   private isAirBaseV2Device: boolean;
   private isAir131Device: boolean;
   private airQualityService?: Service;
-  private filterService?: Service;
   private lastSetSpeed: number = 0; // Track the last speed we set
   private lastSetPercentage: number = 0; // Track the last percentage we set
   private skipNextUpdate: boolean = false; // Flag to skip the next update
@@ -567,13 +566,45 @@ export class AirPurifierAccessory extends BaseAccessory {
       this.airQualityService = undefined;
     }
     
-    // Set up filter maintenance service if supported
+    // Clean up any existing FilterMaintenance service (from old implementation)
+    const existingFilterService = this.accessory.getService(this.platform.Service.FilterMaintenance);
+    if (existingFilterService) {
+      this.platform.log.info(`${this.device.deviceName}: Removing old FilterMaintenance service (migrating to AirPurifier service)`);
+      this.accessory.removeService(existingFilterService);
+    }
+    
+    // Add filter characteristics directly to air purifier service if supported
     this.platform.log.debug(`${this.device.deviceName}: Checking filter_life feature...`);
     if (this.hasFeature('filter_life')) {
-      this.platform.log.debug(`${this.device.deviceName}: Setting up filter maintenance service`);
-      this.setupFilterService();
+      this.platform.log.debug(`${this.device.deviceName}: Adding filter characteristics to AirPurifier service`);
+      
+      // Add FilterChangeIndication characteristic
+      this.setupCharacteristic(
+        this.platform.Characteristic.FilterChangeIndication,
+        this.getFilterChangeIndication.bind(this),
+        undefined,
+        {},
+        this.service  // Use main AirPurifier service, not separate filter service
+      );
+      
+      this.platform.log.debug(`${this.device.deviceName}: Added FilterChangeIndication characteristic`);
+      
+      // Add FilterLifeLevel characteristic
+      this.setupCharacteristic(
+        this.platform.Characteristic.FilterLifeLevel,
+        this.getFilterLifeLevel.bind(this),
+        undefined,
+        {
+          minValue: 0,
+          maxValue: 100,
+          minStep: 1
+        },
+        this.service  // Use main AirPurifier service
+      );
+      
+      this.platform.log.debug(`${this.device.deviceName}: Added FilterLifeLevel characteristic`);
     } else {
-      this.platform.log.debug(`${this.device.deviceName}: Filter life not supported, skipping filter maintenance service`);
+      this.platform.log.debug(`${this.device.deviceName}: Filter life not supported, skipping filter characteristics`);
     }
   }
   
@@ -626,76 +657,6 @@ export class AirPurifierAccessory extends BaseAccessory {
     }
   }
 
-  /**
-   * Set up the filter maintenance service
-   */
-  private setupFilterService(): void {
-    this.platform.log.debug(`Setting up filter maintenance service for ${this.device.deviceName}`);
-    
-    // Log filter life data for debugging
-    const extendedDevice = this.device as unknown as ExtendedVeSyncAirPurifier;
-    const filterLifeData = extendedDevice.details?.filter_life;
-    this.platform.log.debug(`Filter life data: ${JSON.stringify(filterLifeData)} (type: ${typeof filterLifeData})`);
-    this.platform.log.debug(`Device filterLife property: ${extendedDevice.filterLife} (type: ${typeof extendedDevice.filterLife})`);
-    
-    // Get or create the filter maintenance service (match humidifier implementation)
-    this.filterService = this.accessory.getService(this.platform.Service.FilterMaintenance) ||
-      this.accessory.addService(this.platform.Service.FilterMaintenance);
-      
-    this.platform.log.debug(`Filter maintenance service ${this.filterService ? 'created/found' : 'FAILED to create'} for ${this.device.deviceName}`);
-    
-    if (this.filterService) {
-      this.platform.log.debug(`Filter service UUID: ${this.filterService.UUID}, displayName: ${this.filterService.displayName}`);
-    }
-
-    // Set up required filter change indication characteristic
-    this.setupCharacteristic(
-      this.platform.Characteristic.FilterChangeIndication,
-      this.getFilterChangeIndication.bind(this),
-      undefined,
-      {},
-      this.filterService
-    );
-    
-    this.platform.log.debug(`Set up FilterChangeIndication characteristic`);
-
-    // Set up optional filter life level characteristic
-    this.setupCharacteristic(
-      this.platform.Characteristic.FilterLifeLevel,
-      this.getFilterLifeLevel.bind(this),
-      undefined,
-      {
-        minValue: 0,
-        maxValue: 100,
-        minStep: 1
-      },
-      this.filterService
-    );
-    
-    this.platform.log.debug(`Set up FilterLifeLevel characteristic`);
-
-    // Set service name using setupCharacteristic like the humidifier
-    this.setupCharacteristic(
-      this.platform.Characteristic.Name,
-      async () => `${this.device.deviceName} Filter`,
-      undefined,
-      {},
-      this.filterService
-    );
-    
-    this.platform.log.debug(`Set up Name characteristic for filter service`);
-    
-    // Log all services on the accessory to verify filter service is registered
-    const services = this.accessory.services;
-    if (services && services.length > 0) {
-      this.platform.log.debug(`All services on accessory ${this.device.deviceName}:`);
-      services.forEach(service => {
-        this.platform.log.debug(`  - ${service.displayName || 'Unnamed'} (UUID: ${service.UUID})`);
-      });
-    } else {
-      this.platform.log.debug(`No services found on accessory ${this.device.deviceName}`);
-    }
-  }
 
   /**
    * Get air quality level for HomeKit
@@ -737,34 +698,39 @@ export class AirPurifierAccessory extends BaseAccessory {
   }
 
   /**
+   * Extract filter life from device data in a centralized way
+   */
+  private extractFilterLife(): number {
+    const extendedDevice = this.device as unknown as ExtendedVeSyncAirPurifier;
+    
+    // Priority 1: Use device's normalized filterLife property
+    if (typeof extendedDevice.filterLife === 'number' && !isNaN(extendedDevice.filterLife)) {
+      return extendedDevice.filterLife;
+    }
+    
+    // Priority 2: Check details.filter_life
+    const filterLifeData = extendedDevice.details?.filter_life;
+    
+    // Handle number format
+    if (typeof filterLifeData === 'number' && !isNaN(filterLifeData)) {
+      return filterLifeData;
+    }
+    
+    // Handle object format { percent: number }
+    if (typeof filterLifeData === 'object' && filterLifeData !== null && 'percent' in filterLifeData) {
+      const percent = (filterLifeData as { percent: number }).percent;
+      return (typeof percent === 'number' && !isNaN(percent)) ? percent : 100;
+    }
+    
+    // Default to 100% (filter OK)
+    return 100;
+  }
+
+  /**
    * Get filter change indication
    */
   private async getFilterChangeIndication(): Promise<CharacteristicValue> {
-    const extendedDevice = this.device as unknown as ExtendedVeSyncAirPurifier;
-    
-    // Use the filterLife property from the VeSync device, which already handles different formats
-    // Fall back to manual parsing if filterLife property is not available
-    let filterLife = 100; // Default to 100% if no filter life data
-    
-    if (typeof extendedDevice.filterLife === 'number' && !isNaN(extendedDevice.filterLife)) {
-      // Use the built-in filterLife property from VeSyncFan
-      filterLife = extendedDevice.filterLife;
-    } else {
-      // Fallback: manually parse details.filter_life for compatibility
-      const filterLifeData = extendedDevice.details?.filter_life;
-      
-      if (typeof filterLifeData === 'number' && !isNaN(filterLifeData)) {
-        filterLife = filterLifeData;
-      } else if (typeof filterLifeData === 'object' && filterLifeData !== null && 'percent' in filterLifeData) {
-        const percent = (filterLifeData as { percent: number }).percent;
-        filterLife = (typeof percent === 'number' && !isNaN(percent)) ? percent : 100;
-      }
-    }
-    
-    // Handle NaN, null, undefined cases
-    if (isNaN(filterLife) || filterLife === null || filterLife === undefined) {
-      filterLife = 100; // Default to 100 (filter OK) for invalid values in change indication
-    }
+    const filterLife = this.extractFilterLife();
     
     // Indicate filter change needed when life is below 10%
     return filterLife < 10 ? 1 : 0; // 0=FILTER_OK, 1=CHANGE_FILTER
@@ -774,31 +740,7 @@ export class AirPurifierAccessory extends BaseAccessory {
    * Get filter life level
    */
   private async getFilterLifeLevel(): Promise<CharacteristicValue> {
-    const extendedDevice = this.device as unknown as ExtendedVeSyncAirPurifier;
-    
-    // Use the filterLife property from the VeSync device, which already handles different formats
-    // Fall back to manual parsing if filterLife property is not available
-    let filterLife = 100; // Default to 100% if no filter life data
-    
-    if (typeof extendedDevice.filterLife === 'number' && !isNaN(extendedDevice.filterLife)) {
-      // Use the built-in filterLife property from VeSyncFan
-      filterLife = extendedDevice.filterLife;
-    } else {
-      // Fallback: manually parse details.filter_life for compatibility
-      const filterLifeData = extendedDevice.details?.filter_life;
-      
-      if (typeof filterLifeData === 'number' && !isNaN(filterLifeData)) {
-        filterLife = filterLifeData;
-      } else if (typeof filterLifeData === 'object' && filterLifeData !== null && 'percent' in filterLifeData) {
-        const percent = (filterLifeData as { percent: number }).percent;
-        filterLife = (typeof percent === 'number' && !isNaN(percent)) ? percent : 100;
-      }
-    }
-    
-    // Handle NaN, null, undefined cases
-    if (isNaN(filterLife) || filterLife === null || filterLife === undefined) {
-      filterLife = 0; // Default to 0 for invalid values
-    }
+    const filterLife = this.extractFilterLife();
     
     // Ensure value is within HomeKit limits (0-100) and round to nearest integer
     return Math.round(Math.min(100, Math.max(0, filterLife)));
@@ -961,47 +903,18 @@ export class AirPurifierAccessory extends BaseAccessory {
       }
     }
     
-    // Set up filter service if not already created and device supports it
-    if (!this.filterService && this.hasFeature('filter_life')) {
-      this.platform.log.debug(`${this.device.deviceName}: Creating filter service during state update (was not created during setup)`);
-      this.setupFilterService();
-    }
-    
-    // Update filter characteristics if service exists
-    if (this.filterService && this.hasFeature('filter_life')) {
-      const extendedDevice = this.device as unknown as ExtendedVeSyncAirPurifier;
+    // Update filter characteristics on main service if supported
+    if (this.hasFeature('filter_life')) {
+      const filterLife = this.extractFilterLife();
       
-      // Use the same logic as the getter methods
-      let filterLife = 100; // Default to 100% if no filter life data
-      
-      if (typeof extendedDevice.filterLife === 'number' && !isNaN(extendedDevice.filterLife)) {
-        // Use the built-in filterLife property from VeSyncFan
-        filterLife = extendedDevice.filterLife;
-      } else {
-        // Fallback: manually parse details.filter_life for compatibility
-        const filterLifeData = extendedDevice.details?.filter_life;
-        
-        if (typeof filterLifeData === 'number' && !isNaN(filterLifeData)) {
-          filterLife = filterLifeData;
-        } else if (typeof filterLifeData === 'object' && filterLifeData !== null && 'percent' in filterLifeData) {
-          const percent = filterLifeData.percent;
-          filterLife = (typeof percent === 'number' && !isNaN(percent)) ? percent : 100;
-        }
-      }
-      
-      // Handle NaN, null, undefined cases
-      if (isNaN(filterLife) || filterLife === null || filterLife === undefined) {
-        filterLife = 100; // Default to 100% for invalid values
-      }
-      
-      // Update filter change indication
-      this.filterService.updateCharacteristic(
+      // Update filter change indication on main service
+      this.service?.updateCharacteristic(
         this.platform.Characteristic.FilterChangeIndication,
         filterLife < 10 ? 1 : 0
       );
       
-      // Update filter life level
-      this.filterService.updateCharacteristic(
+      // Update filter life level on main service
+      this.service?.updateCharacteristic(
         this.platform.Characteristic.FilterLifeLevel,
         Math.min(100, Math.max(0, filterLife))
       );
