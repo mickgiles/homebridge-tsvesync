@@ -1,5 +1,55 @@
 # Changelog
 
+## 1.0.113 (2025-08-28)
+
+### Fixed
+- **🚨 CRITICAL STABILITY FIX - v1.0.112 Crash Resolution**: Fixed crash issue introduced in v1.0.112 while maintaining Core 200S air quality fix
+  - **🐛 The v1.0.112 Problem**: Attempted to return original function directly for bypassed methods, but this caused crashes when:
+    - The function value might be undefined or not properly bound
+    - Direct returns could break the proxy chain or cause type errors
+    - Bypassed methods lost proper execution context leading to runtime failures
+  - **✅ The v1.0.113 Solution**: Now returns a **synchronous wrapper function** instead of direct return:
+    ```javascript
+    // SAFE: Always returns a callable function
+    return function(...args) {  // NOT async!
+      return value.apply(target, args);
+    };
+    ```
+  - **🎯 Benefits**: 
+    - Always returns a callable function (prevents crashes)
+    - Synchronous wrapper ensures `hasFeature()` returns `boolean`, not `Promise<boolean>`
+    - Properly binds execution context with `apply()`
+    - Maintains Core 200S air quality fix from v1.0.112
+  - **📱 Impact**: Eliminates crashes while preserving correct air quality detection for all devices
+
+### Changed
+- **Enhanced Proxy Safety**: Improved bypass method handling in API proxy architecture
+  - Replaced potentially unsafe direct function returns with guaranteed synchronous wrappers
+  - Maintained performance benefits of bypassing rate limiting for configuration methods
+  - Ensured all bypassed methods return proper types (boolean, number, string) not Promises
+  - Improved code robustness and error prevention in proxy chain
+
+### Dependencies
+- Updated tsvesync from 1.0.112 to 1.0.113 for version synchronization
+
+### HomeKit Integration Notes
+- **🎉 STABLE OPERATION**: This release resolves the crashes introduced in v1.0.112
+- **✅ Core 200S Still Fixed**: The Core 200S air quality phantom service fix remains active and working
+- **⚠️ RECOMMENDED UPDATE**: Critical stability fix - highly recommended for all v1.0.112 users
+- **🔄 No Manual Action**: Simply update and restart Homebridge - all functionality preserved
+
+### Breaking Changes
+- **None**: This is a critical stability fix with no API or configuration changes
+
+### Migration Notes
+- **🚀 Immediate Update Recommended**: Update from v1.0.112 to v1.0.113 to resolve crash issues
+- **📋 Verification Steps**:
+  1. Update the plugin to v1.0.113
+  2. Restart Homebridge completely
+  3. Verify stable operation without crashes
+  4. Confirm Core 200S devices still work without phantom air quality services
+- **⚡ Same Functionality**: All features from v1.0.112 maintained with improved stability
+
 ## 1.0.112 (2025-08-28)
 
 ### Fixed

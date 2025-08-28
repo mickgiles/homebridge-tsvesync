@@ -197,9 +197,6 @@ const createRateLimitedProxy = (target: any, rateLimiter: RateLimiter, deviceId?
         return value;
       }
 
-      // Check if this method should bypass rate limiting entirely
-      const methodName = prop.toString();
-      
       // Methods that bypass all rate limiting and debouncing
       const bypassMethods = [
         // Getters and internal methods
@@ -216,12 +213,16 @@ const createRateLimitedProxy = (target: any, rateLimiter: RateLimiter, deviceId?
         'hasFeature', 'getMaxFanSpeed', 'isFeatureSupportedInCurrentMode'
       ];
       
-      // If it's a bypass method, return the original function directly (NOT wrapped in async)
+      const methodName = prop.toString();
+      
+      // For bypass methods, return a simple wrapper that calls the original synchronously
       if (bypassMethods.includes(methodName)) {
-        return value;  // Return the ORIGINAL function, not wrapped!
+        return function(...args: any[]) {
+          return value.apply(target, args);
+        };
       }
       
-      // Otherwise, return a proxied async function that applies rate limiting
+      // Return a proxied async function that applies rate limiting
       return async function(...args: any[]) {
         // Methods that should only be rate limited (no debouncing)
         const noDebounceAPIMethods = [
