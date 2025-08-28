@@ -1,5 +1,37 @@
 # Changelog
 
+## 1.0.108 (2025-08-28)
+
+### Fixed
+- **Air Quality Feature Detection**: Improved air quality service detection to properly respect tsvesync library configuration
+  - Removed problematic fallback logic that checked for data presence instead of device capabilities
+  - Added trust in tsvesync library's hasFeature() method for proper air quality sensor detection
+  - Added service removal logic for devices that shouldn't have air quality sensors
+  - Added defensive checks during device state updates to prevent air quality errors
+  - Ensures devices without hardware air quality sensors (Core200S, LAP-C series, LV-RH131S) won't show air quality in HomeKit
+  - Fixes issue where air quality service appeared for devices lacking physical sensors
+  - Improves reliability of air quality feature detection across different device models
+
+### Changed
+- **Device Feature Detection**: Enhanced air quality feature validation
+  - Now properly validates device capabilities before creating air quality services
+  - Improved error handling for devices with inconsistent air quality data
+  - Better alignment with tsvesync library's device capability detection
+
+### Dependencies
+- Updated tsvesync from 1.0.107 to 1.0.108 for version synchronization
+
+### HomeKit Integration Notes
+- **Enhanced Accuracy**: Air quality services now only appear for devices with actual hardware sensors
+- **Better Reliability**: Reduced errors and improved stability for air quality monitoring
+- **Device-Specific Features**: Each device model now correctly reflects its actual sensor capabilities
+- **No Configuration Required**: Changes are automatic and based on device hardware specifications
+
+### Migration Notes
+- **No Action Required**: Air quality service improvements are automatic based on device capabilities
+- **Service Updates**: Devices without air quality sensors will no longer show air quality services after restart
+- **Enhanced Reliability**: Devices with air quality sensors benefit from improved error handling and validation
+
 ## 1.0.107 (2025-08-28)
 
 ### Fixed

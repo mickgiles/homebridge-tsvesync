@@ -96,7 +96,14 @@ export class AirPurifierAccessory extends BaseAccessory {
     // Use device's native hasFeature method if available
     if (typeof extendedDevice.hasFeature === 'function') {
       const result = extendedDevice.hasFeature(feature);
-      this.platform.log.debug(`${this.device.deviceName}: Native hasFeature('${feature}') returned: ${result}`);
+      this.platform.log.debug(`${this.device.deviceName}: Native hasFeature('${feature}') returned: ${result} (using tsvesync library configuration)`);
+      
+      // For air_quality, trust the library's configuration completely
+      // The library was updated in v1.0.107 to correctly exclude air_quality for devices without sensors
+      if (feature === 'air_quality') {
+        this.platform.log.debug(`${this.device.deviceName}: Air quality feature decision based on tsvesync library config: ${result}`);
+        return result;
+      }
       
       // For filter_life, be extra defensive - if native method says false but we think it should be true, override
       if (!result && feature === 'filter_life') {
@@ -117,14 +124,11 @@ export class AirPurifierAccessory extends BaseAccessory {
     // Fallback feature detection based on device type
     switch (feature) {
       case 'air_quality':
-        // Enable air quality features for devices that support it
-        // Check if device has air quality data available
-        const airQualityDevice = this.device as unknown as ExtendedVeSyncAirPurifier;
-        const hasAirQuality = !!(airQualityDevice.details?.air_quality_value !== undefined || 
-                 airQualityDevice.details?.pm25 !== undefined || 
-                 airQualityDevice.details?.air_quality !== undefined);
-        this.platform.log.debug(`${this.device.deviceName}: Fallback hasFeature('${feature}') returned: ${hasAirQuality}`);
-        return hasAirQuality;
+        // Respect the tsvesync library's feature configuration for air quality
+        // Only devices with actual hardware sensors should have air quality features
+        // The library already correctly configures which devices support air quality
+        this.platform.log.debug(`${this.device.deviceName}: Fallback hasFeature('${feature}') returned: false (device does not have air quality sensor per tsvesync config)`);
+        return false;
         
       case 'child_lock':
         // Explicitly disable child lock features
@@ -524,10 +528,17 @@ export class AirPurifierAccessory extends BaseAccessory {
     // Set up air quality sensor service if supported
     this.platform.log.debug(`${this.device.deviceName}: Checking air_quality feature...`);
     if (this.hasFeature('air_quality')) {
-      this.platform.log.debug(`${this.device.deviceName}: Setting up air quality service`);
+      this.platform.log.info(`${this.device.deviceName}: Device has air quality sensor - setting up air quality service`);
       this.setupAirQualityService();
     } else {
-      this.platform.log.debug(`${this.device.deviceName}: Air quality not supported, skipping air quality service`);
+      this.platform.log.info(`${this.device.deviceName}: Device does not have air quality sensor - skipping air quality service`);
+      
+      // Remove any existing air quality service if it was previously added
+      const existingAirQualityService = this.accessory.getService(this.platform.Service.AirQualitySensor);
+      if (existingAirQualityService) {
+        this.platform.log.info(`${this.device.deviceName}: Removing previously added air quality service`);
+        this.accessory.removeService(existingAirQualityService);
+      }
     }
     
     // Set up filter maintenance service if supported
@@ -883,7 +894,7 @@ export class AirPurifierAccessory extends BaseAccessory {
       this.lastSetPercentage = 0;
     }
     
-    // Update air quality characteristics if service exists
+    // Update air quality characteristics if service exists AND device supports air quality
     if (this.airQualityService && this.hasFeature('air_quality')) {
       const extendedDevice = this.device as unknown as ExtendedVeSyncAirPurifier;
       
@@ -910,6 +921,11 @@ export class AirPurifierAccessory extends BaseAccessory {
           Math.min(1000, Math.max(0, extendedDevice.details.pm10))
         );
       }
+    } else if (this.airQualityService && !this.hasFeature('air_quality')) {
+      // This should not happen, but if it does, remove the service
+      this.platform.log.warn(`${this.device.deviceName}: Air quality service exists but device does not support air quality - removing service`);
+      this.accessory.removeService(this.airQualityService);
+      this.airQualityService = undefined;
     }
     
     // Set up filter service if not already created and device supports it
