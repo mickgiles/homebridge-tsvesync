@@ -59,19 +59,26 @@ export class AirPurifierAccessory extends BaseAccessory {
     const deviceType = extendedDevice.deviceType || '';
     
     // AirBypass Devices: Core series, LAP-C series, Vital series
-    this.isAirBypassDevice = deviceType.includes('CORE') || 
+    // Use case-insensitive check for Core series to handle 'Core300S', 'CORE300S', etc.
+    this.isAirBypassDevice = deviceType.toUpperCase().includes('CORE') || 
                             deviceType.startsWith('LAP-C') || 
-                            deviceType.includes('VITAL');
+                            deviceType.toUpperCase().includes('VITAL');
     
     // AirBaseV2 Devices: LAP-V series, LAP-EL series, EverestAir series
     this.isAirBaseV2Device = deviceType.startsWith('LAP-V') || 
                             deviceType.startsWith('LAP-EL') || 
-                            deviceType.includes('EVERESTAIR');
+                            deviceType.toUpperCase().includes('EVERESTAIR');
     
     // Air131 Devices: LV-PUR131S, LV-RH131S
     this.isAir131Device = deviceType.startsWith('LV-');
     
-    // Log device class detection
+    // Log device class detection with more detail
+    this.platform.log.info(`Device Classification for ${this.device.deviceName}:`);
+    this.platform.log.info(`  - Device Type: "${deviceType}"`);
+    this.platform.log.info(`  - Is AirBypass: ${this.isAirBypassDevice}`);
+    this.platform.log.info(`  - Is AirBaseV2: ${this.isAirBaseV2Device}`);
+    this.platform.log.info(`  - Is Air131: ${this.isAir131Device}`);
+    
     if (this.isAirBypassDevice) {
       this.platform.log.debug(`Detected AirBypass device: ${this.device.deviceName} (${deviceType})`);
     } else if (this.isAirBaseV2Device) {
@@ -79,7 +86,7 @@ export class AirPurifierAccessory extends BaseAccessory {
     } else if (this.isAir131Device) {
       this.platform.log.debug(`Detected Air131 device: ${this.device.deviceName} (${deviceType})`);
     } else {
-      // Device type not specifically recognized, but will use default handling
+      this.platform.log.warn(`Unknown device class: ${this.device.deviceName} (${deviceType}) - device may not function properly`);
     }
     
     // Early check for Core200S and similar devices without air quality
@@ -585,10 +592,15 @@ export class AirPurifierAccessory extends BaseAccessory {
       this.accessory.removeService(existingFilterService);
     }
     
+    // Check and log important features for debugging
+    const hasAutoMode = this.hasFeature('auto_mode');
+    this.platform.log.info(`${this.device.deviceName} (${this.device.deviceType}): Features detected:`);
+    this.platform.log.info(`  - auto_mode: ${hasAutoMode} (controls mode switch)`);
+    
     // Add filter characteristics directly to air purifier service if supported
     this.platform.log.debug(`${this.device.deviceName} (${this.device.deviceType}): Checking filter_life feature...`);
     const hasFilterLife = this.hasFeature('filter_life');
-    this.platform.log.info(`${this.device.deviceName} (${this.device.deviceType}): hasFeature('filter_life') returned: ${hasFilterLife}`);
+    this.platform.log.info(`  - filter_life: ${hasFilterLife} (controls filter display)`);
     
     if (hasFilterLife) {
       this.platform.log.debug(`${this.device.deviceName} (${this.device.deviceType}): Adding filter characteristics to AirPurifier service`);

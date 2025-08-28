@@ -1,5 +1,53 @@
 # Changelog
 
+## 1.0.117 (2025-08-28)
+
+### Fixed
+- **Core300S Device Recognition**: Fixed case-sensitive device type check that prevented Core300S from being classified as AirBypass device
+  - **🎯 Root Cause**: VeSync API returns device types like "Core300S" with mixed case, but code was checking for uppercase "CORE"
+  - **✅ Solution**: Changed device type detection from `deviceType.includes('CORE')` to `deviceType.toUpperCase().includes('CORE')`
+  - **🔧 Missing Features Restored**: Core300S now properly shows mode switch (Auto/Manual) and filter life characteristics
+  - **📱 HomeKit Impact**: Core300S devices now display all expected features including mode switching and filter status
+- **Enhanced Device Classification**: Applied case-insensitive fix to all device series for consistency
+  - **🔄 Pattern Updates**: VITAL and EVERESTAIR device detection also made case-insensitive for preventive fixes
+  - **🛡️ Future-Proofing**: Device classification now handles mixed-case device types from VeSync API
+  - **🔍 Better Logging**: Added detailed device classification logging to help diagnose recognition issues
+
+### Improved
+- **Enhanced Device Logging**: Added comprehensive device type classification logging
+  - **📊 Classification Details**: Now logs device type, AirBypass status, AirBaseV2 status, and Air131 status
+  - **🎯 Feature Detection**: Logs which features are detected (auto_mode, filter_life) during initialization
+  - **⚠️ Unknown Devices**: Unknown device classes now log warnings to help identify misconfigured devices
+  - **🔧 Troubleshooting**: Enhanced logging makes it easier to diagnose device recognition and feature detection issues
+
+### Technical Details
+- **Device Type Detection**: Changed from case-sensitive `includes()` to case-insensitive `toUpperCase().includes()`
+- **Applied to Series**: Core, Vital, and EverestAir device type checks now case-insensitive
+- **Feature Classification**: Device classification now properly identifies Core300S as AirBypass device, enabling all features
+- **Logging Enhancement**: Added comprehensive device classification and feature detection logging
+
+### Affected Devices
+- **Core300S** (primary fix target) - now properly recognized as AirBypass device
+- **All Core series** devices with mixed-case type strings (preventive fix)
+- **Vital series** devices (preventive case-insensitive fix)
+- **EverestAir devices** (preventive case-insensitive fix)
+
+### Verification
+After updating, logs will show:
+```
+Device Classification for [Core300S Device Name]:
+  - Device Type: "Core300S"
+  - Is AirBypass: true  ← Should now be true
+  - Is AirBaseV2: false
+  - Is Air131: false
+Features detected:
+  - auto_mode: true (controls mode switch)
+  - filter_life: true (controls filter display)
+```
+
+### Dependencies
+- **📦 tsvesync**: Updated from 1.0.116 to 1.0.117 for synchronized release versioning
+
 ## 1.0.116 (2025-08-28)
 
 ### Fixed
