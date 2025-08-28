@@ -1,5 +1,39 @@
 # Changelog
 
+## 1.0.109 (2025-08-28)
+
+### Fixed
+- **Air Quality Service Logic**: Fixed air quality service removal logic for Core 200S and other devices without sensors
+  - Added proper tracking and clearing of air quality service references to prevent cached services
+  - Enhanced defensive checks to remove cached air quality services from devices without sensors
+  - Added early detection warnings for misconfigured devices during accessory initialization
+  - Improved updateDeviceState() logic to handle service removal for devices without air quality support
+  - Ensures cached HomeKit services are properly cleaned up when device capabilities change
+  - Specifically addresses Core 200S devices that were incorrectly showing air quality characteristics
+  - Added comprehensive service reference management throughout the accessory lifecycle
+
+### Changed
+- **Enhanced Air Quality Validation**: Improved air quality service management and validation
+  - Better separation between devices that support air quality sensors vs those that don't
+  - Enhanced logging to identify when cached services are found and removed
+  - Improved service cleanup during both initialization and runtime state updates
+  - More robust handling of service references to prevent phantom air quality services
+
+### Dependencies
+- Updated tsvesync from 1.0.108 to 1.0.109 for version synchronization
+
+### HomeKit Integration Notes
+- **Improved Service Accuracy**: Core 200S and similar devices without air quality sensors now properly exclude air quality services
+- **Better Cache Management**: Cached air quality services are automatically detected and removed from incompatible devices
+- **Enhanced Reliability**: Improved service lifecycle management prevents phantom services from appearing
+- **Device-Specific Features**: Each device model now correctly reflects its actual sensor capabilities without cached service interference
+
+### Migration Notes
+- **Automatic Fix**: The service cleanup logic will automatically remove inappropriate air quality services
+- **Core 200S Users**: Your device will no longer show unavailable air quality characteristics in HomeKit
+- **No Configuration Required**: Changes are automatic and based on device hardware specifications
+- **Improved Stability**: Better service management improves overall accessory reliability
+
 ## 1.0.108 (2025-08-28)
 
 ### Fixed

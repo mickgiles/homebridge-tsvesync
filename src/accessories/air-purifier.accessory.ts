@@ -82,6 +82,15 @@ export class AirPurifierAccessory extends BaseAccessory {
     } else {
       // Device type not specifically recognized, but will use default handling
     }
+    
+    // Early check for Core200S and similar devices without air quality
+    // This ensures we catch cached services even before setupService() is called
+    if (!this.hasFeature('air_quality')) {
+      const cachedAirQualityService = this.accessory.getService(this.platform.Service.AirQualitySensor);
+      if (cachedAirQualityService) {
+        this.platform.log.warn(`${this.device.deviceName} (${deviceType}): Found cached air quality service on device without AQ sensor - will be removed during setup`);
+      }
+    }
   }
 
   /**
@@ -527,18 +536,25 @@ export class AirPurifierAccessory extends BaseAccessory {
     
     // Set up air quality sensor service if supported
     this.platform.log.debug(`${this.device.deviceName}: Checking air_quality feature...`);
+    
+    // Always check for existing air quality service first
+    const existingAirQualityService = this.accessory.getService(this.platform.Service.AirQualitySensor);
+    
     if (this.hasFeature('air_quality')) {
       this.platform.log.info(`${this.device.deviceName}: Device has air quality sensor - setting up air quality service`);
       this.setupAirQualityService();
     } else {
-      this.platform.log.info(`${this.device.deviceName}: Device does not have air quality sensor - skipping air quality service`);
+      this.platform.log.info(`${this.device.deviceName}: Device does not have air quality sensor - removing any air quality service`);
       
-      // Remove any existing air quality service if it was previously added
-      const existingAirQualityService = this.accessory.getService(this.platform.Service.AirQualitySensor);
+      // Remove any existing air quality service and clear the reference
       if (existingAirQualityService) {
-        this.platform.log.info(`${this.device.deviceName}: Removing previously added air quality service`);
+        this.platform.log.warn(`${this.device.deviceName}: Found existing air quality service on device without AQ sensor - removing it`);
         this.accessory.removeService(existingAirQualityService);
+        // Clear the reference to ensure it's not used elsewhere
+        this.airQualityService = undefined;
       }
+      // Ensure the reference is cleared even if no service was found
+      this.airQualityService = undefined;
     }
     
     // Set up filter maintenance service if supported
@@ -895,37 +911,44 @@ export class AirPurifierAccessory extends BaseAccessory {
     }
     
     // Update air quality characteristics if service exists AND device supports air quality
-    if (this.airQualityService && this.hasFeature('air_quality')) {
-      const extendedDevice = this.device as unknown as ExtendedVeSyncAirPurifier;
-      
-      // Update air quality level
-      const pm25 = extendedDevice.details?.air_quality_value ?? 
-                   extendedDevice.details?.pm25 ?? 0;
-      const airQualityLevel = this.convertAirQualityToHomeKit(pm25);
-      
-      this.airQualityService.updateCharacteristic(
-        this.platform.Characteristic.AirQuality,
-        airQualityLevel
-      );
-      
-      // Update PM2.5 density
-      this.airQualityService.updateCharacteristic(
-        this.platform.Characteristic.PM2_5Density,
-        Math.min(1000, Math.max(0, pm25))
-      );
-      
-      // Update PM10 density if available
-      if (extendedDevice.details?.pm10 !== undefined) {
+    if (this.hasFeature('air_quality')) {
+      // Device supports air quality - update characteristics if service exists
+      if (this.airQualityService) {
+        const extendedDevice = this.device as unknown as ExtendedVeSyncAirPurifier;
+        
+        // Update air quality level
+        const pm25 = extendedDevice.details?.air_quality_value ?? 
+                     extendedDevice.details?.pm25 ?? 0;
+        const airQualityLevel = this.convertAirQualityToHomeKit(pm25);
+        
         this.airQualityService.updateCharacteristic(
-          this.platform.Characteristic.PM10Density,
-          Math.min(1000, Math.max(0, extendedDevice.details.pm10))
+          this.platform.Characteristic.AirQuality,
+          airQualityLevel
         );
+        
+        // Update PM2.5 density
+        this.airQualityService.updateCharacteristic(
+          this.platform.Characteristic.PM2_5Density,
+          Math.min(1000, Math.max(0, pm25))
+        );
+        
+        // Update PM10 density if available
+        if (extendedDevice.details?.pm10 !== undefined) {
+          this.airQualityService.updateCharacteristic(
+            this.platform.Characteristic.PM10Density,
+            Math.min(1000, Math.max(0, extendedDevice.details.pm10))
+          );
+        }
       }
-    } else if (this.airQualityService && !this.hasFeature('air_quality')) {
-      // This should not happen, but if it does, remove the service
-      this.platform.log.warn(`${this.device.deviceName}: Air quality service exists but device does not support air quality - removing service`);
-      this.accessory.removeService(this.airQualityService);
-      this.airQualityService = undefined;
+    } else {
+      // Device does not support air quality - remove any existing service
+      // Check both our reference and the actual accessory for any air quality service
+      const existingService = this.airQualityService || this.accessory.getService(this.platform.Service.AirQualitySensor);
+      if (existingService) {
+        this.platform.log.warn(`${this.device.deviceName}: Device does not support air quality but service exists - removing it now`);
+        this.accessory.removeService(existingService);
+        this.airQualityService = undefined;
+      }
     }
     
     // Set up filter service if not already created and device supports it
