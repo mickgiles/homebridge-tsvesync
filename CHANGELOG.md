@@ -1,5 +1,44 @@
 # Changelog
 
+## 1.0.110 (2025-08-28)
+
+### Added
+- **Enhanced Diagnostic Logging**: Added comprehensive diagnostic logging to identify Core 200S air quality detection issues
+  - Enhanced logging in air purifier accessory to show exact device types alongside device names
+  - Added detailed debugging for hasFeature('air_quality') method calls with device type information
+  - Added warning logs specifically for Core 200S variants that incorrectly report air quality support
+  - Improved service removal logic with better reference tracking and validation
+  - Added defensive checks to detect and warn about inconsistent air quality sensor reporting
+
+### Changed
+- **Air Quality Debugging**: Enhanced air quality feature detection logging
+  - All air quality related logs now include both device name and device type for better identification
+  - Added extra debugging specifically for Core200S and LAP-C20 device variants
+  - Improved logging granularity to help identify root cause of phantom air quality services
+  - Enhanced hasFeature() debug output to show library configuration decisions with device context
+
+### Fixed
+- **Diagnostic Capabilities**: Improved diagnostic capabilities for troubleshooting air quality sensor detection
+  - Enhanced debugging to identify why some Core 200S devices still show air quality characteristics
+  - Better tracking of device type information in all air quality related logging
+  - Improved warning detection for devices that shouldn't have air quality sensors but report having them
+  - Enhanced service setup logging to track air quality service creation and removal decisions
+
+### Dependencies
+- Updated tsvesync from 1.0.109 to 1.0.110 for version synchronization
+
+### HomeKit Integration Notes
+- **Diagnostic Release**: This is a diagnostic release focused on identifying the root cause of Core 200S air quality issues
+- **Enhanced Logging**: Users will see more detailed logging in Homebridge logs for air quality feature detection
+- **Troubleshooting**: The enhanced logging will help identify why some Core 200S devices incorrectly show air quality services
+- **No Breaking Changes**: All existing functionality remains unchanged with enhanced diagnostic capabilities
+
+### Migration Notes
+- **No Action Required**: This is a diagnostic release that maintains all existing functionality
+- **Enhanced Debugging**: Users experiencing Core 200S air quality issues will see more detailed logging information
+- **Log Monitoring**: Check Homebridge logs for warning messages about Core 200S devices with air quality sensors
+- **Issue Reporting**: The enhanced logging will provide better information for troubleshooting and issue reports
+
 ## 1.0.109 (2025-08-28)
 
 ### Fixed

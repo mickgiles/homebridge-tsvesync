@@ -105,12 +105,18 @@ export class AirPurifierAccessory extends BaseAccessory {
     // Use device's native hasFeature method if available
     if (typeof extendedDevice.hasFeature === 'function') {
       const result = extendedDevice.hasFeature(feature);
-      this.platform.log.debug(`${this.device.deviceName}: Native hasFeature('${feature}') returned: ${result} (using tsvesync library configuration)`);
+      this.platform.log.debug(`${this.device.deviceName} (${this.device.deviceType}): Native hasFeature('${feature}') returned: ${result} (using tsvesync library configuration)`);
       
       // For air_quality, trust the library's configuration completely
       // The library was updated in v1.0.107 to correctly exclude air_quality for devices without sensors
       if (feature === 'air_quality') {
-        this.platform.log.debug(`${this.device.deviceName}: Air quality feature decision based on tsvesync library config: ${result}`);
+        this.platform.log.debug(`${this.device.deviceName} (${this.device.deviceType}): Air quality feature decision based on tsvesync library config: ${result}`);
+        
+        // Add extra debugging for Core200S devices
+        if (this.device.deviceType.includes('Core200S') || this.device.deviceType.includes('LAP-C20')) {
+          this.platform.log.warn(`${this.device.deviceName} (${this.device.deviceType}): Core200S variant detected - should NOT have air quality! hasFeature returned: ${result}`);
+        }
+        
         return result;
       }
       
@@ -535,13 +541,17 @@ export class AirPurifierAccessory extends BaseAccessory {
     );
     
     // Set up air quality sensor service if supported
-    this.platform.log.debug(`${this.device.deviceName}: Checking air_quality feature...`);
+    this.platform.log.debug(`${this.device.deviceName} (${this.device.deviceType}): Checking air_quality feature...`);
     
     // Always check for existing air quality service first
     const existingAirQualityService = this.accessory.getService(this.platform.Service.AirQualitySensor);
     
-    if (this.hasFeature('air_quality')) {
-      this.platform.log.info(`${this.device.deviceName}: Device has air quality sensor - setting up air quality service`);
+    // Add detailed logging to debug the issue
+    const hasAirQuality = this.hasFeature('air_quality');
+    this.platform.log.debug(`${this.device.deviceName} (${this.device.deviceType}): hasFeature('air_quality') returned ${hasAirQuality}`);
+    
+    if (hasAirQuality) {
+      this.platform.log.info(`${this.device.deviceName} (${this.device.deviceType}): Device has air quality sensor - setting up air quality service`);
       this.setupAirQualityService();
     } else {
       this.platform.log.info(`${this.device.deviceName}: Device does not have air quality sensor - removing any air quality service`);
