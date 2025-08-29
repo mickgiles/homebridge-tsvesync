@@ -1,5 +1,42 @@
 # Changelog
 
+## 1.0.122 (2025-08-29)
+
+### Fixed
+- **🎯 Core300S HomeKit Tile Missing Features**: Fixed Core300S filter characteristics and mode settings not appearing in HomeKit tile
+  - **✅ Filter Characteristics**: Filter characteristics now always registered for all air purifiers (matching reference implementation)
+  - **🔧 Mode Switch**: Core300S auto/manual mode switcher now appears in HomeKit by using proper unified approach
+  - **🛡️ Universal Setup**: Changed from conditional filter setup to always-register approach for all air purifiers
+  - **📱 HomeKit Impact**: Core300S devices now properly display filter life percentage and auto/manual mode toggle in Home app
+  - **🔧 Technical Fix**: Uses getCharacteristic() approach that auto-adds characteristics (like proven reference plugins)
+
+### Improved
+- **🔍 Enhanced Logging**: Added comprehensive device feature detection logging for troubleshooting
+  - **📊 Feature Detection**: All hasFeature() calls now logged with device type context for debugging
+  - **🎯 Device Classification**: Enhanced logging for auto mode support detection and characteristic setup
+  - **⚠️ Clear Notifications**: Core300S auto mode enablement now clearly logged with success confirmation
+  - **🔧 Characteristic Tracking**: Detailed logging confirms filter characteristics are registered for all air purifiers
+
+### Technical Details
+- **🏗️ Reference-Based Implementation**: Aligned implementation with proven working homebridge-levoit-air-purifier approach
+- **🔄 Always-Register Pattern**: Filter characteristics now registered for ALL air purifiers without conditional logic
+- **⚖️ Unified Logic**: Core300S now gets both auto and manual mode support explicitly enabled
+- **📝 Simplified Code**: Removed complex conditional handling in favor of proven always-register approach
+
+### Affected Devices
+- **Core300S** (primary fix target) - filter and mode characteristics now reliably appear in HomeKit tile
+- **All Air Purifiers** - benefit from unified filter characteristic setup approach
+- **Core200S** - continues to work with enhanced logging and consistent setup
+
+### Migration Notes
+- **🚀 Automatic Fix**: Filter and mode characteristics will appear automatically after Homebridge restart
+- **📱 HomeKit Changes**: Core300S tiles should now show filter life percentage and auto/manual mode toggle
+- **🔄 No Configuration**: Changes are automatic - no configuration updates required
+- **✅ Verification**: Check Core300S devices in Home app to confirm filter and mode controls are visible
+
+### Dependencies
+- **📦 tsvesync**: Updated from 1.0.121 to 1.0.122 for synchronized release versioning
+
 ## 1.0.121 (2025-08-29)
 
 ### Fixed

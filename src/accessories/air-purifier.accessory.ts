@@ -448,28 +448,24 @@ export class AirPurifierAccessory extends BaseAccessory {
     // This ensures they persist through service configuration
     this.platform.log.debug(`${this.device.deviceName} (${this.device.deviceType}): Pre-configuring optional characteristics`);
     
-    // Set up filter characteristics like the reference plugin does
-    // Using getCharacteristic() which auto-adds if missing
-    const hasFilterLife = this.hasFeature('filter_life');
-    this.platform.log.info(`${this.device.deviceName}: filter_life feature: ${hasFilterLife}`);
+    // Always set up filter characteristics (like reference plugin does)
+    // The reference implementation ALWAYS registers these for ALL air purifiers
+    // This ensures they appear in HomeKit even if the device doesn't report having them initially
+    this.platform.log.info(`${this.device.deviceName}: Setting up filter characteristics for all air purifiers`);
     
-    if (hasFilterLife) {
-      this.platform.log.info(`${this.device.deviceName}: Setting up filter characteristics using simplified approach`);
-      
-      // Use getCharacteristic which auto-adds if missing (like reference plugin)
-      this.service.getCharacteristic(this.platform.Characteristic.FilterChangeIndication)
-        .onGet(this.getFilterChangeIndication.bind(this));
-      
-      this.service.getCharacteristic(this.platform.Characteristic.FilterLifeLevel)
-        .onGet(this.getFilterLifeLevel.bind(this))
-        .setProps({
-          minValue: 0,
-          maxValue: 100,
-          minStep: 1
-        });
-      
-      this.platform.log.info(`${this.device.deviceName}: Filter characteristics configured using getCharacteristic`);
-    }
+    // Use getCharacteristic which auto-adds if missing (like reference plugin)
+    this.service.getCharacteristic(this.platform.Characteristic.FilterChangeIndication)
+      .onGet(this.getFilterChangeIndication.bind(this));
+    
+    this.service.getCharacteristic(this.platform.Characteristic.FilterLifeLevel)
+      .onGet(this.getFilterLifeLevel.bind(this))
+      .setProps({
+        minValue: 0,
+        maxValue: 100,
+        minStep: 1
+      });
+    
+    this.platform.log.info(`${this.device.deviceName}: Filter characteristics registered (always present for air purifiers)`)
 
     // Set up required characteristics
     this.setupCharacteristic(
@@ -481,22 +477,35 @@ export class AirPurifierAccessory extends BaseAccessory {
     // Set up target state characteristic for mode mapping
     const targetStateChar = this.service.getCharacteristic(this.platform.Characteristic.TargetAirPurifierState);
     
+    // Check if device supports auto mode
+    const hasAutoMode = this.hasFeature('auto_mode');
+    this.platform.log.info(`${this.device.deviceName} (${this.device.deviceType}): Auto mode support check - hasFeature('auto_mode') = ${hasAutoMode}`);
+    
     // For Core200S, only allow manual mode
     if (this.device.deviceType.includes('Core200S')) {
       targetStateChar.setProps({
         validValues: [0] // MANUAL only
       });
-      this.platform.log.info(`${this.device.deviceName}: Configured for MANUAL mode only (Core200S)`);
-    } else {
-      // For Core300S and all other devices with auto_mode, allow both AUTO and MANUAL
+      this.platform.log.info(`${this.device.deviceName} (Core200S): Configured for MANUAL mode only - no auto mode support`);
+    } else if (this.device.deviceType.includes('Core300S')) {
+      // Core300S explicitly supports both modes
       targetStateChar.setProps({
         validValues: [0, 1] // MANUAL and AUTO
       });
-      
-      // Log specifically for Core300S to help debug
-      if (this.device.deviceType.includes('Core300S')) {
-        this.platform.log.info(`${this.device.deviceName}: Configured for AUTO and MANUAL modes (Core300S)`);
-      }
+      this.platform.log.info(`${this.device.deviceName} (Core300S): ✅ Configured for BOTH AUTO and MANUAL modes - auto mode ENABLED`);
+      this.platform.log.info(`${this.device.deviceName} (Core300S): Target state characteristic should now show mode switcher in HomeKit`);
+    } else if (hasAutoMode) {
+      // Other devices with auto_mode feature
+      targetStateChar.setProps({
+        validValues: [0, 1] // MANUAL and AUTO
+      });
+      this.platform.log.info(`${this.device.deviceName} (${this.device.deviceType}): Configured for AUTO and MANUAL modes based on feature detection`);
+    } else {
+      // Devices without auto mode
+      targetStateChar.setProps({
+        validValues: [0] // MANUAL only
+      });
+      this.platform.log.info(`${this.device.deviceName} (${this.device.deviceType}): Configured for MANUAL mode only - no auto mode feature`);
     }
     
     // Set up the characteristic handlers for all devices
@@ -567,9 +576,9 @@ export class AirPurifierAccessory extends BaseAccessory {
     }
     
     // Check and log important features for debugging
-    const hasAutoMode = this.hasFeature('auto_mode');
+    const autoModeSupported = this.hasFeature('auto_mode');
     this.platform.log.info(`${this.device.deviceName} (${this.device.deviceType}): Features detected:`);
-    this.platform.log.info(`  - auto_mode: ${hasAutoMode} (controls mode switch)`);
+    this.platform.log.info(`  - auto_mode: ${autoModeSupported} (controls mode switch)`);
     this.platform.log.info(`  - filter_life: ${this.hasFeature('filter_life')} (controls filter display)`);
   }
   
