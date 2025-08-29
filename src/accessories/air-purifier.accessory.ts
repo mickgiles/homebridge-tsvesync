@@ -107,21 +107,21 @@ export class AirPurifierAccessory extends BaseAccessory {
     const extendedDevice = this.device as unknown as ExtendedVeSyncAirPurifier;
     
     // **ENHANCED DEBUGGING**: Log detailed device type information
-    this.platform.log.info(`${this.device.deviceName}: FEATURE CHECK - hasFeature('${feature}') for device type: "${this.device.deviceType}"`);
+    this.platform.log.debug(`${this.device.deviceName}: FEATURE CHECK - hasFeature('${feature}') for device type: "${this.device.deviceType}"`);
     
     // Use device's native hasFeature method if available
     if (typeof extendedDevice.hasFeature === 'function') {
       const result = extendedDevice.hasFeature(feature);
-      this.platform.log.info(`${this.device.deviceName} (${this.device.deviceType}): Native hasFeature('${feature}') returned: ${result} (using tsvesync library configuration)`);
+      this.platform.log.debug(`${this.device.deviceName} (${this.device.deviceType}): Native hasFeature('${feature}') returned: ${result} (using tsvesync library configuration)`);
       
       // For air_quality, trust the library's configuration completely
       // The library was updated in v1.0.107 to correctly exclude air_quality for devices without sensors
       if (feature === 'air_quality') {
-        this.platform.log.info(`${this.device.deviceName} (${this.device.deviceType}): Air quality feature decision based on tsvesync library config: ${result}`);
+        this.platform.log.debug(`${this.device.deviceName} (${this.device.deviceType}): Air quality feature decision based on tsvesync library config: ${result}`);
         
         // Add extra debugging for Core200S devices
         if (this.device.deviceType.includes('Core200S') || this.device.deviceType.includes('LAP-C20')) {
-          this.platform.log.info(`${this.device.deviceName} (${this.device.deviceType}): Core200S variant detected - should NOT have air quality! hasFeature returned: ${result}`);
+          this.platform.log.debug(`${this.device.deviceName} (${this.device.deviceType}): Core200S variant detected - should NOT have air quality! hasFeature returned: ${result}`);
         }
         
         return result;
@@ -130,11 +130,11 @@ export class AirPurifierAccessory extends BaseAccessory {
       // **CRITICAL FIX**: Enhanced filter_life detection with explicit Core300S support
       if (feature === 'filter_life') {
         const deviceType = this.device.deviceType;
-        this.platform.log.info(`${this.device.deviceName} (${deviceType}): Native hasFeature('filter_life') returned: ${result}`);
+        this.platform.log.debug(`${this.device.deviceName} (${deviceType}): Native hasFeature('filter_life') returned: ${result}`);
         
         // **EXPLICIT Core300S CHECK**: Make sure Core300S is always recognized
         if (deviceType === 'Core300S' || deviceType.includes('Core300S')) {
-          this.platform.log.info(`${this.device.deviceName}: Core300S detected - SHOULD support filter_life! Native result: ${result}`);
+          this.platform.log.debug(`${this.device.deviceName}: Core300S detected - SHOULD support filter_life! Native result: ${result}`);
           if (!result) {
             this.platform.log.warn(`${this.device.deviceName}: Core300S should support filter_life but native hasFeature returned false. OVERRIDING to true.`);
             return true;
@@ -160,10 +160,10 @@ export class AirPurifierAccessory extends BaseAccessory {
       // **EXPLICIT Core300S auto_mode CHECK**: Make sure Core300S auto mode is recognized
       if (feature === 'auto_mode') {
         const deviceType = this.device.deviceType;
-        this.platform.log.info(`${this.device.deviceName} (${deviceType}): Native hasFeature('auto_mode') returned: ${result}`);
+        this.platform.log.debug(`${this.device.deviceName} (${deviceType}): Native hasFeature('auto_mode') returned: ${result}`);
         
         if (deviceType === 'Core300S' || deviceType.includes('Core300S')) {
-          this.platform.log.info(`${this.device.deviceName}: Core300S detected - SHOULD support auto_mode! Native result: ${result}`);
+          this.platform.log.debug(`${this.device.deviceName}: Core300S detected - SHOULD support auto_mode! Native result: ${result}`);
           if (!result) {
             this.platform.log.warn(`${this.device.deviceName}: Core300S should support auto_mode but native hasFeature returned false. OVERRIDING to true.`);
             return true;
