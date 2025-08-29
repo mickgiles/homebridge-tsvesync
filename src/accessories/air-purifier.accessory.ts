@@ -443,6 +443,12 @@ export class AirPurifierAccessory extends BaseAccessory {
     // Get or create the air purifier service
     this.service = this.accessory.getService(this.platform.Service.AirPurifier) ||
       this.accessory.addService(this.platform.Service.AirPurifier);
+    
+    // CRITICAL: Mark the AirPurifier service as primary
+    // This ensures HomeKit shows the controls instead of the info page
+    // when there are multiple services (e.g., with AirQualitySensor)
+    this.service.setPrimaryService(true);
+    this.platform.log.info(`${this.device.deviceName}: Marked AirPurifier service as PRIMARY service`);
 
     // **CRITICAL FIX**: Add optional characteristics FIRST before setting up handlers
     // This ensures they persist through service configuration
@@ -591,6 +597,13 @@ export class AirPurifierAccessory extends BaseAccessory {
     // Get or create the air quality sensor service
     this.airQualityService = this.accessory.getService(this.platform.Service.AirQualitySensor) ||
       this.accessory.addService(this.platform.Service.AirQualitySensor);
+    
+    // Mark this as a linked service (not primary)
+    // The AirPurifier service is the primary service
+    if (this.service) {
+      this.airQualityService.addLinkedService(this.service);
+      this.platform.log.info(`${this.device.deviceName}: Linked AirQualitySensor service to PRIMARY AirPurifier service`);
+    }
 
     // Set up required air quality characteristic
     this.setupCharacteristic(

@@ -1,5 +1,42 @@
 # Changelog
 
+## 1.0.123 (2025-08-29)
+
+### Fixed
+- **🎯 Core300S HomeKit Controls Display**: Fixed Core300S showing info page instead of control settings in HomeKit
+  - **✅ Primary Service**: AirPurifier service now marked as primary service to ensure control display instead of info page
+  - **🔗 Service Hierarchy**: AirQualitySensor service properly linked as secondary service to primary AirPurifier service
+  - **🔧 Technical Implementation**: Uses setPrimaryService(true) for AirPurifier and addLinkedService() for AirQualitySensor
+  - **📱 HomeKit Impact**: Core300S devices now properly display controls (fan speed, mode, etc.) when tapped in Home app
+  - **🛡️ Universal Fix**: Primary service configuration applied to all air purifiers for consistent HomeKit behavior
+
+### Improved
+- **🔍 Enhanced Service Configuration Logging**: Added comprehensive logging for service hierarchy setup debugging
+  - **📊 Primary Service Tracking**: All primary service assignments now logged with device name context for troubleshooting
+  - **🎯 Linked Service Detection**: Service linking operations logged with clear success confirmation messages  
+  - **⚠️ Clear Notifications**: Service configuration now clearly logged for all air purifiers with hierarchy details
+  - **🔧 Configuration Verification**: Detailed logging confirms proper service setup and linking for debugging purposes
+
+### Technical Details
+- **🏗️ HomeKit Service Architecture**: Proper primary/secondary service hierarchy implementation following HomeKit best practices
+- **🔄 Service Priority**: AirPurifier service always set as primary to ensure control interface is displayed first
+- **⚖️ Linked Services**: AirQualitySensor and other secondary services properly linked to maintain service relationships
+- **📝 Code Enhancement**: Added clear comments explaining the critical nature of primary service configuration
+
+### Affected Devices
+- **Core300S** (primary fix target) - now shows controls instead of info page when tapped in HomeKit
+- **All Air Purifiers** - benefit from consistent primary service configuration and proper service hierarchy
+- **Multi-Service Devices** - proper service linking ensures all services remain accessible with correct display priority
+
+### Migration Notes
+- **🚀 Automatic Fix**: Service hierarchy changes will take effect automatically after Homebridge restart
+- **📱 HomeKit Changes**: Core300S and other air purifiers should now show control interface when tapped in Home app
+- **🔄 No Configuration**: Changes are automatic - no configuration updates required
+- **✅ Verification**: Check air purifier devices in Home app to confirm control interface is displayed instead of info page
+
+### Dependencies
+- **📦 tsvesync**: Updated from 1.0.122 to 1.0.123 for synchronized release versioning
+
 ## 1.0.122 (2025-08-29)
 
 ### Fixed
