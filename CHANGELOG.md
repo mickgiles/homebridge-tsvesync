@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.0.120 (2025-08-29)
+
+### Fixed
+- **🔧 Core300S Filter and Mode Characteristics**: Comprehensive improvements to Core300S HomeKit characteristic display and device handling
+  - **🎯 Enhanced Feature Detection**: Added explicit Core300S support checks for filter_life and auto_mode features with override logic
+  - **✅ Characteristic Pre-Configuration**: Implemented characteristic pre-addition before handler setup to ensure HomeKit persistence
+  - **🔧 Unified Speed Handling**: Added Core300S to special rotation speed handling alongside Core200S for proper characteristic rebuilding
+  - **📱 HomeKit Impact**: Core300S devices now reliably display filter life percentage, mode switch (Auto/Manual), and all characteristics
+  - **🛡️ Service Integrity**: Characteristic pre-addition and rebuild process ensures all features are recognized by HomeKit
+
+### Improved
+- **🔍 Enhanced Debugging**: Comprehensive diagnostic logging throughout device initialization and characteristic setup
+  - **📊 Detailed Feature Logging**: All hasFeature() calls now logged at info level with device type context
+  - **🎯 Device Classification**: Enhanced logging for device type detection, AirBypass status, and feature recognition
+  - **⚠️ Override Warnings**: Clear warnings when Core300S feature detection is overridden to ensure proper functionality
+  - **🔧 Characteristic Tracking**: Detailed logging of characteristic addition, removal, and handler setup processes
+
+### Technical Details
+- **🏗️ Characteristic Architecture**: Pre-adds FilterChangeIndication and FilterLifeLevel characteristics before handler setup
+- **🔄 Service Rebuild Logic**: Core300S now uses same rotation speed rebuild process as Core200S for HomeKit compatibility
+- **⚖️ Device-Specific Logic**: Enhanced Core300S and Core200S handling while maintaining compatibility with other devices
+- **📝 Comprehensive Logging**: Info-level logging for all feature detection and characteristic operations
+
+### Affected Devices
+- **Core300S** (primary enhancement target) - comprehensive characteristic display improvements
+- **Core200S** - continues to work with existing special handling
+- **All Core series** - benefit from enhanced feature detection and debugging capabilities
+
+### Dependencies
+- **📦 tsvesync**: Updated from 1.0.119 to 1.0.120 for synchronized release versioning
+
 ## 1.0.119 (2025-08-29)
 
 ### Fixed

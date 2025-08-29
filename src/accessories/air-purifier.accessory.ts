@@ -31,6 +31,7 @@ interface ExtendedVeSyncAirPurifier extends VeSyncAirPurifier {
     pm25?: number;
     pm10?: number;
     pm1?: number;
+    mode?: string;
   };
 }
 
@@ -105,31 +106,40 @@ export class AirPurifierAccessory extends BaseAccessory {
   private hasFeature(feature: string): boolean {
     const extendedDevice = this.device as unknown as ExtendedVeSyncAirPurifier;
     
-    // Log device type for debugging
-    this.platform.log.debug(`${this.device.deviceName}: Checking hasFeature('${feature}') for device type: ${this.device.deviceType}`);
+    // **ENHANCED DEBUGGING**: Log detailed device type information
+    this.platform.log.info(`${this.device.deviceName}: FEATURE CHECK - hasFeature('${feature}') for device type: "${this.device.deviceType}"`);
     
     // Use device's native hasFeature method if available
     if (typeof extendedDevice.hasFeature === 'function') {
       const result = extendedDevice.hasFeature(feature);
-      this.platform.log.debug(`${this.device.deviceName} (${this.device.deviceType}): Native hasFeature('${feature}') returned: ${result} (using tsvesync library configuration)`);
+      this.platform.log.info(`${this.device.deviceName} (${this.device.deviceType}): Native hasFeature('${feature}') returned: ${result} (using tsvesync library configuration)`);
       
       // For air_quality, trust the library's configuration completely
       // The library was updated in v1.0.107 to correctly exclude air_quality for devices without sensors
       if (feature === 'air_quality') {
-        this.platform.log.debug(`${this.device.deviceName} (${this.device.deviceType}): Air quality feature decision based on tsvesync library config: ${result}`);
+        this.platform.log.info(`${this.device.deviceName} (${this.device.deviceType}): Air quality feature decision based on tsvesync library config: ${result}`);
         
         // Add extra debugging for Core200S devices
         if (this.device.deviceType.includes('Core200S') || this.device.deviceType.includes('LAP-C20')) {
-          this.platform.log.debug(`${this.device.deviceName} (${this.device.deviceType}): Core200S variant detected - should NOT have air quality! hasFeature returned: ${result}`);
+          this.platform.log.info(`${this.device.deviceName} (${this.device.deviceType}): Core200S variant detected - should NOT have air quality! hasFeature returned: ${result}`);
         }
         
         return result;
       }
       
-      // For filter_life, be extra defensive - if native method says false but we think it should be true, override
+      // **CRITICAL FIX**: Enhanced filter_life detection with explicit Core300S support
       if (feature === 'filter_life') {
         const deviceType = this.device.deviceType;
-        this.platform.log.debug(`${this.device.deviceName} (${deviceType}): Native hasFeature('filter_life') returned: ${result}`);
+        this.platform.log.info(`${this.device.deviceName} (${deviceType}): Native hasFeature('filter_life') returned: ${result}`);
+        
+        // **EXPLICIT Core300S CHECK**: Make sure Core300S is always recognized
+        if (deviceType === 'Core300S' || deviceType.includes('Core300S')) {
+          this.platform.log.info(`${this.device.deviceName}: Core300S detected - SHOULD support filter_life! Native result: ${result}`);
+          if (!result) {
+            this.platform.log.warn(`${this.device.deviceName}: Core300S should support filter_life but native hasFeature returned false. OVERRIDING to true.`);
+            return true;
+          }
+        }
         
         if (!result) {
           // Check if this looks like a device type that should support filter_life
@@ -142,6 +152,20 @@ export class AirPurifierAccessory extends BaseAccessory {
               deviceType.includes('LV-') || 
               deviceType.includes('Vital')) {
             this.platform.log.warn(`${this.device.deviceName}: Device type ${deviceType} should support filter_life but native hasFeature returned false. Overriding to true.`);
+            return true;
+          }
+        }
+      }
+      
+      // **EXPLICIT Core300S auto_mode CHECK**: Make sure Core300S auto mode is recognized
+      if (feature === 'auto_mode') {
+        const deviceType = this.device.deviceType;
+        this.platform.log.info(`${this.device.deviceName} (${deviceType}): Native hasFeature('auto_mode') returned: ${result}`);
+        
+        if (deviceType === 'Core300S' || deviceType.includes('Core300S')) {
+          this.platform.log.info(`${this.device.deviceName}: Core300S detected - SHOULD support auto_mode! Native result: ${result}`);
+          if (!result) {
+            this.platform.log.warn(`${this.device.deviceName}: Core300S should support auto_mode but native hasFeature returned false. OVERRIDING to true.`);
             return true;
           }
         }
@@ -420,6 +444,38 @@ export class AirPurifierAccessory extends BaseAccessory {
     this.service = this.accessory.getService(this.platform.Service.AirPurifier) ||
       this.accessory.addService(this.platform.Service.AirPurifier);
 
+    // **CRITICAL FIX**: Add optional characteristics FIRST before setting up handlers
+    // This ensures they persist through service configuration
+    this.platform.log.debug(`${this.device.deviceName} (${this.device.deviceType}): Pre-configuring optional characteristics`);
+    
+    // Check and pre-configure filter characteristics
+    const hasFilterLife = this.hasFeature('filter_life');
+    this.platform.log.info(`${this.device.deviceName}: filter_life feature: ${hasFilterLife}`);
+    
+    if (hasFilterLife) {
+      this.platform.log.info(`${this.device.deviceName}: Pre-adding filter characteristics to ensure HomeKit persistence`);
+      
+      // Add FilterChangeIndication characteristic if it doesn't exist
+      if (!this.service.testCharacteristic(this.platform.Characteristic.FilterChangeIndication)) {
+        this.service.addCharacteristic(this.platform.Characteristic.FilterChangeIndication);
+        this.platform.log.info(`${this.device.deviceName}: Pre-added FilterChangeIndication characteristic`);
+      } else {
+        this.platform.log.info(`${this.device.deviceName}: FilterChangeIndication characteristic already exists`);
+      }
+      
+      // Add FilterLifeLevel characteristic if it doesn't exist
+      if (!this.service.testCharacteristic(this.platform.Characteristic.FilterLifeLevel)) {
+        this.service.addCharacteristic(this.platform.Characteristic.FilterLifeLevel);
+        this.platform.log.info(`${this.device.deviceName}: Pre-added FilterLifeLevel characteristic`);
+      } else {
+        this.platform.log.info(`${this.device.deviceName}: FilterLifeLevel characteristic already exists`);
+      }
+      
+      // No need for Core300S-specific handling anymore since it now uses the same
+      // rotation speed rebuild process as Core200S, which ensures HomeKit recognizes
+      // all characteristics properly
+    }
+
     // Set up required characteristics
     this.setupCharacteristic(
       this.platform.Characteristic.Active,
@@ -461,10 +517,11 @@ export class AirPurifierAccessory extends BaseAccessory {
       this.getCurrentState.bind(this)
     );
 
-    // Set up speed control with special handling for Core200S
-    if (this.device.deviceType.includes('Core200S')) {
-      // For Core200S, set up rotation speed characteristic manually
-      // Set up rotation speed for Core200S
+    // Set up speed control with special handling for Core200S and Core300S
+    // Both devices need this special handling for filter characteristics to work properly in HomeKit
+    if (this.device.deviceType.includes('Core200S') || this.device.deviceType.includes('Core300S')) {
+      // For Core200S and Core300S, set up rotation speed characteristic manually
+      // This rebuild process helps HomeKit recognize all characteristics properly
       
       // First remove any existing characteristic to ensure clean setup
       if (this.service.testCharacteristic(this.platform.Characteristic.RotationSpeed)) {
@@ -566,20 +623,15 @@ export class AirPurifierAccessory extends BaseAccessory {
     this.platform.log.info(`${this.device.deviceName} (${this.device.deviceType}): Features detected:`);
     this.platform.log.info(`  - auto_mode: ${hasAutoMode} (controls mode switch)`);
     
-    // Add filter characteristics directly to air purifier service if supported
-    this.platform.log.debug(`${this.device.deviceName} (${this.device.deviceType}): Checking filter_life feature...`);
-    const hasFilterLife = this.hasFeature('filter_life');
-    this.platform.log.info(`  - filter_life: ${hasFilterLife} (controls filter display)`);
+    // **CRITICAL FIX**: Configure handlers for pre-added filter characteristics
+    this.platform.log.debug(`${this.device.deviceName} (${this.device.deviceType}): Configuring filter characteristic handlers...`);
+    const hasFilterLifeForHandlers = this.hasFeature('filter_life');
+    this.platform.log.info(`  - filter_life: ${hasFilterLifeForHandlers} (controls filter display)`);
     
-    if (hasFilterLife) {
-      this.platform.log.debug(`${this.device.deviceName} (${this.device.deviceType}): Adding filter characteristics to AirPurifier service`);
+    if (hasFilterLifeForHandlers) {
+      this.platform.log.info(`${this.device.deviceName} (${this.device.deviceType}): Setting up filter characteristic handlers`);
       
-      // Add FilterChangeIndication characteristic if it doesn't exist
-      if (!this.service.testCharacteristic(this.platform.Characteristic.FilterChangeIndication)) {
-        this.service.addCharacteristic(this.platform.Characteristic.FilterChangeIndication);
-        this.platform.log.info(`${this.device.deviceName}: Created FilterChangeIndication characteristic`);
-      }
-      
+      // The characteristics were pre-added above, now just set up handlers
       // Set up the handlers for FilterChangeIndication
       this.setupCharacteristic(
         this.platform.Characteristic.FilterChangeIndication,
@@ -589,13 +641,7 @@ export class AirPurifierAccessory extends BaseAccessory {
         this.service
       );
       
-      this.platform.log.debug(`${this.device.deviceName}: Configured FilterChangeIndication characteristic`);
-      
-      // Add FilterLifeLevel characteristic if it doesn't exist
-      if (!this.service.testCharacteristic(this.platform.Characteristic.FilterLifeLevel)) {
-        this.service.addCharacteristic(this.platform.Characteristic.FilterLifeLevel);
-        this.platform.log.info(`${this.device.deviceName}: Created FilterLifeLevel characteristic`);
-      }
+      this.platform.log.info(`${this.device.deviceName}: Configured FilterChangeIndication characteristic handlers`);
       
       // Set up the handlers for FilterLifeLevel
       this.setupCharacteristic(
@@ -610,9 +656,19 @@ export class AirPurifierAccessory extends BaseAccessory {
         this.service
       );
       
-      this.platform.log.debug(`${this.device.deviceName}: Configured FilterLifeLevel characteristic`);
+      this.platform.log.info(`${this.device.deviceName}: Configured FilterLifeLevel characteristic handlers`);
     } else {
-      this.platform.log.debug(`${this.device.deviceName}: Filter life not supported, skipping filter characteristics`);
+      this.platform.log.debug(`${this.device.deviceName}: Filter life not supported, skipping filter characteristic handlers`);
+      
+      // Remove any filter characteristics that might exist from previous configs
+      if (this.service.testCharacteristic(this.platform.Characteristic.FilterChangeIndication)) {
+        this.service.removeCharacteristic(this.service.getCharacteristic(this.platform.Characteristic.FilterChangeIndication));
+        this.platform.log.debug(`${this.device.deviceName}: Removed FilterChangeIndication characteristic`);
+      }
+      if (this.service.testCharacteristic(this.platform.Characteristic.FilterLifeLevel)) {
+        this.service.removeCharacteristic(this.service.getCharacteristic(this.platform.Characteristic.FilterLifeLevel));
+        this.platform.log.debug(`${this.device.deviceName}: Removed FilterLifeLevel characteristic`);
+      }
     }
   }
   
