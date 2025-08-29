@@ -448,32 +448,27 @@ export class AirPurifierAccessory extends BaseAccessory {
     // This ensures they persist through service configuration
     this.platform.log.debug(`${this.device.deviceName} (${this.device.deviceType}): Pre-configuring optional characteristics`);
     
-    // Check and pre-configure filter characteristics
+    // Set up filter characteristics like the reference plugin does
+    // Using getCharacteristic() which auto-adds if missing
     const hasFilterLife = this.hasFeature('filter_life');
     this.platform.log.info(`${this.device.deviceName}: filter_life feature: ${hasFilterLife}`);
     
     if (hasFilterLife) {
-      this.platform.log.info(`${this.device.deviceName}: Pre-adding filter characteristics to ensure HomeKit persistence`);
+      this.platform.log.info(`${this.device.deviceName}: Setting up filter characteristics using simplified approach`);
       
-      // Add FilterChangeIndication characteristic if it doesn't exist
-      if (!this.service.testCharacteristic(this.platform.Characteristic.FilterChangeIndication)) {
-        this.service.addCharacteristic(this.platform.Characteristic.FilterChangeIndication);
-        this.platform.log.info(`${this.device.deviceName}: Pre-added FilterChangeIndication characteristic`);
-      } else {
-        this.platform.log.info(`${this.device.deviceName}: FilterChangeIndication characteristic already exists`);
-      }
+      // Use getCharacteristic which auto-adds if missing (like reference plugin)
+      this.service.getCharacteristic(this.platform.Characteristic.FilterChangeIndication)
+        .onGet(this.getFilterChangeIndication.bind(this));
       
-      // Add FilterLifeLevel characteristic if it doesn't exist
-      if (!this.service.testCharacteristic(this.platform.Characteristic.FilterLifeLevel)) {
-        this.service.addCharacteristic(this.platform.Characteristic.FilterLifeLevel);
-        this.platform.log.info(`${this.device.deviceName}: Pre-added FilterLifeLevel characteristic`);
-      } else {
-        this.platform.log.info(`${this.device.deviceName}: FilterLifeLevel characteristic already exists`);
-      }
+      this.service.getCharacteristic(this.platform.Characteristic.FilterLifeLevel)
+        .onGet(this.getFilterLifeLevel.bind(this))
+        .setProps({
+          minValue: 0,
+          maxValue: 100,
+          minStep: 1
+        });
       
-      // No need for Core300S-specific handling anymore since it now uses the same
-      // rotation speed rebuild process as Core200S, which ensures HomeKit recognizes
-      // all characteristics properly
+      this.platform.log.info(`${this.device.deviceName}: Filter characteristics configured using getCharacteristic`);
     }
 
     // Set up required characteristics
@@ -517,66 +512,19 @@ export class AirPurifierAccessory extends BaseAccessory {
       this.getCurrentState.bind(this)
     );
 
-    // Set up speed control with special handling for Core200S and Core300S
-    // Both devices need this special handling for filter characteristics to work properly in HomeKit
-    if (this.device.deviceType.includes('Core200S') || this.device.deviceType.includes('Core300S')) {
-      // For Core200S and Core300S, set up rotation speed characteristic manually
-      // This rebuild process helps HomeKit recognize all characteristics properly
-      
-      // First remove any existing characteristic to ensure clean setup
-      if (this.service.testCharacteristic(this.platform.Characteristic.RotationSpeed)) {
-        this.service.removeCharacteristic(
-          this.service.getCharacteristic(this.platform.Characteristic.RotationSpeed)
-        );
-      }
-      
-      // Re-add the characteristic with proper properties
-      const rotationSpeedChar = this.service.addCharacteristic(this.platform.Characteristic.RotationSpeed);
-      const minStep = this.calculateRotationSpeedStep();
-      
-      rotationSpeedChar.setProps({
+    // Set up rotation speed characteristic using the simplified approach (like reference plugin)
+    const minStep = this.calculateRotationSpeedStep();
+    
+    this.service.getCharacteristic(this.platform.Characteristic.RotationSpeed)
+      .onGet(this.getRotationSpeed.bind(this))
+      .onSet(this.setRotationSpeed.bind(this))
+      .setProps({
         minValue: 0,
         maxValue: 100,
-        minStep: minStep,
-        perms: [this.platform.Characteristic.Perms.PAIRED_READ, this.platform.Characteristic.Perms.PAIRED_WRITE, this.platform.Characteristic.Perms.NOTIFY]
+        minStep: minStep
       });
-      
-      // Set up the characteristic handlers
-      rotationSpeedChar.onGet(async () => {
-        try {
-          const value = await this.getRotationSpeed();
-          this.platform.log.debug(`${this.device.deviceName} getRotationSpeed returned: ${value}`);
-          return value;
-        } catch (error) {
-          this.platform.log.error(`Error getting rotation speed: ${error}`);
-          throw error;
-        }
-      });
-      
-      rotationSpeedChar.onSet(async (value) => {
-        try {
-          this.platform.log.debug(`${this.device.deviceName} setRotationSpeed called with: ${value}`);
-          await this.setRotationSpeed(value);
-        } catch (error) {
-          this.platform.log.error(`Error setting rotation speed: ${error}`);
-          throw error;
-        }
-      });
-    } else {
-      // For other devices, use the standard setup with appropriate step size
-      const minStep = this.calculateRotationSpeedStep();
-      
-      this.setupCharacteristic(
-        this.platform.Characteristic.RotationSpeed,
-        this.getRotationSpeed.bind(this),
-        this.setRotationSpeed.bind(this),
-        {
-          minValue: 0,
-          maxValue: 100,
-          minStep: minStep
-        }
-      );
-    }
+    
+    this.platform.log.debug(`${this.device.deviceName}: Configured RotationSpeed with minStep: ${minStep}`);
 
     // Add Name characteristic
     this.setupCharacteristic(
@@ -622,54 +570,7 @@ export class AirPurifierAccessory extends BaseAccessory {
     const hasAutoMode = this.hasFeature('auto_mode');
     this.platform.log.info(`${this.device.deviceName} (${this.device.deviceType}): Features detected:`);
     this.platform.log.info(`  - auto_mode: ${hasAutoMode} (controls mode switch)`);
-    
-    // **CRITICAL FIX**: Configure handlers for pre-added filter characteristics
-    this.platform.log.debug(`${this.device.deviceName} (${this.device.deviceType}): Configuring filter characteristic handlers...`);
-    const hasFilterLifeForHandlers = this.hasFeature('filter_life');
-    this.platform.log.info(`  - filter_life: ${hasFilterLifeForHandlers} (controls filter display)`);
-    
-    if (hasFilterLifeForHandlers) {
-      this.platform.log.info(`${this.device.deviceName} (${this.device.deviceType}): Setting up filter characteristic handlers`);
-      
-      // The characteristics were pre-added above, now just set up handlers
-      // Set up the handlers for FilterChangeIndication
-      this.setupCharacteristic(
-        this.platform.Characteristic.FilterChangeIndication,
-        this.getFilterChangeIndication.bind(this),
-        undefined,
-        {},
-        this.service
-      );
-      
-      this.platform.log.info(`${this.device.deviceName}: Configured FilterChangeIndication characteristic handlers`);
-      
-      // Set up the handlers for FilterLifeLevel
-      this.setupCharacteristic(
-        this.platform.Characteristic.FilterLifeLevel,
-        this.getFilterLifeLevel.bind(this),
-        undefined,
-        {
-          minValue: 0,
-          maxValue: 100,
-          minStep: 1
-        },
-        this.service
-      );
-      
-      this.platform.log.info(`${this.device.deviceName}: Configured FilterLifeLevel characteristic handlers`);
-    } else {
-      this.platform.log.debug(`${this.device.deviceName}: Filter life not supported, skipping filter characteristic handlers`);
-      
-      // Remove any filter characteristics that might exist from previous configs
-      if (this.service.testCharacteristic(this.platform.Characteristic.FilterChangeIndication)) {
-        this.service.removeCharacteristic(this.service.getCharacteristic(this.platform.Characteristic.FilterChangeIndication));
-        this.platform.log.debug(`${this.device.deviceName}: Removed FilterChangeIndication characteristic`);
-      }
-      if (this.service.testCharacteristic(this.platform.Characteristic.FilterLifeLevel)) {
-        this.service.removeCharacteristic(this.service.getCharacteristic(this.platform.Characteristic.FilterLifeLevel));
-        this.platform.log.debug(`${this.device.deviceName}: Removed FilterLifeLevel characteristic`);
-      }
-    }
+    this.platform.log.info(`  - filter_life: ${this.hasFeature('filter_life')} (controls filter display)`);
   }
   
   /**

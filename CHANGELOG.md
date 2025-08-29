@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.0.121 (2025-08-29)
+
+### Fixed
+- **🔧 Simplified HomeKit Characteristic Setup**: Completely overhauled characteristic configuration based on working reference plugin analysis
+  - **✅ Filter Characteristics**: Now using getCharacteristic() directly which auto-adds characteristics if missing (like reference plugin)
+  - **🎯 Removed Complex Logic**: Eliminated special remove/re-add logic for Core200S and Core300S rotation speed handling
+  - **🛡️ Unified Approach**: All devices now use the same simplified characteristic setup approach
+  - **📱 HomeKit Impact**: Core300S filter and mode display issues resolved through simplified implementation
+  - **🔧 Technical Enhancement**: Based on analysis of proven working homebridge-levoit-air-purifier plugin
+
+### Improved  
+- **🔍 Characteristic Configuration**: Streamlined approach eliminates duplicate and complex characteristic handling
+  - **📊 Direct getCharacteristic**: Uses getCharacteristic() calls that auto-add characteristics (matching reference plugin)
+  - **🎯 Consistent Setup**: Removed device-specific characteristic removal/addition logic
+  - **⚠️ Simplified Code**: Eliminated complex conditional handling for different device models
+  - **🔧 Proven Approach**: Aligns implementation with working reference plugin methodology
+
+### Technical Details
+- **🏗️ Reference Plugin Analysis**: Based implementation on working homebridge-levoit-air-purifier plugin approach
+- **🔄 Characteristic Setup**: Uses direct getCharacteristic() calls that handle existence checking automatically  
+- **⚖️ Unified Logic**: All devices use same characteristic setup pattern regardless of model
+- **📝 Code Simplification**: Removed complex device-specific characteristic manipulation logic
+
+### Affected Devices
+- **Core300S** - Filter and mode characteristics now display properly through simplified setup
+- **Core200S** - Benefits from unified approach while maintaining functionality
+- **All devices** - More reliable and consistent characteristic setup across all models
+
+### Dependencies
+- **📦 tsvesync**: Updated from 1.0.120 to 1.0.121 (includes Core200S 4-speed level configuration fix)
+
 ## 1.0.120 (2025-08-29)
 
 ### Fixed
