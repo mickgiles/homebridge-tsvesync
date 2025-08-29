@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.0.119 (2025-08-29)
+
+### Fixed
+- **Core300S HomeKit Characteristic Display**: Fixed Core300S air purifier not displaying filter life and mode characteristics in HomeKit tile
+  - **🎯 Root Cause**: Core300S was included in special rotation speed handling that was removing and re-adding the RotationSpeed characteristic, which disrupted the entire AirPurifier service
+  - **✅ Solution**: Removed Core300S from the conditional on line 465 that triggers RotationSpeed characteristic removal/re-add logic
+  - **🔧 Technical Fix**: Core300S now uses standard rotation speed setup, allowing filter and mode characteristics to display properly in HomeKit
+  - **📱 HomeKit Impact**: Core300S devices now properly show filter life percentage and mode switch (Auto/Manual) in the Home app tile
+  - **🛡️ Preserved Functionality**: Core200S continues to work with its special handling as needed for its specific requirements
+
+### Technical Details
+- **File Changed**: `src/accessories/air-purifier.accessory.ts`
+- **Line Modified**: Line 465 - Updated conditional from `Core200S || Core300S` to `Core200S` only
+- **Service Integrity**: Preserving service integrity for Core300S while maintaining Core200S functionality
+- **Characteristic Setup**: Core300S now follows the same characteristic setup pattern as other Core series devices
+
+### Affected Devices
+- **Core300S**: Primary fix target - now properly displays all characteristics in HomeKit
+- **Core200S**: Continues to work correctly with its existing special handling
+- **Other Core devices**: Unaffected by this change
+
+### Dependencies
+- **📦 tsvesync**: Updated from 1.0.118 to 1.0.119 for synchronized release versioning
+
 ## 1.0.118 (2025-08-28)
 
 ### Fixed

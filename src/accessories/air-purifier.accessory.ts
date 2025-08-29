@@ -461,10 +461,10 @@ export class AirPurifierAccessory extends BaseAccessory {
       this.getCurrentState.bind(this)
     );
 
-    // Set up speed control with special handling for Core200S and Core300S
-    if (this.device.deviceType.includes('Core200S') || this.device.deviceType.includes('Core300S')) {
-      // For Core200S and Core300S, set up rotation speed characteristic manually
-      // Set up rotation speed for Core200S/Core300S
+    // Set up speed control with special handling for Core200S
+    if (this.device.deviceType.includes('Core200S')) {
+      // For Core200S, set up rotation speed characteristic manually
+      // Set up rotation speed for Core200S
       
       // First remove any existing characteristic to ensure clean setup
       if (this.service.testCharacteristic(this.platform.Characteristic.RotationSpeed)) {
