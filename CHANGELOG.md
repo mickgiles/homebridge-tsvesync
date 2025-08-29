@@ -1,5 +1,59 @@
 # Changelog
 
+## 1.1.0 (2025-08-29)
+
+### Added
+- **🆕 Separated Air Quality Sensors**: Air quality sensors now appear as independent HomeKit accessories
+  - **📦 New AirQualitySensorAccessory Class**: Dedicated accessory for air quality monitoring with PM2.5 and PM10 support
+  - **🎯 Core300S, Core400S, Core600S**: Air quality sensors appear as separate tiles in HomeKit for better organization
+  - **📊 EPA AQI Standards**: Air quality levels calculated using official EPA Air Quality Index thresholds
+  - **🔧 Smart Detection**: Automatic PM2.5 and PM10 characteristic setup based on device capabilities
+  - **🌟 Better UX**: Air purifier controls and air quality readings are now clearly separated in HomeKit
+
+### Fixed
+- **🎯 Core Series Filter Life Detection**: Enhanced filter life detection for all Core series air purifiers
+  - **✅ Core300S Filter Support**: Core300S devices now properly display filter life percentage in HomeKit
+  - **🔧 Pattern Matching**: Improved device type detection to catch variants like "300S", "200S", "400S", "600S"
+  - **🛡️ Defensive Logic**: Robust filter detection ensures all Core series devices get filter characteristics
+  - **📱 HomeKit Integration**: Filter maintenance notifications now work correctly for all Core series models
+
+- **🚨 Critical Air Quality Bug Fix**: Resolved phantom air quality services on devices without sensors
+  - **⚡ hasFeature() Fix**: Fixed API proxy wrapping causing hasFeature() to return Promise instead of boolean
+  - **🎯 Core200S Specific**: Core200S and LAP-C201S/C202S no longer show phantom air quality services
+  - **🔧 Bypass Logic**: Moved bypass check before async wrapper to prevent Promise wrapping of sync methods
+  - **✅ Accurate Detection**: Only devices with actual air quality sensors now show AQ characteristics
+
+### Improved
+- **🔇 Reduced Log Verbosity**: Changed excessive info logging to debug level for cleaner operation
+  - **📊 Debug Level**: Feature detection, device type analysis, and configuration details moved to debug
+  - **⚡ Performance**: Reduced log noise during normal operation while maintaining troubleshooting capability
+  - **🎯 Focused Logging**: Important warnings and errors remain visible, routine operations moved to debug
+
+- **🏗️ Enhanced HomeKit Service Architecture**: Proper service hierarchy for better HomeKit display
+  - **🎯 Primary Service**: AirPurifier service marked as primary to show controls instead of info page
+  - **🔗 Linked Services**: Air quality sensors properly linked to maintain service relationships
+  - **📱 HomeKit UX**: All air purifiers now show control interface when tapped in Home app
+
+### Technical Details
+- **🔧 API Proxy Enhancement**: Improved rate limiting with proper bypass handling for sync methods
+- **📦 Device Factory**: Enhanced device classification and feature detection logic
+- **🎛️ Service Management**: Comprehensive service setup with primary/secondary hierarchy
+- **🔍 Enhanced Logging**: Detailed debugging information available when needed
+
+### Affected Devices
+- **Core Series**: Core200S, Core300S, Core400S, Core600S - improved filter detection and service setup
+- **LAP Series**: LAP-C201S, LAP-C202S, LAP-C301S, LAP-C401S, LAP-C601S - fixed phantom AQ services
+- **All Air Purifiers**: Better HomeKit service hierarchy and consistent behavior across models
+
+### Migration Notes
+- **🚀 Automatic Upgrade**: Changes take effect after Homebridge restart, no configuration needed
+- **📱 HomeKit Changes**: Air quality sensors will appear as separate accessories for supported devices
+- **🔄 Backward Compatible**: All existing functionality preserved with enhanced capabilities
+- **✅ Verification**: Check that Core series devices show filter life and separated AQ sensors work correctly
+
+### Dependencies
+- **📦 tsvesync**: Updated to 1.1.0 for synchronized release versioning
+
 ## 1.0.123 (2025-08-29)
 
 ### Fixed

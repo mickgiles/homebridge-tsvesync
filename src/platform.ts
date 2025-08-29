@@ -19,6 +19,8 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
   // this is used to track restored cached accessories
   public readonly accessories: PlatformAccessory[] = [];
   private readonly deviceAccessories: Map<string, BaseAccessory> = new Map();
+  // Track AQ sensor accessories separately
+  private readonly aqSensorAccessories: Map<string, PlatformAccessory> = new Map();
   
   private client!: VeSync;
   private deviceUpdateInterval?: NodeJS.Timeout;
@@ -416,6 +418,60 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
         const deviceAccessory = DeviceFactory.createAccessory(this, accessory, device);
         this.deviceAccessories.set(uuid, deviceAccessory);
 
+        // Check if device needs a separate AQ sensor accessory
+        if (this.deviceHasAirQuality(device) && DeviceFactory.isAirPurifier(device.deviceType)) {
+          const aqUuid = this.generateDeviceUUID(device, '-AQ');
+          processedDeviceUUIDs.add(aqUuid);
+          
+          // Check if AQ sensor accessory already exists
+          let aqAccessory = this.accessories.find(acc => acc.UUID === aqUuid);
+          
+          if (aqAccessory) {
+            // AQ sensor accessory already exists
+            this.logger.debug('Restoring existing AQ sensor from cache:', device.deviceName + ' AQ');
+            
+            // Update the accessory context
+            aqAccessory.context.device = this.createDeviceContext(device);
+            aqAccessory.context.isAQSensor = true;
+            aqAccessory.context.parentUUID = uuid; // Store parent relationship
+            
+            // Update accessory
+            this.api.updatePlatformAccessories([aqAccessory]);
+          } else {
+            // Create a new AQ sensor accessory
+            this.logger.debug('Adding new AQ sensor accessory:', device.deviceName + ' AQ');
+            
+            // Create the AQ sensor accessory with SENSOR category
+            aqAccessory = new this.api.platformAccessory(
+              device.deviceName + ' Air Quality',
+              aqUuid,
+              this.api.hap.Categories.SENSOR
+            );
+            
+            // Store device information in context
+            aqAccessory.context.device = this.createDeviceContext(device);
+            aqAccessory.context.isAQSensor = true;
+            aqAccessory.context.parentUUID = uuid; // Store parent relationship
+          }
+          
+          // Store the AQ sensor accessory
+          this.aqSensorAccessories.set(aqUuid, aqAccessory);
+          
+          // Create the AQ sensor accessory handler
+          const aqSensorAccessory = DeviceFactory.createAQSensorAccessory(this, aqAccessory, device);
+          if (aqSensorAccessory) {
+            this.deviceAccessories.set(aqUuid, aqSensorAccessory);
+            
+            // Register new AQ sensor accessory
+            if (!this.accessories.find(acc => acc.UUID === aqUuid)) {
+              this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [aqAccessory]);
+              this.accessories.push(aqAccessory);
+            }
+          } else {
+            this.logger.warn(`${device.deviceName}: Failed to create AQ sensor accessory handler - DeviceFactory.createAQSensorAccessory returned null`);
+          }
+        }
+
         // Register new accessories
         if (!this.accessories.find(acc => acc.UUID === uuid)) {
           this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
@@ -478,13 +534,36 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
   /**
    * Generate a consistent UUID for a device
    * @param device The device to generate a UUID for
+   * @param suffix Optional suffix for accessory type (e.g., '-AQ' for air quality sensor)
    * @returns The generated UUID string
    */
-  private generateDeviceUUID(device: { cid: string; isSubDevice?: boolean; subDeviceNo?: number }): string {
+  private generateDeviceUUID(device: { cid: string; isSubDevice?: boolean; subDeviceNo?: number }, suffix = ''): string {
     let id = device.cid;
     if (device.isSubDevice && device.subDeviceNo !== undefined) {
       id = `${device.cid}_${device.subDeviceNo}`;
     }
-    return this.api.hap.uuid.generate(id);
+    return this.api.hap.uuid.generate(id + suffix);
+  }
+
+  /**
+   * Check if a device has air quality sensor
+   * @param device The device to check
+   * @returns true if device has AQ sensor
+   */
+  private deviceHasAirQuality(device: any): boolean {
+    // Use the device's native feature detection if available
+    if (typeof device.hasFeature === 'function') {
+      return device.hasFeature('air_quality');
+    }
+    
+    // Fallback to device type checking for older devices
+    const deviceType = device.deviceType || '';
+    // Core300S, Core400S, Core600S have AQ sensors
+    // Core200S does NOT have AQ sensor
+    return (deviceType.includes('Core300S') || 
+            deviceType.includes('Core400S') || 
+            deviceType.includes('Core600S') ||
+            (deviceType.includes('LAP-') && !deviceType.includes('LAP-EL')) ||
+            deviceType.includes('LV-PUR131S'));
   }
 }

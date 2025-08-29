@@ -41,7 +41,6 @@ export class AirPurifierAccessory extends BaseAccessory {
   private isAirBypassDevice: boolean;
   private isAirBaseV2Device: boolean;
   private isAir131Device: boolean;
-  private airQualityService?: Service;
   private lastSetSpeed: number = 0; // Track the last speed we set
   private lastSetPercentage: number = 0; // Track the last percentage we set
   private skipNextUpdate: boolean = false; // Flag to skip the next update
@@ -74,11 +73,11 @@ export class AirPurifierAccessory extends BaseAccessory {
     this.isAir131Device = deviceType.startsWith('LV-');
     
     // Log device class detection with more detail
-    this.platform.log.info(`Device Classification for ${this.device.deviceName}:`);
-    this.platform.log.info(`  - Device Type: "${deviceType}"`);
-    this.platform.log.info(`  - Is AirBypass: ${this.isAirBypassDevice}`);
-    this.platform.log.info(`  - Is AirBaseV2: ${this.isAirBaseV2Device}`);
-    this.platform.log.info(`  - Is Air131: ${this.isAir131Device}`);
+    this.platform.log.debug(`Device Classification for ${this.device.deviceName}:`);
+    this.platform.log.debug(`  - Device Type: "${deviceType}"`);
+    this.platform.log.debug(`  - Is AirBypass: ${this.isAirBypassDevice}`);
+    this.platform.log.debug(`  - Is AirBaseV2: ${this.isAirBaseV2Device}`);
+    this.platform.log.debug(`  - Is Air131: ${this.isAir131Device}`);
     
     if (this.isAirBypassDevice) {
       this.platform.log.debug(`Detected AirBypass device: ${this.device.deviceName} (${deviceType})`);
@@ -90,13 +89,11 @@ export class AirPurifierAccessory extends BaseAccessory {
       this.platform.log.warn(`Unknown device class: ${this.device.deviceName} (${deviceType}) - device may not function properly`);
     }
     
-    // Early check for Core200S and similar devices without air quality
-    // This ensures we catch cached services even before setupService() is called
-    if (!this.hasFeature('air_quality')) {
-      const cachedAirQualityService = this.accessory.getService(this.platform.Service.AirQualitySensor);
-      if (cachedAirQualityService) {
-        this.platform.log.debug(`${this.device.deviceName} (${deviceType}): Found cached air quality service on device without AQ sensor - will be removed during setup`);
-      }
+    // Remove any cached air quality service - these are now separate accessories
+    const cachedAirQualityService = this.accessory.getService(this.platform.Service.AirQualitySensor);
+    if (cachedAirQualityService) {
+      this.platform.log.debug(`${this.device.deviceName} (${deviceType}): Removing cached embedded AQ service - AQ sensors are now separate accessories`);
+      this.accessory.removeService(cachedAirQualityService);
     }
   }
 
@@ -444,11 +441,9 @@ export class AirPurifierAccessory extends BaseAccessory {
     this.service = this.accessory.getService(this.platform.Service.AirPurifier) ||
       this.accessory.addService(this.platform.Service.AirPurifier);
     
-    // CRITICAL: Mark the AirPurifier service as primary
-    // This ensures HomeKit shows the controls instead of the info page
-    // when there are multiple services (e.g., with AirQualitySensor)
+    // Mark the AirPurifier service as primary
     this.service.setPrimaryService(true);
-    this.platform.log.info(`${this.device.deviceName}: Marked AirPurifier service as PRIMARY service`);
+    this.platform.log.debug(`${this.device.deviceName}: Marked AirPurifier service as primary`);
 
     // **CRITICAL FIX**: Add optional characteristics FIRST before setting up handlers
     // This ensures they persist through service configuration
@@ -457,7 +452,7 @@ export class AirPurifierAccessory extends BaseAccessory {
     // Always set up filter characteristics (like reference plugin does)
     // The reference implementation ALWAYS registers these for ALL air purifiers
     // This ensures they appear in HomeKit even if the device doesn't report having them initially
-    this.platform.log.info(`${this.device.deviceName}: Setting up filter characteristics for all air purifiers`);
+    this.platform.log.debug(`${this.device.deviceName}: Setting up filter characteristics for all air purifiers`);
     
     // Use getCharacteristic which auto-adds if missing (like reference plugin)
     this.service.getCharacteristic(this.platform.Characteristic.FilterChangeIndication)
@@ -471,7 +466,7 @@ export class AirPurifierAccessory extends BaseAccessory {
         minStep: 1
       });
     
-    this.platform.log.info(`${this.device.deviceName}: Filter characteristics registered (always present for air purifiers)`)
+    this.platform.log.debug(`${this.device.deviceName}: Filter characteristics registered (always present for air purifiers)`)
 
     // Set up required characteristics
     this.setupCharacteristic(
@@ -485,21 +480,21 @@ export class AirPurifierAccessory extends BaseAccessory {
     
     // Check if device supports auto mode
     const hasAutoMode = this.hasFeature('auto_mode');
-    this.platform.log.info(`${this.device.deviceName} (${this.device.deviceType}): Auto mode support check - hasFeature('auto_mode') = ${hasAutoMode}`);
+    this.platform.log.debug(`${this.device.deviceName} (${this.device.deviceType}): Auto mode support check - hasFeature('auto_mode') = ${hasAutoMode}`);
     
     // For Core200S, only allow manual mode
     if (this.device.deviceType.includes('Core200S')) {
       targetStateChar.setProps({
         validValues: [0] // MANUAL only
       });
-      this.platform.log.info(`${this.device.deviceName} (Core200S): Configured for MANUAL mode only - no auto mode support`);
+      this.platform.log.debug(`${this.device.deviceName} (Core200S): Configured for MANUAL mode only - no auto mode support`);
     } else if (this.device.deviceType.includes('Core300S')) {
       // Core300S explicitly supports both modes
       targetStateChar.setProps({
         validValues: [0, 1] // MANUAL and AUTO
       });
-      this.platform.log.info(`${this.device.deviceName} (Core300S): ✅ Configured for BOTH AUTO and MANUAL modes - auto mode ENABLED`);
-      this.platform.log.info(`${this.device.deviceName} (Core300S): Target state characteristic should now show mode switcher in HomeKit`);
+      this.platform.log.debug(`${this.device.deviceName} (Core300S): ✅ Configured for BOTH AUTO and MANUAL modes - auto mode ENABLED`);
+      this.platform.log.debug(`${this.device.deviceName} (Core300S): Target state characteristic should now show mode switcher in HomeKit`);
     } else if (hasAutoMode) {
       // Other devices with auto_mode feature
       targetStateChar.setProps({
@@ -511,7 +506,7 @@ export class AirPurifierAccessory extends BaseAccessory {
       targetStateChar.setProps({
         validValues: [0] // MANUAL only
       });
-      this.platform.log.info(`${this.device.deviceName} (${this.device.deviceType}): Configured for MANUAL mode only - no auto mode feature`);
+      this.platform.log.debug(`${this.device.deviceName} (${this.device.deviceType}): Configured for MANUAL mode only - no auto mode feature`);
     }
     
     // Set up the characteristic handlers for all devices
@@ -547,142 +542,29 @@ export class AirPurifierAccessory extends BaseAccessory {
       async () => this.device.deviceName
     );
     
-    // Set up air quality sensor service if supported
-    this.platform.log.debug(`${this.device.deviceName} (${this.device.deviceType}): Checking air_quality feature...`);
-    
-    // Always check for existing air quality service first
+    // Air quality sensors are now separate accessories
+    // Remove any legacy embedded AQ service
     const existingAirQualityService = this.accessory.getService(this.platform.Service.AirQualitySensor);
-    
-    // Check if device supports air quality
-    const hasAirQuality = this.hasFeature('air_quality');
-    this.platform.log.debug(`${this.device.deviceName} (${this.device.deviceType}): hasFeature('air_quality') returned ${hasAirQuality}`);
-    
-    if (hasAirQuality) {
-      this.platform.log.debug(`${this.device.deviceName} (${this.device.deviceType}): Device has air quality sensor - setting up air quality service`);
-      this.setupAirQualityService();
-    } else {
-      this.platform.log.debug(`${this.device.deviceName}: Device does not have air quality sensor - removing any air quality service`);
-      
-      // Remove any existing air quality service and clear the reference
-      if (existingAirQualityService) {
-        this.platform.log.debug(`${this.device.deviceName}: Found existing air quality service on device without AQ sensor - removing it`);
-        this.accessory.removeService(existingAirQualityService);
-        // Clear the reference to ensure it's not used elsewhere
-        this.airQualityService = undefined;
-      }
-      // Ensure the reference is cleared even if no service was found
-      this.airQualityService = undefined;
+    if (existingAirQualityService) {
+      this.platform.log.debug(`${this.device.deviceName}: Removing legacy embedded air quality service`);
+      this.accessory.removeService(existingAirQualityService);
     }
     
     // Clean up any existing FilterMaintenance service (from old implementation)
     const existingFilterService = this.accessory.getService(this.platform.Service.FilterMaintenance);
     if (existingFilterService) {
-      this.platform.log.info(`${this.device.deviceName}: Removing old FilterMaintenance service (migrating to AirPurifier service)`);
+      this.platform.log.debug(`${this.device.deviceName}: Removing old FilterMaintenance service (migrating to AirPurifier service)`);
       this.accessory.removeService(existingFilterService);
     }
     
     // Check and log important features for debugging
     const autoModeSupported = this.hasFeature('auto_mode');
-    this.platform.log.info(`${this.device.deviceName} (${this.device.deviceType}): Features detected:`);
-    this.platform.log.info(`  - auto_mode: ${autoModeSupported} (controls mode switch)`);
-    this.platform.log.info(`  - filter_life: ${this.hasFeature('filter_life')} (controls filter display)`);
-  }
-  
-  /**
-   * Set up the air quality sensor service
-   */
-  private setupAirQualityService(): void {
-    this.platform.log.debug(`Setting up air quality service for ${this.device.deviceName}`);
-    
-    // Get or create the air quality sensor service
-    this.airQualityService = this.accessory.getService(this.platform.Service.AirQualitySensor) ||
-      this.accessory.addService(this.platform.Service.AirQualitySensor);
-    
-    // Mark this as a linked service (not primary)
-    // The AirPurifier service is the primary service
-    if (this.service) {
-      this.airQualityService.addLinkedService(this.service);
-      this.platform.log.info(`${this.device.deviceName}: Linked AirQualitySensor service to PRIMARY AirPurifier service`);
-    }
-
-    // Set up required air quality characteristic
-    this.setupCharacteristic(
-      this.platform.Characteristic.AirQuality,
-      this.getAirQuality.bind(this),
-      undefined,
-      {},
-      this.airQualityService
-    );
-
-    // Set up optional PM2.5 density characteristic
-    this.setupCharacteristic(
-      this.platform.Characteristic.PM2_5Density,
-      this.getPM25Density.bind(this),
-      undefined,
-      {
-        minValue: 0,
-        maxValue: 1000,
-        minStep: 1
-      },
-      this.airQualityService
-    );
-
-    // Set up optional PM10 density characteristic (if available)
-    const extendedDevice = this.device as unknown as ExtendedVeSyncAirPurifier;
-    if (extendedDevice.details?.pm10 !== undefined) {
-      this.setupCharacteristic(
-        this.platform.Characteristic.PM10Density,
-        this.getPM10Density.bind(this),
-        undefined,
-        {
-          minValue: 0,
-          maxValue: 1000,
-          minStep: 1
-        },
-        this.airQualityService
-      );
-    }
+    this.platform.log.debug(`${this.device.deviceName} (${this.device.deviceType}): Features detected:`);
+    this.platform.log.debug(`  - auto_mode: ${autoModeSupported} (controls mode switch)`);
+    this.platform.log.debug(`  - filter_life: ${this.hasFeature('filter_life')} (controls filter display)`);
   }
 
 
-  /**
-   * Get air quality level for HomeKit
-   */
-  private async getAirQuality(): Promise<CharacteristicValue> {
-    const extendedDevice = this.device as unknown as ExtendedVeSyncAirPurifier;
-    
-    // Get PM2.5 value from device
-    const pm25 = extendedDevice.details?.air_quality_value ?? 
-                 extendedDevice.details?.pm25 ?? 0;
-    
-    // Convert to HomeKit air quality scale using existing method
-    return this.convertAirQualityToHomeKit(pm25);
-  }
-
-  /**
-   * Get PM2.5 density
-   */
-  private async getPM25Density(): Promise<CharacteristicValue> {
-    const extendedDevice = this.device as unknown as ExtendedVeSyncAirPurifier;
-    
-    const pm25 = extendedDevice.details?.air_quality_value ?? 
-                 extendedDevice.details?.pm25 ?? 0;
-    
-    // Ensure value is within HomeKit limits (0-1000)
-    return Math.min(1000, Math.max(0, pm25));
-  }
-
-  /**
-   * Get PM10 density
-   */
-  private async getPM10Density(): Promise<CharacteristicValue> {
-    const extendedDevice = this.device as unknown as ExtendedVeSyncAirPurifier;
-    
-    const pm10 = extendedDevice.details?.pm10 ?? 0;
-    
-    // Ensure value is within HomeKit limits (0-1000)
-    return Math.min(1000, Math.max(0, pm10));
-  }
 
   /**
    * Extract filter life from device data in a centralized way
@@ -746,7 +628,7 @@ export class AirPurifierAccessory extends BaseAccessory {
   protected getDeviceCapabilities(): DeviceCapabilities {
     return {
       hasSpeed: true,
-      hasAirQuality: this.hasFeature('air_quality'),
+      hasAirQuality: false, // Air quality is now handled by separate accessories
       hasChildLock: false, // Explicitly disable child lock
       hasBrightness: false,
       hasColorTemp: false,
@@ -849,46 +731,8 @@ export class AirPurifierAccessory extends BaseAccessory {
       this.lastSetPercentage = 0;
     }
     
-    // Update air quality characteristics if service exists AND device supports air quality
-    if (this.hasFeature('air_quality')) {
-      // Device supports air quality - update characteristics if service exists
-      if (this.airQualityService) {
-        const extendedDevice = this.device as unknown as ExtendedVeSyncAirPurifier;
-        
-        // Update air quality level
-        const pm25 = extendedDevice.details?.air_quality_value ?? 
-                     extendedDevice.details?.pm25 ?? 0;
-        const airQualityLevel = this.convertAirQualityToHomeKit(pm25);
-        
-        this.airQualityService.updateCharacteristic(
-          this.platform.Characteristic.AirQuality,
-          airQualityLevel
-        );
-        
-        // Update PM2.5 density
-        this.airQualityService.updateCharacteristic(
-          this.platform.Characteristic.PM2_5Density,
-          Math.min(1000, Math.max(0, pm25))
-        );
-        
-        // Update PM10 density if available
-        if (extendedDevice.details?.pm10 !== undefined) {
-          this.airQualityService.updateCharacteristic(
-            this.platform.Characteristic.PM10Density,
-            Math.min(1000, Math.max(0, extendedDevice.details.pm10))
-          );
-        }
-      }
-    } else {
-      // Device does not support air quality - remove any existing service
-      // Check both our reference and the actual accessory for any air quality service
-      const existingService = this.airQualityService || this.accessory.getService(this.platform.Service.AirQualitySensor);
-      if (existingService) {
-        this.platform.log.debug(`${this.device.deviceName}: Device does not support air quality but service exists - removing it now`);
-        this.accessory.removeService(existingService);
-        this.airQualityService = undefined;
-      }
-    }
+    // Air quality is now handled by separate accessories
+    // No need to update AQ characteristics here
     
     // Update filter characteristics on main service if supported
     if (this.hasFeature('filter_life')) {

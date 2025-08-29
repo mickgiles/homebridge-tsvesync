@@ -8,6 +8,7 @@ import { LightAccessory } from '../accessories/light.accessory';
 import { OutletAccessory } from '../accessories/outlet.accessory';
 import { SwitchAccessory } from '../accessories/switch.accessory';
 import { BaseAccessory } from '../accessories/base.accessory';
+import { AirQualitySensorAccessory } from '../accessories/air-quality-sensor.accessory';
 import { 
   VeSyncAirPurifier,
   VeSyncHumidifier,
@@ -45,7 +46,7 @@ export class DeviceFactory {
     return models.some(model => upperDeviceType.includes(model.toUpperCase()));
   }
 
-  private static isAirPurifier(deviceType: string): boolean {
+  static isAirPurifier(deviceType: string): boolean {
     return deviceType.startsWith('LAP-') || 
            this.modelMatches(deviceType, AIR_PURIFIER_MODELS);
   }
@@ -144,5 +145,38 @@ export class DeviceFactory {
 
     // Default to outlet for unknown devices
     return Categories.OUTLET;
+  }
+
+  static createAQSensorAccessory(
+    platform: TSVESyncPlatform,
+    accessory: PlatformAccessory,
+    device: VeSyncBaseDevice
+  ): BaseAccessory | null {
+    const deviceType = device.deviceType.toUpperCase();
+    
+    // Only create AQ sensor for air purifier devices with AQ support
+    if (this.isAirPurifier(deviceType)) {
+      // Check if device has the air_quality feature
+      const extendedDevice = device as any;
+      
+      // Use the device's native feature detection if available
+      if (typeof extendedDevice.hasFeature === 'function' && extendedDevice.hasFeature('air_quality')) {
+        platform.log.debug(`Creating AQ sensor for ${device.deviceName} - device has air_quality feature`);
+        return new AirQualitySensorAccessory(platform, accessory, device);
+      }
+      
+      // Fallback to device type checking for older devices
+      if (deviceType.includes('CORE300S') || 
+          deviceType.includes('CORE400S') || 
+          deviceType.includes('CORE600S') ||
+          (deviceType.includes('LAP-') && !deviceType.includes('LAP-EL')) ||
+          deviceType.includes('LV-PUR131S')) {
+        platform.log.debug(`Creating AQ sensor for ${device.deviceName} - device type ${deviceType} supports AQ`);
+        return new AirQualitySensorAccessory(platform, accessory, device);
+      }
+    }
+    
+    platform.log.debug(`Not creating AQ sensor for ${device.deviceName} - no air quality support detected`);
+    return null;
   }
 } 
