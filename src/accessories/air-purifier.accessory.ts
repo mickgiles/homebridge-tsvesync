@@ -442,8 +442,11 @@ export class AirPurifierAccessory extends BaseAccessory {
       this.accessory.addService(this.platform.Service.AirPurifier);
     
     // Mark the AirPurifier service as primary
-    this.service.setPrimaryService(true);
-    this.platform.log.debug(`${this.device.deviceName}: Marked AirPurifier service as primary`);
+    // setPrimaryService may not be available in test environment
+    if (typeof this.service.setPrimaryService === 'function') {
+      this.service.setPrimaryService(true);
+      this.platform.log.debug(`${this.device.deviceName}: Marked AirPurifier service as primary`);
+    }
 
     // **CRITICAL FIX**: Add optional characteristics FIRST before setting up handlers
     // This ensures they persist through service configuration
@@ -964,6 +967,14 @@ export class AirPurifierAccessory extends BaseAccessory {
       const isOn = value as number === 1;
       this.platform.log.debug(`Setting device ${this.device.deviceName} to ${isOn ? 'on' : 'off'}`);
       
+      // Immediately update HomeKit characteristics for better responsiveness
+      // This provides instant feedback to the user while the API call is made
+      this.service.updateCharacteristic(this.platform.Characteristic.Active, isOn ? 1 : 0);
+      this.service.updateCharacteristic(
+        this.platform.Characteristic.CurrentAirPurifierState,
+        isOn ? 2 : 0  // 2 = PURIFYING_AIR, 0 = INACTIVE
+      );
+      
       const success = isOn ? await this.device.turnOn() : await this.device.turnOff();
       
       if (!success) {
@@ -977,6 +988,14 @@ export class AirPurifierAccessory extends BaseAccessory {
             return; // Don't throw error if already in desired state
           }
         }
+        
+        // If the API call failed, revert the HomeKit state
+        this.platform.log.warn(`Failed to turn ${isOn ? 'on' : 'off'} device, reverting HomeKit state`);
+        this.service.updateCharacteristic(this.platform.Characteristic.Active, isOn ? 0 : 1);
+        this.service.updateCharacteristic(
+          this.platform.Characteristic.CurrentAirPurifierState,
+          isOn ? 0 : 2
+        );
         throw new Error(`Failed to turn ${isOn ? 'on' : 'off'} device`);
       }
       
@@ -984,15 +1003,29 @@ export class AirPurifierAccessory extends BaseAccessory {
       if (!isOn) {
         this.lastSetSpeed = 0;
         this.lastSetPercentage = 0;
-      } else if (isOn && this.isAir131Device) {
-        // For Air131 devices, immediately update rotation speed characteristic
-        // to show the restored speed instead of 0
-        await this.updateAir131RotationSpeedAfterTurnOn();
+        // Also immediately update rotation speed to 0
+        this.service.updateCharacteristic(this.platform.Characteristic.RotationSpeed, 0);
+      } else if (isOn) {
+        // For all air purifiers when turning on, restore the rotation speed
+        if (this.isAir131Device) {
+          // For Air131 devices, immediately update rotation speed characteristic
+          // to show the restored speed instead of 0
+          await this.updateAir131RotationSpeedAfterTurnOn();
+        } else if (this.device.speed && this.device.speed > 0) {
+          // For other devices, also update the speed immediately
+          const percentage = this.speedToPercentage(this.device.speed);
+          this.service.updateCharacteristic(this.platform.Characteristic.RotationSpeed, percentage);
+        }
       }
       
-      // Update device state and characteristics
-      await this.updateDeviceSpecificStates(this.device);
+      // Don't call updateDeviceSpecificStates to avoid polling the API
+      // The device state is already reflected in HomeKit through our immediate updates
+      // await this.updateDeviceSpecificStates(this.device);
+      
+      // Still persist the state for recovery after restarts
       await this.persistDeviceState('deviceStatus', isOn ? 'on' : 'off');
+      
+      this.platform.log.debug(`${this.device.deviceName}: Successfully turned ${isOn ? 'on' : 'off'} with immediate HomeKit feedback`);
     } catch (error) {
       this.handleDeviceError('set active state', error);
     }
