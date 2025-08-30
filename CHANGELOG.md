@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.1.1 (2025-08-30)
+
+### Improved
+- **⚡ Enhanced On/Off Responsiveness**: Significantly improved HomeKit control responsiveness
+  - **🎯 Instant UI Feedback**: HomeKit characteristics now update immediately when on/off commands are issued
+  - **⏳ Background Processing**: API calls are processed in the background while users see immediate state changes
+  - **🛡️ Error Recovery**: Failed API calls now properly revert HomeKit state to maintain consistency
+  - **📱 Better UX**: Users experience near-instantaneous response when toggling devices on/off in the Home app
+
+- **🔧 Enhanced Speed Restoration**: Improved device speed handling when turning devices back on
+  - **🌪️ Air131 Support**: Air131 devices now properly restore their previous speed setting when turned on
+  - **⚡ All Device Types**: Enhanced speed restoration logic for all air purifier models
+  - **🎛️ Speed Preservation**: Device speed settings are maintained and restored correctly after power cycling
+
+### Fixed
+- **🧪 Test Environment Compatibility**: Fixed setPrimaryService() calls in testing environments
+  - **✅ Test Safety**: Added proper function existence check before calling setPrimaryService()
+  - **🔧 Development**: Ensures compatibility across different testing and development environments
+  - **🛡️ Defensive Coding**: Prevents errors when service methods are not available
+
+### Technical Details
+- **📦 Immediate State Updates**: Uses updateCharacteristic() for instant HomeKit feedback
+- **🔄 Error Handling**: Comprehensive error recovery with state reversion on API failures
+- **⚡ Performance**: Optimized to reduce perceived latency while maintaining API rate limits
+- **🎯 Device State**: Enhanced device state persistence for consistent behavior across restarts
+
+### Affected Devices
+- **All Air Purifiers**: Improved on/off responsiveness and speed restoration
+- **Air131 Models**: Enhanced speed restoration logic with immediate characteristic updates
+- **Core Series**: Better HomeKit interaction consistency with instant feedback
+
 ## 1.1.0 (2025-08-29)
 
 ### Added
