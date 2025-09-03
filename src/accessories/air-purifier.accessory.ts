@@ -295,16 +295,13 @@ export class AirPurifierAccessory extends BaseAccessory {
    * Calculate the appropriate step size for discrete speed levels
    */
   private calculateRotationSpeedStep(): number {
-    const maxSpeed = this.getMaxFanSpeed();
-    
-    // For devices with discrete speed levels, set appropriate step size
-    if (maxSpeed === 3) {
-      return 33.33; // Creates exact positions: 0%, 33.33%, 66.67%, 100%
-    } else if (maxSpeed === 4) {
-      return 25; // Creates exact positions: 0%, 25%, 50%, 75%, 100%
+    // Expose Sleep as the first notch when supported: 0,25,50,75,100
+    if (this.hasFeature('sleep_mode')) {
+      return 25;
     }
-    
-    // Default to continuous slider for other devices
+    const maxSpeed = this.getMaxFanSpeed();
+    if (maxSpeed === 3) return 33.33;
+    if (maxSpeed === 4) return 25;
     return 1;
   }
 
@@ -312,34 +309,18 @@ export class AirPurifierAccessory extends BaseAccessory {
    * Convert device speed to percentage
    */
   private speedToPercentage(speed: number): number {
+    // Sleep as first notch: show manual 1→50, 2→75, 3+→100
+    if (this.hasFeature('sleep_mode')) {
+      if (typeof speed !== 'number' || speed <= 0) return 0;
+      if (speed === 1) return 50;
+      if (speed === 2) return 75;
+      return 100;
+    }
+
     const maxSpeed = this.getMaxFanSpeed();
-    
-    // Ensure we have valid numbers
-    if (maxSpeed <= 0 || typeof speed !== 'number' || speed <= 0) {
-      return 0;
-    }
-    
-    // For devices with 3 speed levels
-    if (maxSpeed === 3) {
-      switch (speed) {
-        case 1: return 33.33;  // Low -> 33.33%
-        case 2: return 66.67;  // Medium -> 66.67%
-        case 3: return 100; // High -> 100%
-        default: return 0;
-      }
-    }
-    // For devices with 4 speed levels
-    else if (maxSpeed === 4) {
-      switch (speed) {
-        case 1: return 25;  // Low -> 25%
-        case 2: return 50;  // Medium-Low -> 50%
-        case 3: return 75;  // Medium-High -> 75%
-        case 4: return 100; // High -> 100%
-        default: return 0;
-      }
-    }
-    
-    // Default calculation
+    if (maxSpeed <= 0 || typeof speed !== 'number' || speed <= 0) return 0;
+    if (maxSpeed === 3) return speed === 1 ? 33.33 : speed === 2 ? 66.67 : 100;
+    if (maxSpeed === 4) return speed === 1 ? 25 : speed === 2 ? 50 : speed === 3 ? 75 : 100;
     return Math.min(100, Math.max(0, Math.round((speed / maxSpeed) * 100)));
   }
   
@@ -396,40 +377,20 @@ export class AirPurifierAccessory extends BaseAccessory {
    * Convert percentage to device speed
    */
   private percentageToSpeed(percentage: number): number {
+    // Sleep as first notch: round to nearest 25% and map 50/75/100 → 1/2/3
+    if (this.hasFeature('sleep_mode')) {
+      if (typeof percentage !== 'number') return 1;
+      const notch = Math.max(0, Math.min(4, Math.round(Math.min(100, Math.max(0, percentage)) / 25)));
+      if (notch <= 2) return 1; // 50%
+      if (notch === 3) return 2; // 75%
+      return 3; // 100%
+    }
+
     const maxSpeed = this.getMaxFanSpeed();
-    
-    // Ensure we have valid numbers
-    if (maxSpeed <= 0 || typeof percentage !== 'number') {
-      return 1; // Default to lowest speed
-    }
-    
-    // Ensure percentage is between 0 and 100
+    if (maxSpeed <= 0 || typeof percentage !== 'number') return 1;
     percentage = Math.min(100, Math.max(0, percentage));
-    
-    // For devices with 3 speed levels
-    if (maxSpeed === 3) {
-      if (percentage <= 33.34) {
-        return 1; // Low
-      } else if (percentage <= 66.67) {
-        return 2; // Medium
-      } else {
-        return 3; // High
-      }
-    }
-    // For devices with 4 speed levels
-    else if (maxSpeed === 4) {
-      if (percentage <= 25) {
-        return 1; // Low
-      } else if (percentage <= 50) {
-        return 2; // Medium-Low
-      } else if (percentage <= 75) {
-        return 3; // Medium-High
-      } else {
-        return 4; // High
-      }
-    }
-    
-    // Default calculation
+    if (maxSpeed === 3) return percentage <= 33.34 ? 1 : percentage <= 66.67 ? 2 : 3;
+    if (maxSpeed === 4) return percentage <= 25 ? 1 : percentage <= 50 ? 2 : percentage <= 75 ? 3 : 4;
     return Math.max(1, Math.min(Math.round((percentage / 100) * maxSpeed), maxSpeed));
   }
 
@@ -646,8 +607,11 @@ export class AirPurifierAccessory extends BaseAccessory {
    * Update device states based on the latest details
    */
   protected async updateDeviceSpecificStates(details: any): Promise<void> {
-    // Update power state
-    const isOn = details.enabled || details.deviceStatus === 'on';
+    // Update power state (treat sleep as on for some VeSync models)
+    const extended = this.device as ExtendedVeSyncAirPurifier;
+    const mode = (extended.mode || details.mode || '').toLowerCase();
+    const isSleep = mode === 'sleep';
+    const isOn = isSleep || details.enabled || details.deviceStatus === 'on';
     this.service.updateCharacteristic(this.platform.Characteristic.Active, isOn ? 1 : 0);
     
     // Update current state (INACTIVE = 0, IDLE = 1, PURIFYING_AIR = 2)
@@ -677,7 +641,11 @@ export class AirPurifierAccessory extends BaseAccessory {
     );
 
     // Update rotation speed
-    if (isOn && details.speed !== undefined && details.speed !== null) {
+    if (isOn && this.hasFeature('sleep_mode') && isSleep) {
+      this.service.updateCharacteristic(this.platform.Characteristic.RotationSpeed, 25);
+      this.lastSetSpeed = 0;
+      this.lastSetPercentage = 25;
+    } else if (isOn && details.speed !== undefined && details.speed !== null) {
       // Check if we should skip this update
       if (this.skipNextUpdate) {
         this.platform.log.debug(`Skipping update for ${this.device.deviceName} as requested`);
@@ -824,6 +792,11 @@ export class AirPurifierAccessory extends BaseAccessory {
     if (this.device.deviceStatus !== 'on' || 
         this.device.speed === undefined || 
         this.device.speed === null) {
+      // If in sleep mode, surface the first notch
+      const extended = this.device as ExtendedVeSyncAirPurifier;
+      if (this.hasFeature('sleep_mode') && (extended.mode || '').toLowerCase() === 'sleep') {
+        return 25;
+      }
       return 0;
     }
     
@@ -891,6 +864,57 @@ export class AirPurifierAccessory extends BaseAccessory {
         await this.updateDeviceSpecificStates(this.device);
       }
       
+      // When using sleep-as-first-notch, map slider notches robustly by rounding
+      if (this.hasFeature('sleep_mode')) {
+        const notch = Math.max(0, Math.min(4, Math.round(percentage / 25)));
+        if (notch <= 1) {
+          // Sleep
+          this.platform.log.debug(`Setting sleep mode via slider on ${this.device.deviceName} (notch=${notch})`);
+          let ok = false;
+          if (typeof extendedDevice.sleepMode === 'function') {
+            ok = await extendedDevice.sleepMode();
+          } else if (typeof extendedDevice.setMode === 'function') {
+            ok = await extendedDevice.setMode('sleep');
+          }
+          if (!ok) {
+            throw new Error('Failed to set sleep mode');
+          }
+          // Immediate UI feedback
+          this.service.updateCharacteristic(this.platform.Characteristic.RotationSpeed, 25);
+          this.service.updateCharacteristic(this.platform.Characteristic.Active, 1);
+          this.service.updateCharacteristic(this.platform.Characteristic.CurrentAirPurifierState, 2);
+          this.lastSetSpeed = 0;
+          this.lastSetPercentage = 25;
+          this.skipNextUpdate = true;
+          return;
+        } else {
+          // Map notches 2/3/4 to speeds 1/2/3
+          const desiredSpeed = Math.min(3, notch - 1);
+          // Ensure manual mode before speed change if necessary
+          const modeNow = (extendedDevice.mode || '').toLowerCase();
+          if (modeNow === 'auto' || modeNow === 'sleep') {
+            if (typeof extendedDevice.manualMode === 'function') {
+              await extendedDevice.manualMode();
+            } else if (typeof extendedDevice.setMode === 'function') {
+              await extendedDevice.setMode('manual');
+            }
+          }
+          // Update UI early
+          const uiPct = desiredSpeed === 1 ? 50 : desiredSpeed === 2 ? 75 : 100;
+          this.service.updateCharacteristic(this.platform.Characteristic.RotationSpeed, uiPct);
+          this.lastSetSpeed = desiredSpeed;
+          this.lastSetPercentage = uiPct;
+          this.skipNextUpdate = true;
+          const ok = await this.device.changeFanSpeed(desiredSpeed);
+          if (!ok) {
+            this.lastSetSpeed = 0;
+            this.lastSetPercentage = 0;
+            throw new Error(`Failed to set speed to ${desiredSpeed}`);
+          }
+          return;
+        }
+      }
+
       // Check if fan speed control is supported in current mode
       if (!this.isFeatureSupportedInCurrentMode('fan_speed')) {
         this.platform.log.warn(`Fan speed control not supported in ${extendedDevice.mode} mode for device: ${this.device.deviceName}`);
@@ -914,6 +938,16 @@ export class AirPurifierAccessory extends BaseAccessory {
         }
       }
       
+      // For devices without sleep notch, ensure manual mode if required
+      const modeNow = (extendedDevice.mode || '').toLowerCase();
+      if (modeNow === 'auto') {
+        if (typeof extendedDevice.manualMode === 'function') {
+          await extendedDevice.manualMode();
+        } else if (typeof extendedDevice.setMode === 'function') {
+          await extendedDevice.setMode('manual');
+        }
+      }
+
       // Convert percentage to device speed using our consistent conversion method
       const speed = this.percentageToSpeed(percentage);
       
