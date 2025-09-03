@@ -1,5 +1,49 @@
 # Changelog
 
+## 1.1.2 (2025-09-03)
+
+### Enhanced
+- **🌙 Advanced Sleep Mode Speed Control**: Significantly improved HomeKit sleep mode integration
+  - **🎯 Sleep as First Notch**: Sleep mode now appears as the first position (25%) on HomeKit speed slider for supported devices
+  - **🎛️ Better Speed Mapping**: Enhanced speed control with 25%/50%/75%/100% positions for intuitive user control
+  - **🔄 Smart Mode Transitions**: Automatic manual mode switching when adjusting speeds from sleep mode
+  - **📱 Immediate UI Feedback**: Instant HomeKit characteristic updates for responsive user experience
+  - **🛡️ Error Recovery**: Comprehensive error handling with state reversion on API failures
+
+- **⚡ Performance Optimizations**: Streamlined speed control logic for better performance
+  - **🔧 Consolidated Code**: Refactored speed conversion methods for improved maintainability
+  - **📊 Efficient Calculations**: Optimized percentage-to-speed and speed-to-percentage conversions
+  - **🎯 Reduced Complexity**: Simplified conditional logic while maintaining full functionality
+  - **💾 Memory Efficiency**: Better resource utilization with consolidated helper methods
+
+### Fixed
+- **🌪️ Enhanced Speed Restoration**: Improved device speed handling across all air purifier models
+  - **🎛️ Sleep Mode Detection**: Better detection and handling of sleep mode state transitions
+  - **🔄 Mode Synchronization**: Improved synchronization between device mode and HomeKit display
+  - **📱 Slider Accuracy**: More accurate speed slider positions for devices with sleep mode support
+  - **🛡️ State Consistency**: Enhanced state management to prevent speed control conflicts
+
+### Technical Details
+- **🏗️ Refactored Architecture**: Consolidated speed calculation methods for better code organization
+- **🎯 Feature Detection**: Enhanced hasFeature('sleep_mode') integration for dynamic behavior
+- **🔧 Method Optimization**: Streamlined percentageToSpeed() and speedToPercentage() methods
+- **📊 Improved Mapping**: Better notch-based speed mapping with rounding for discrete positions
+- **🛡️ Enhanced Validation**: Improved input validation and boundary checking for speed values
+
+### Affected Devices
+- **Sleep Mode Devices**: Air purifiers with sleep mode support now have enhanced speed control
+- **All Air Purifiers**: Benefit from optimized speed conversion logic and better performance
+- **Core/Vital/LAP Series**: Improved HomeKit integration with consistent speed control behavior
+
+### Migration Notes
+- **🚀 Automatic Enhancement**: Speed control improvements activate automatically after Homebridge restart
+- **📱 HomeKit Changes**: Supported devices will show sleep mode as first notch on speed slider
+- **🔄 Backward Compatible**: All existing functionality preserved with enhanced capabilities
+- **✅ No Configuration**: No configuration changes required - enhancements work automatically
+
+### Dependencies
+- **📦 tsvesync**: Updated to 1.1.2 for synchronized release versioning
+
 ## 1.1.1 (2025-08-30)
 
 ### Improved
