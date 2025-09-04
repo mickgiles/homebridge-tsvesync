@@ -200,7 +200,7 @@ const createRateLimitedProxy = (target: any, rateLimiter: RateLimiter, deviceId?
       // Methods that bypass all rate limiting and debouncing
       const bypassMethods = [
         // Getters and internal methods
-        'get', 'getService', 'getCharacteristic',
+        'get', 'getService', 'getCharacteristic', 'hydrateSession',
         // State accessors
         'deviceStatus', 'speed', 'brightness', 'colorTemp',
         'mode', 'filterLife', 'airQuality', 'airQualityValue', 'screenStatus',
@@ -258,6 +258,10 @@ export const createRateLimitedVeSync = (
       bufferPercentage?: number;
       priorityMethods?: string[];
     }
+  },
+  session?: {
+    store?: any;
+    onTokenChange?: (s: any) => void;
   }
 ): VeSync => {
   // Use the new options object pattern for VeSync constructor
@@ -267,7 +271,9 @@ export const createRateLimitedVeSync = (
     apiUrl: apiUrl,
     customLogger: customLogger,
     excludeConfig: exclusions,
-    countryCode: config?.countryCode || 'US'  // Default to US
+    countryCode: config?.countryCode || 'US',  // Default to US
+    sessionStore: session?.store,
+    onTokenChange: session?.onTokenChange
   });
   const logger = customLogger || new PluginLogger(console as any, debug || false);
   

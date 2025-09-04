@@ -6,6 +6,7 @@ import { BaseAccessory } from './accessories/base.accessory';
 import { PluginLogger } from './utils/logger';
 import { createRateLimitedVeSync } from './utils/api-proxy';
 import { PlatformConfig as TSVESyncPlatformConfig } from './types/device.types';
+import { FileSessionStore, decodeJwtTimestampsLocal } from './utils/session-store';
 
 /**
  * HomebridgePlatform
@@ -32,6 +33,7 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
   private initializationResolver!: () => void;
   private isInitialized = false;
   private readonly logger!: PluginLogger;
+  private readonly sessionStore!: FileSessionStore;
   // VeSync JWT tokens are valid for 30 days (verified by decoding the JWT)
   // We'll refresh at 25 days to ensure we never hit expiration
   private readonly TOKEN_EXPIRY = 25 * 24 * 60 * 60 * 1000; // 25 days in milliseconds
@@ -60,6 +62,9 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
       return;
     }
 
+    // Prepare session store
+    this.sessionStore = new FileSessionStore(this.api.user.storagePath(), this.logger);
+
     // Initialize VeSync client with all configuration
     this.client = createRateLimitedVeSync(
       config.username,
@@ -73,6 +78,9 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
       { 
         countryCode: config.countryCode,
         quotaManagement: config.quotaManagement || { enabled: true } 
+      },
+      {
+        store: this.sessionStore
       }
     );
 
@@ -91,6 +99,21 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
       this.logger.debug('Executed didFinishLaunching callback');
 
       try {
+        // Try to hydrate session from disk before any login
+        const session = await this.sessionStore.load();
+        if (session) {
+          try {
+            (this.client as any).hydrateSession(session);
+            const ts = decodeJwtTimestampsLocal(session.token);
+            // Assume freshness on restart; auto re-login will handle invalid tokens
+            this.lastTokenRefresh = new Date();
+            const expStr = ts?.exp ? new Date(ts.exp * 1000).toISOString() : 'unknown';
+            this.logger.info(`Reusing persisted VeSync session. Token exp: ${expStr}`);
+          } catch (e) {
+            this.logger.debug('Failed to hydrate persisted session, will login fresh');
+          }
+        }
+
         // Initialize platform
         await this.initializePlatform();
         

@@ -1,5 +1,55 @@
 # Changelog
 
+## 1.2.0 (2025-09-04)
+
+### Added
+- **💾 Session Persistence**: Comprehensive session management for improved reliability
+  - **🔐 Automatic Session Recovery**: VeSync sessions now persist across Homebridge restarts
+  - **📊 Token Lifecycle Management**: JWT token expiration tracking and automatic refresh
+  - **🛡️ Secure Storage**: Sessions stored with appropriate file permissions in tsvesync subdirectory
+  - **🚀 Faster Startup**: Reduced authentication overhead on Homebridge startup via session reuse
+  - **🔄 Seamless Recovery**: Automatic fallback to fresh login when persisted sessions are invalid
+
+- **🎛️ Advanced Speed Control**: Enhanced speed control for air purifiers with 4+ manual speeds
+  - **🌟 Multi-Speed Support**: Dynamic step calculation for devices with 4+ manual speed levels
+  - **🎯 Precision Mapping**: Better percentage-to-speed conversion for devices with varying speed counts
+  - **🔄 Smart Notch System**: Automatic adjustment of speed notches based on device capabilities
+  - **📱 Improved HomeKit UX**: More accurate slider positions and speed transitions
+
+### Enhanced
+- **🔧 API Integration**: Enhanced tsvesync library integration with session management
+  - **📦 Library Update**: Updated to tsvesync 1.2.0 with session persistence capabilities
+  - **🔗 Session Callbacks**: Integration with tsvesync session store for automatic persistence
+  - **⚡ Performance**: Reduced API calls through intelligent session reuse
+  - **🛡️ Reliability**: Better handling of authentication failures with automatic recovery
+
+- **🌙 Sleep Mode Control**: Refined sleep mode speed control logic
+  - **🎛️ Dynamic Step Calculation**: Speed steps now adjust based on maximum device speeds (20% vs 25%)
+  - **🎯 Better Speed Mapping**: More accurate conversion between HomeKit percentages and device speeds
+  - **🔄 Consistent Behavior**: Unified speed control logic across all sleep-capable devices
+  - **📱 UI Responsiveness**: Improved HomeKit characteristic updates during sleep mode transitions
+
+### Fixed
+- **🔧 Speed Control Accuracy**: Enhanced speed control precision for various device configurations
+  - **📊 Speed Calculation**: Fixed percentage calculation for devices with 4+ manual speeds
+  - **🎛️ Notch Mapping**: Improved notch-to-speed conversion with proper boundary checking
+  - **🔄 State Synchronization**: Better synchronization between device state and HomeKit display
+  - **🛡️ Edge Case Handling**: Enhanced handling of speed edge cases and boundary conditions
+
+### Technical Details
+- **🏗️ Session Architecture**: Complete integration with tsvesync 1.2.0 session management system
+- **🔧 FileSessionStore**: Dedicated session storage in ~/.homebridge/tsvesync/session.json
+- **📊 JWT Integration**: Automatic JWT token expiration tracking and session validation
+- **🎛️ Speed Algorithm**: Enhanced speed calculation algorithms for multi-speed device support
+- **🔄 Promise Coordination**: Better coordination with tsvesync library's promise-based login system
+
+### Migration Notes
+- **🚀 Automatic Enhancement**: Session persistence activates automatically after Homebridge restart
+- **📁 New Storage**: Session files stored in new tsvesync subdirectory under Homebridge storage path
+- **🔄 Backward Compatible**: All existing functionality preserved with enhanced capabilities
+- **✅ No Configuration**: No configuration changes required - enhancements work automatically
+- **🔧 Dependency Update**: tsvesync library automatically updated to version 1.2.0
+
 ## 1.1.2 (2025-09-03)
 
 ### Enhanced

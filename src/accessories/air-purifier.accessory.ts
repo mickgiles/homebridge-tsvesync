@@ -295,9 +295,12 @@ export class AirPurifierAccessory extends BaseAccessory {
    * Calculate the appropriate step size for discrete speed levels
    */
   private calculateRotationSpeedStep(): number {
-    // Expose Sleep as the first notch when supported: 0,25,50,75,100
+    // Expose Sleep as the first notch when supported:
+    // - 3 manual speeds: 0,25,50,75,100 (Sleep + 1/2/3)
+    // - 4 manual speeds: 0,20,40,60,80,100 (Sleep + 1/2/3/4)
     if (this.hasFeature('sleep_mode')) {
-      return 25;
+      const max = this.getMaxFanSpeed();
+      return max >= 4 ? 20 : 25;
     }
     const maxSpeed = this.getMaxFanSpeed();
     if (maxSpeed === 3) return 33.33;
@@ -309,12 +312,13 @@ export class AirPurifierAccessory extends BaseAccessory {
    * Convert device speed to percentage
    */
   private speedToPercentage(speed: number): number {
-    // Sleep as first notch: show manual 1→50, 2→75, 3+→100
+    // Sleep as first notch: map manual speeds to fixed notches based on step
     if (this.hasFeature('sleep_mode')) {
       if (typeof speed !== 'number' || speed <= 0) return 0;
-      if (speed === 1) return 50;
-      if (speed === 2) return 75;
-      return 100;
+      const step = this.calculateRotationSpeedStep();
+      // Manual speeds occupy notches 2..(max+1). Percentage = notch*step
+      const notch = Math.max(2, Math.min(5, speed + 1));
+      return Math.min(100, notch * step);
     }
 
     const maxSpeed = this.getMaxFanSpeed();
@@ -377,13 +381,16 @@ export class AirPurifierAccessory extends BaseAccessory {
    * Convert percentage to device speed
    */
   private percentageToSpeed(percentage: number): number {
-    // Sleep as first notch: round to nearest 25% and map 50/75/100 → 1/2/3
+    // Sleep as first notch: round to nearest step and map notch→speed
     if (this.hasFeature('sleep_mode')) {
       if (typeof percentage !== 'number') return 1;
-      const notch = Math.max(0, Math.min(4, Math.round(Math.min(100, Math.max(0, percentage)) / 25)));
-      if (notch <= 2) return 1; // 50%
-      if (notch === 3) return 2; // 75%
-      return 3; // 100%
+      const step = this.calculateRotationSpeedStep();
+      const max = this.getMaxFanSpeed();
+      const maxNotch = max + 1; // include Sleep notch
+      const notch = Math.max(0, Math.min(maxNotch, Math.round(Math.min(100, Math.max(0, percentage)) / step)));
+      // Clamp to manual range (2..maxNotch) then convert to speed
+      const manualNotch = Math.max(2, notch);
+      return Math.min(max, manualNotch - 1);
     }
 
     const maxSpeed = this.getMaxFanSpeed();
@@ -642,9 +649,10 @@ export class AirPurifierAccessory extends BaseAccessory {
 
     // Update rotation speed
     if (isOn && this.hasFeature('sleep_mode') && isSleep) {
-      this.service.updateCharacteristic(this.platform.Characteristic.RotationSpeed, 25);
+      const step = this.calculateRotationSpeedStep();
+      this.service.updateCharacteristic(this.platform.Characteristic.RotationSpeed, step);
       this.lastSetSpeed = 0;
-      this.lastSetPercentage = 25;
+      this.lastSetPercentage = step;
     } else if (isOn && details.speed !== undefined && details.speed !== null) {
       // Check if we should skip this update
       if (this.skipNextUpdate) {
@@ -795,7 +803,7 @@ export class AirPurifierAccessory extends BaseAccessory {
       // If in sleep mode, surface the first notch
       const extended = this.device as ExtendedVeSyncAirPurifier;
       if (this.hasFeature('sleep_mode') && (extended.mode || '').toLowerCase() === 'sleep') {
-        return 25;
+        return this.calculateRotationSpeedStep();
       }
       return 0;
     }
@@ -866,7 +874,10 @@ export class AirPurifierAccessory extends BaseAccessory {
       
       // When using sleep-as-first-notch, map slider notches robustly by rounding
       if (this.hasFeature('sleep_mode')) {
-        const notch = Math.max(0, Math.min(4, Math.round(percentage / 25)));
+        const max = this.getMaxFanSpeed();
+        const step = this.calculateRotationSpeedStep();
+        const maxNotch = max + 1; // include Sleep notch
+        const notch = Math.max(0, Math.min(maxNotch, Math.round(percentage / step)));
         if (notch <= 1) {
           // Sleep
           this.platform.log.debug(`Setting sleep mode via slider on ${this.device.deviceName} (notch=${notch})`);
@@ -880,16 +891,16 @@ export class AirPurifierAccessory extends BaseAccessory {
             throw new Error('Failed to set sleep mode');
           }
           // Immediate UI feedback
-          this.service.updateCharacteristic(this.platform.Characteristic.RotationSpeed, 25);
+          this.service.updateCharacteristic(this.platform.Characteristic.RotationSpeed, step);
           this.service.updateCharacteristic(this.platform.Characteristic.Active, 1);
           this.service.updateCharacteristic(this.platform.Characteristic.CurrentAirPurifierState, 2);
           this.lastSetSpeed = 0;
-          this.lastSetPercentage = 25;
+          this.lastSetPercentage = step;
           this.skipNextUpdate = true;
           return;
         } else {
-          // Map notches 2/3/4 to speeds 1/2/3
-          const desiredSpeed = Math.min(3, notch - 1);
+          // Map manual notches (2..maxNotch) to speeds 1..max
+          const desiredSpeed = Math.min(max, notch - 1);
           // Ensure manual mode before speed change if necessary
           const modeNow = (extendedDevice.mode || '').toLowerCase();
           if (modeNow === 'auto' || modeNow === 'sleep') {
@@ -900,7 +911,7 @@ export class AirPurifierAccessory extends BaseAccessory {
             }
           }
           // Update UI early
-          const uiPct = desiredSpeed === 1 ? 50 : desiredSpeed === 2 ? 75 : 100;
+          const uiPct = Math.min(100, (desiredSpeed + 1) * step);
           this.service.updateCharacteristic(this.platform.Characteristic.RotationSpeed, uiPct);
           this.lastSetSpeed = desiredSpeed;
           this.lastSetPercentage = uiPct;
