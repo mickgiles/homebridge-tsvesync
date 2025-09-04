@@ -107,14 +107,18 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
         const session = await this.sessionStore.load();
         if (session) {
           try {
-            (this.client as any).hydrateSession(session);
-            const ts = decodeJwtTimestampsLocal(session.token);
-            // Use actual token issuance time if available to avoid overextending lifetime
-            this.lastTokenRefresh = ts?.iat ? new Date(ts.iat * 1000) : new Date();
-            const expStr = ts?.exp ? new Date(ts.exp * 1000).toISOString() : 'unknown';
-            this.logger.info(`Reusing persisted VeSync session. Token exp: ${expStr}`);
-            // Schedule a proactive refresh before expiry
-            this.scheduleProactiveRefreshFromToken(session.token);
+            if ((session as any).username && (session as any).username !== this.config.username) {
+              this.logger.info('Found persisted session for a different account; ignoring persisted session.');
+            } else {
+              (this.client as any).hydrateSession(session);
+              const ts = decodeJwtTimestampsLocal(session.token);
+              // Use actual token issuance time if available to avoid overextending lifetime
+              this.lastTokenRefresh = ts?.iat ? new Date(ts.iat * 1000) : new Date();
+              const expStr = ts?.exp ? new Date(ts.exp * 1000).toISOString() : 'unknown';
+              this.logger.info(`Reusing persisted VeSync session. Token exp: ${expStr}`);
+              // Schedule a proactive refresh before expiry
+              this.scheduleProactiveRefreshFromToken(session.token);
+            }
           } catch (e) {
             this.logger.debug('Failed to hydrate persisted session, will login fresh');
           }
@@ -178,12 +182,15 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
    */
   private async initializePlatform(): Promise<void> {
     try {
-      // Try to login first
-      if (!await this.ensureLogin()) {
-        throw new Error('Failed to login to VeSync API');
+      // If we don't have a token/account yet, perform a login once. Otherwise,
+      // trust the persisted token and let the library re-login only if the API rejects it.
+      if (!(this.client as any).token || !(this.client as any).accountId) {
+        if (!await this.ensureLogin()) {
+          throw new Error('Failed to login to VeSync API');
+        }
       }
 
-      // Get devices from API
+      // Get devices from API (will re-login on 401/419 only)
       await this.client.update();
 
       // Discover devices
@@ -323,6 +330,10 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
   private onTokenChange(session: { token: string } | undefined) {
     if (!session?.token) return;
     this.scheduleProactiveRefreshFromToken(session.token);
+    // Persist with username to ensure correct account reuse
+    try {
+      void this.sessionStore.save({ ...(session as any), username: this.config.username } as any);
+    } catch { /* noop */ }
   }
 
   /**
@@ -456,10 +467,7 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
   async discoverDevices() {
     this.logger.debug('Discovering devices');
     try {
-      // Try to login first
-      if (!await this.ensureLogin()) {
-        return;
-      }
+      // Do not force login; rely on library to re-login only if needed
 
       let retryCount = 0;
       let success = false;

@@ -13,6 +13,8 @@ export interface PluginSession {
   expiresAt?: number | null;
   lastValidatedAt?: number | null;
   libraryVersion?: string;
+  // Optional: helps ensure session matches configured Homebridge account
+  username?: string;
 }
 
 export class FileSessionStore {

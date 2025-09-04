@@ -291,14 +291,18 @@ export class AirPurifierAccessory extends BaseAccessory {
     return 3;
   }
 
+  private isCore200S(): boolean {
+    return (this.device.deviceType || '').toUpperCase().includes('CORE200S');
+  }
+
   /**
    * Calculate the appropriate step size for discrete speed levels
    */
   private calculateRotationSpeedStep(): number {
-    // Expose Sleep as the first notch when supported:
-    // - 3 manual speeds: 0,25,50,75,100 (Sleep + 1/2/3)
-    // - 4 manual speeds: 0,20,40,60,80,100 (Sleep + 1/2/3/4)
+    // Expose Sleep as the first notch when supported.
+    // Core 200S uses 3 manual speeds (25% step). 4-speed models use 20% step.
     if (this.hasFeature('sleep_mode')) {
+      if (this.isCore200S()) return 25;
       const max = this.getMaxFanSpeed();
       return max >= 4 ? 20 : 25;
     }
@@ -312,12 +316,13 @@ export class AirPurifierAccessory extends BaseAccessory {
    * Convert device speed to percentage
    */
   private speedToPercentage(speed: number): number {
-    // Sleep as first notch: map manual speeds to fixed notches based on step
+    // Sleep as first notch: map manual speeds to notches based on model
     if (this.hasFeature('sleep_mode')) {
       if (typeof speed !== 'number' || speed <= 0) return 0;
       const step = this.calculateRotationSpeedStep();
-      // Manual speeds occupy notches 2..(max+1). Percentage = notch*step
-      const notch = Math.max(2, Math.min(5, speed + 1));
+      const max = this.isCore200S() ? 3 : this.getMaxFanSpeed();
+      // Manual speeds occupy notches 2..(max+1)
+      const notch = Math.max(2, Math.min(max + 1, speed + 1));
       return Math.min(100, notch * step);
     }
 
@@ -381,14 +386,13 @@ export class AirPurifierAccessory extends BaseAccessory {
    * Convert percentage to device speed
    */
   private percentageToSpeed(percentage: number): number {
-    // Sleep as first notch: round to nearest step and map notch→speed
+    // Sleep as first notch: round to nearest step and map notches → speeds
     if (this.hasFeature('sleep_mode')) {
       if (typeof percentage !== 'number') return 1;
       const step = this.calculateRotationSpeedStep();
-      const max = this.getMaxFanSpeed();
+      const max = this.isCore200S() ? 3 : this.getMaxFanSpeed();
       const maxNotch = max + 1; // include Sleep notch
       const notch = Math.max(0, Math.min(maxNotch, Math.round(Math.min(100, Math.max(0, percentage)) / step)));
-      // Clamp to manual range (2..maxNotch) then convert to speed
       const manualNotch = Math.max(2, notch);
       return Math.min(max, manualNotch - 1);
     }
@@ -764,7 +768,7 @@ export class AirPurifierAccessory extends BaseAccessory {
       
       // For all other devices, including Core300S, normal mode handling
       const mode = targetState === 1 ? 'auto' : 'manual';
-      this.platform.log.debug(`Setting mode to ${mode} for device: ${this.device.deviceName}`);
+      this.platform.log.info(`Changing mode to ${mode} for device: ${this.device.deviceName}`);
       
       let success = false;
       
@@ -874,13 +878,13 @@ export class AirPurifierAccessory extends BaseAccessory {
       
       // When using sleep-as-first-notch, map slider notches robustly by rounding
       if (this.hasFeature('sleep_mode')) {
-        const max = this.getMaxFanSpeed();
+        const max = this.isCore200S() ? 3 : this.getMaxFanSpeed();
         const step = this.calculateRotationSpeedStep();
         const maxNotch = max + 1; // include Sleep notch
         const notch = Math.max(0, Math.min(maxNotch, Math.round(percentage / step)));
         if (notch <= 1) {
           // Sleep
-          this.platform.log.debug(`Setting sleep mode via slider on ${this.device.deviceName} (notch=${notch})`);
+          this.platform.log.info(`Changing mode to sleep for device: ${this.device.deviceName}`);
           let ok = false;
           if (typeof extendedDevice.sleepMode === 'function') {
             ok = await extendedDevice.sleepMode();
@@ -904,6 +908,7 @@ export class AirPurifierAccessory extends BaseAccessory {
           // Ensure manual mode before speed change if necessary
           const modeNow = (extendedDevice.mode || '').toLowerCase();
           if (modeNow === 'auto' || modeNow === 'sleep') {
+            this.platform.log.info(`Changing mode to manual for device: ${this.device.deviceName}`);
             if (typeof extendedDevice.manualMode === 'function') {
               await extendedDevice.manualMode();
             } else if (typeof extendedDevice.setMode === 'function') {
