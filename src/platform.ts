@@ -26,6 +26,8 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
   private client!: VeSync;
   private deviceUpdateInterval?: NodeJS.Timeout;
   private refreshTimer?: NodeJS.Timeout;
+  private refreshInProgress = false;
+  private scheduledExpMs: number | null = null;
   private readonly updateInterval!: number;
   private readonly debug!: boolean;
   private lastLoginAttempt: Date = new Date(0);
@@ -285,11 +287,6 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
         // Reset backoff and update token refresh time on successful login
         this.loginBackoffTime = 10000;
         this.lastTokenRefresh = new Date();
-        // Schedule a proactive refresh for the new token
-        const token = (this.client as any).token as string | null;
-        if (token) {
-          this.scheduleProactiveRefreshFromToken(token);
-        }
         isLoggedIn = true;
         return true;
       } catch (error) {
@@ -340,24 +337,59 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
       const now = Date.now();
       const expMs = ts.exp * 1000;
       const msToExpiry = expMs - now;
+      
+      // If we already have a timer for this exact token expiration, skip
+      if (this.scheduledExpMs === expMs && this.refreshTimer) {
+        return;
+      }
       if (msToExpiry <= 0) {
         // Already expired; trigger immediate login in background
         void this.ensureLogin(true);
         return;
       }
 
-      // Refresh buffer: earlier of 5 days or 10% of remaining lifetime, but at least 1 day
-      const FIVE_DAYS = 5 * 24 * 60 * 60 * 1000;
-      const ONE_DAY = 24 * 60 * 60 * 1000;
-      const buffer = Math.max(Math.min(FIVE_DAYS, Math.floor(msToExpiry * 0.1)), ONE_DAY);
-      const refreshIn = Math.max(msToExpiry - buffer, 30 * 60 * 1000); // never less than 30 minutes
+      // Schedule policy to prevent thrash and avoid frequent logins:
+      // - If >7d left: refresh 5d before expiry
+      // - If 1–7d left: refresh 12h before expiry
+      // - If 1–24h left: refresh 1h before expiry
+      // - If <1h left: do not proactively refresh; rely on library's 401-triggered re-login
+      const ONE_HOUR = 60 * 60 * 1000;
+      const TWELVE_HOURS = 12 * ONE_HOUR;
+      const FIVE_DAYS = 5 * 24 * ONE_HOUR;
+      const SEVEN_DAYS = 7 * 24 * ONE_HOUR;
+
+      let refreshIn: number;
+      if (msToExpiry > SEVEN_DAYS) {
+        refreshIn = msToExpiry - FIVE_DAYS;
+      } else if (msToExpiry > 24 * ONE_HOUR) {
+        refreshIn = msToExpiry - TWELVE_HOURS;
+      } else if (msToExpiry > ONE_HOUR) {
+        refreshIn = msToExpiry - ONE_HOUR;
+      } else {
+        // Too close to expiry; avoid hammering login — let 401 path handle it
+        this.logger.debug('Token near expiry (<1h). Skipping proactive refresh; relying on auto re-login.');
+        return;
+      }
+
+      // Safety floor: never schedule earlier than 30 minutes from now
+      refreshIn = Math.max(refreshIn, 30 * 60 * 1000);
 
       if (this.refreshTimer) {
         clearTimeout(this.refreshTimer);
       }
-      this.refreshTimer = setTimeout(() => {
-        this.logger.info('Proactively refreshing VeSync session before token expiry');
-        void this.ensureLogin(true);
+      this.scheduledExpMs = expMs;
+      this.refreshTimer = setTimeout(async () => {
+        if (this.refreshInProgress) {
+          this.logger.debug('Proactive refresh already in progress; skipping.');
+          return;
+        }
+        this.refreshInProgress = true;
+        this.logger.debug('Proactively refreshing VeSync session before token expiry');
+        try {
+          await this.ensureLogin(true);
+        } finally {
+          this.refreshInProgress = false;
+        }
       }, refreshIn);
 
       const hours = Math.round(refreshIn / (60 * 60 * 1000));
