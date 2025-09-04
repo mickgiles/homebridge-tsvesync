@@ -1,5 +1,65 @@
 # Changelog
 
+## 1.3.0 (2025-09-04)
+
+### Added
+- **⏰ Enhanced Proactive Token Refresh**: Advanced JWT token refresh system with intelligent scheduling
+  - **🎯 Smart Scheduling Policy**: Dynamic refresh timing based on token lifetime:
+    - >7 days remaining: refresh 5 days before expiry
+    - 1-7 days remaining: refresh 12 hours before expiry
+    - 1-24 hours remaining: refresh 1 hour before expiry
+    - <1 hour remaining: rely on 401-triggered re-login to prevent thrashing
+  - **📊 Accurate Lifetime Tracking**: Uses actual token issuance time (iat) for precise calculations
+  - **🛡️ Duplicate Prevention**: Guards against multiple timers for same token expiration
+  - **🔄 State Management**: Concurrent refresh protection with in-progress tracking
+  - **🧹 Clean Shutdown**: Proper timer cleanup on platform shutdown
+  - **⚡ Background Operation**: Seamless token refresh without service interruption
+
+- **🔧 Advanced Session Management**: Enhanced integration with tsvesync v1.3.0
+  - **🔔 Token Change Integration**: Full utilization of tsvesync's onTokenChange callback system
+  - **📈 Reliability**: Eliminates VeSync connectivity interruptions from expired tokens
+  - **🎯 Optimal Timing**: Intelligent buffer calculation prevents both premature and late refreshes
+  - **⏰ Safety Floor**: Never schedules refresh less than 30 minutes from current time
+
+### Enhanced
+- **🔐 Session Persistence**: Improved session management with proactive refresh integration
+  - **💾 Complete Session Recovery**: Sessions survive across Homebridge restarts with enhanced refresh
+  - **📊 JWT Integration**: Advanced token lifecycle management with expiration tracking
+  - **🛡️ Secure Storage**: Protected session storage in tsvesync subdirectory
+  - **🚀 Faster Startup**: Reduced authentication overhead via intelligent session reuse
+  - **🔄 Seamless Recovery**: Automatic fallback when persisted sessions are invalid
+
+### Changed
+- **📚 Dependency Update**: Updated tsvesync dependency to 1.3.0 for enhanced session management
+- **📝 Documentation**: Comprehensive release notes including all enhancements from 1.2.0 onwards
+- **⚡ Performance**: Optimized token refresh logic for better performance and reliability
+
+### Technical Details
+- **🔧 Advanced Token Lifecycle**: Proactive refresh ensures tokens never expire during operation
+- **🎯 Progressive Buffer Strategy**: Smart refresh timing based on token lifetime for optimal reliability
+- **📈 Enhanced Error Handling**: Comprehensive try/finally blocks for robust operation
+- **🔄 State Coordination**: Prevents concurrent refresh operations with proper synchronization
+- **🛡️ Authentication Stability**: Eliminates authentication interruptions during long-running sessions
+
+### Summary of All Features from v1.2.0 onwards
+
+#### Session Management & Authentication (v1.2.0-1.3.0)
+- **💾 Complete Session Persistence**: Sessions survive across Homebridge restarts
+- **⏰ Enhanced Proactive Token Refresh**: Advanced refresh before JWT expiration (NEW in 1.3.0)
+- **🔐 Automatic Recovery**: Seamless fallback when persisted sessions are invalid
+- **📊 JWT Integration**: Full token lifecycle management with expiration tracking
+- **🛡️ Secure Storage**: Protected session storage in tsvesync subdirectory
+- **🚀 Faster Startup**: Reduced authentication overhead via session reuse
+
+#### Speed Control & HomeKit Integration (v1.2.0)
+- **🎛️ Advanced Speed Control**: Dynamic support for 3-4+ speed air purifiers
+- **🌙 Sleep Mode Integration**: Sleep mode as first notch on HomeKit slider
+- **🎯 Precision Mapping**: Accurate percentage-to-speed conversions
+- **📱 Enhanced UX**: Improved slider positions and speed transitions
+- **🔄 Smart Notch System**: Automatic adjustment based on device capabilities
+
+Full changelog: https://github.com/mickgiles/homebridge-tsvesync/blob/main/CHANGELOG.md
+
 ## 1.2.2 (2025-09-04)
 
 ### Added
