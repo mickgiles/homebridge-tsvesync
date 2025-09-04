@@ -25,6 +25,7 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
   
   private client!: VeSync;
   private deviceUpdateInterval?: NodeJS.Timeout;
+  private refreshTimer?: NodeJS.Timeout;
   private readonly updateInterval!: number;
   private readonly debug!: boolean;
   private lastLoginAttempt: Date = new Date(0);
@@ -80,7 +81,8 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
         quotaManagement: config.quotaManagement || { enabled: true } 
       },
       {
-        store: this.sessionStore
+        store: this.sessionStore,
+        onTokenChange: (s) => this.onTokenChange(s)
       }
     );
 
@@ -105,10 +107,12 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
           try {
             (this.client as any).hydrateSession(session);
             const ts = decodeJwtTimestampsLocal(session.token);
-            // Assume freshness on restart; auto re-login will handle invalid tokens
-            this.lastTokenRefresh = new Date();
+            // Use actual token issuance time if available to avoid overextending lifetime
+            this.lastTokenRefresh = ts?.iat ? new Date(ts.iat * 1000) : new Date();
             const expStr = ts?.exp ? new Date(ts.exp * 1000).toISOString() : 'unknown';
             this.logger.info(`Reusing persisted VeSync session. Token exp: ${expStr}`);
+            // Schedule a proactive refresh before expiry
+            this.scheduleProactiveRefreshFromToken(session.token);
           } catch (e) {
             this.logger.debug('Failed to hydrate persisted session, will login fresh');
           }
@@ -138,6 +142,9 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
     this.api.on('shutdown', () => {
       if (this.deviceUpdateInterval) {
         clearInterval(this.deviceUpdateInterval);
+      }
+      if (this.refreshTimer) {
+        clearTimeout(this.refreshTimer);
       }
     });
   }
@@ -278,6 +285,11 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
         // Reset backoff and update token refresh time on successful login
         this.loginBackoffTime = 10000;
         this.lastTokenRefresh = new Date();
+        // Schedule a proactive refresh for the new token
+        const token = (this.client as any).token as string | null;
+        if (token) {
+          this.scheduleProactiveRefreshFromToken(token);
+        }
         isLoggedIn = true;
         return true;
       } catch (error) {
@@ -306,6 +318,53 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
    */
   private async updateDeviceStates() {
     await this.discoverDevices();
+  }
+
+  /**
+   * Handle token updates from the library
+   */
+  private onTokenChange(session: { token: string } | undefined) {
+    if (!session?.token) return;
+    this.scheduleProactiveRefreshFromToken(session.token);
+  }
+
+  /**
+   * Schedule a proactive token refresh before JWT expiry
+   */
+  private scheduleProactiveRefreshFromToken(token: string) {
+    try {
+      const ts = decodeJwtTimestampsLocal(token);
+      if (!ts?.exp) {
+        return; // Cannot schedule without exp
+      }
+      const now = Date.now();
+      const expMs = ts.exp * 1000;
+      const msToExpiry = expMs - now;
+      if (msToExpiry <= 0) {
+        // Already expired; trigger immediate login in background
+        void this.ensureLogin(true);
+        return;
+      }
+
+      // Refresh buffer: earlier of 5 days or 10% of remaining lifetime, but at least 1 day
+      const FIVE_DAYS = 5 * 24 * 60 * 60 * 1000;
+      const ONE_DAY = 24 * 60 * 60 * 1000;
+      const buffer = Math.max(Math.min(FIVE_DAYS, Math.floor(msToExpiry * 0.1)), ONE_DAY);
+      const refreshIn = Math.max(msToExpiry - buffer, 30 * 60 * 1000); // never less than 30 minutes
+
+      if (this.refreshTimer) {
+        clearTimeout(this.refreshTimer);
+      }
+      this.refreshTimer = setTimeout(() => {
+        this.logger.info('Proactively refreshing VeSync session before token expiry');
+        void this.ensureLogin(true);
+      }, refreshIn);
+
+      const hours = Math.round(refreshIn / (60 * 60 * 1000));
+      this.logger.debug(`Scheduled proactive token refresh in ~${hours}h`);
+    } catch (e) {
+      // Best-effort scheduling; ignore errors
+    }
   }
 
   /**
