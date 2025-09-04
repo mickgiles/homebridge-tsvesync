@@ -1,5 +1,40 @@
 # Changelog
 
+## 1.2.1 (2025-09-04)
+
+### Changed
+- **📦 Re-release**: Version 1.2.1 re-release with comprehensive release notes from 1.2.0
+- **📝 Documentation**: Enhanced release documentation and changelog formatting
+- **🔄 Version Alignment**: Synchronized version numbers across tsvesync and homebridge-tsvesync
+- **📚 Dependency Update**: Updated tsvesync dependency to 1.2.1
+
+### Release Notes from v1.2.0 - Session Persistence and Enhanced Speed Control
+
+This release includes all the major enhancements from v1.2.0:
+
+#### Major Features
+- **💾 Session Persistence**: Comprehensive session management for improved reliability
+  - **🔐 Automatic Session Recovery**: VeSync sessions now persist across Homebridge restarts
+  - **📊 Token Lifecycle Management**: JWT token expiration tracking and automatic refresh
+  - **🛡️ Secure Storage**: Sessions stored with appropriate file permissions in tsvesync subdirectory
+  - **🚀 Faster Startup**: Reduced authentication overhead on Homebridge startup via session reuse
+  - **🔄 Seamless Recovery**: Automatic fallback to fresh login when persisted sessions are invalid
+
+- **🎛️ Advanced Speed Control**: Enhanced speed control for air purifiers with 4+ manual speeds
+  - **🌟 Multi-Speed Support**: Dynamic step calculation for devices with 4+ manual speed levels
+  - **🎯 Precision Mapping**: Better percentage-to-speed conversion for devices with varying speed counts
+  - **🔄 Smart Notch System**: Automatic adjustment of speed notches based on device capabilities
+  - **📱 Improved HomeKit UX**: More accurate slider positions and speed transitions
+
+#### Technical Improvements
+- **🔧 API Integration**: Enhanced tsvesync library integration with session management
+- **🌙 Sleep Mode Control**: Refined sleep mode speed control logic with dynamic step calculation
+- **🔧 Speed Control Accuracy**: Enhanced speed control precision for various device configurations
+- **🏗️ Session Architecture**: Complete integration with tsvesync 1.2.0 session management system
+- **📊 JWT Integration**: Automatic JWT token expiration tracking and session validation
+
+Full changelog: https://github.com/mickgiles/homebridge-tsvesync/blob/main/CHANGELOG.md
+
 ## 1.2.0 (2025-09-04)
 
 ### Added
