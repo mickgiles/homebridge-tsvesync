@@ -1,5 +1,41 @@
 # Changelog
 
+## 1.3.1 (2025-09-04)
+
+### Fixed
+- **🔐 Enhanced Session Management**: Improved session persistence and authentication flow
+  - **👤 Username Validation**: Session reuse now validates username to prevent cross-account conflicts
+  - **🔒 Account Isolation**: Persisted sessions are ignored if they belong to a different configured account
+  - **⚡ Optimized Login Flow**: Authentication only occurs when necessary, relying on persisted tokens and library re-login
+  - **🛡️ Session Security**: Enhanced session storage with username tracking for better account management
+
+- **🎛️ Core 200S Speed Control Improvements**: Enhanced air purifier speed control for Core 200S devices
+  - **🎯 Model-Specific Logic**: Core 200S now uses dedicated speed calculation method with proper 25% steps
+  - **📊 Accurate Mapping**: Improved speed-to-percentage conversion for devices with 3 manual speeds
+  - **🌙 Sleep Mode Integration**: Better sleep mode handling with model-specific speed ranges
+  - **🔄 Precise Notch Calculation**: Enhanced notch-to-speed mapping for more accurate HomeKit control
+
+### Enhanced
+- **📝 Improved Logging**: Better debugging information for mode changes and device operations
+  - **🔍 Mode Change Tracking**: Enhanced logging for manual, auto, and sleep mode transitions
+  - **🎛️ Speed Control Logging**: More detailed logging for speed changes and slider operations
+  - **📱 HomeKit Integration**: Better visibility into device state changes and characteristic updates
+
+### Changed
+- **🔄 Authentication Strategy**: Optimized authentication flow to reduce unnecessary login attempts
+  - **💾 Token Persistence**: Improved reliance on persisted tokens with library-managed re-authentication
+  - **⚡ Startup Performance**: Faster platform initialization by avoiding redundant login checks
+  - **🎯 Smart Re-login**: Authentication only triggered when API returns 401/419 status codes
+
+### Technical Details
+- **🏗️ Session Architecture**: Enhanced session store with username tracking and validation
+- **🎛️ Speed Control Algorithm**: Model-specific speed calculation methods for different device types
+- **🔧 Authentication Flow**: Streamlined login logic with better token lifecycle management
+- **📊 Core 200S Support**: Dedicated isCore200S() method for model-specific functionality
+
+### Dependencies
+- **📦 tsvesync**: Updated to 1.3.1 for enhanced token expiration detection and authentication improvements
+
 ## 1.3.0 (2025-09-04)
 
 ### Added
