@@ -119,9 +119,11 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
               // Schedule a proactive refresh before expiry
               this.scheduleProactiveRefreshFromToken(session.token);
             }
-          } catch (e) {
-            this.logger.debug('Failed to hydrate persisted session, will login fresh');
+          } catch (e: any) {
+            this.logger.debug(`Failed to hydrate persisted session, will login fresh: ${e?.message || e}`);
           }
+        } else {
+          this.logger.debug('No persisted VeSync session available; will authenticate.');
         }
 
         // Initialize platform
@@ -294,6 +296,26 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
         // Reset backoff and update token refresh time on successful login
         this.loginBackoffTime = 10000;
         this.lastTokenRefresh = new Date();
+        // Best-effort: persist the fresh session immediately in case callbacks fail
+        try {
+          const token = (this.client as any).token as string | null;
+          const accountId = (this.client as any).accountId as string | null;
+          const region = (this.client as any).region as string | null;
+          const apiBaseUrl = (this.client as any).apiBaseUrl as string | null;
+          if (token && accountId && region && apiBaseUrl) {
+            const ts = decodeJwtTimestampsLocal(token);
+            await this.sessionStore.save({
+              token,
+              accountId,
+              region,
+              apiBaseUrl,
+              issuedAt: ts?.iat ?? null,
+              expiresAt: ts?.exp ?? null,
+              lastValidatedAt: Date.now(),
+              username: this.config.username,
+            } as any);
+          }
+        } catch {/* ignore */}
         isLoggedIn = true;
         return true;
       } catch (error) {
