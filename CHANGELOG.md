@@ -1,5 +1,58 @@
 # Changelog
 
+## 1.3.3 (2025-01-05)
+
+### Fixed
+- **⏰ Extended Timeout Chain Fix**: Enhanced proactive token refresh system to handle very long-duration tokens
+  - **🔧 Timeout Chaining**: Implemented timeout chaining for refresh delays exceeding Node.js setTimeout maximum (~24.8 days)
+  - **🛡️ Robust Scheduling**: Prevents timer overflow errors with automatic timer chaining for extended token lifetimes
+  - **⚡ Seamless Operation**: Long-duration token refresh scheduling now works reliably without timing limitations
+  - **🎯 Precision Handling**: Maintains accurate refresh timing even for tokens with extended lifetimes
+  - **📊 Enhanced Logging**: Improved logging for chained timer operations and extended refresh scheduling
+
+- **🔄 Session Hydration Compatibility**: Enhanced session recovery with backward compatibility
+  - **🛡️ Fallback Support**: Added backward-compatible session hydration for older tsvesync versions
+  - **⚡ Direct Field Setting**: Automatic fallback to direct field setting when hydrateSession method unavailable
+  - **🔧 Improved Reliability**: Enhanced session recovery across different tsvesync library versions
+  - **📊 Better Error Handling**: Graceful handling of version compatibility during session restoration
+
+### Enhanced
+- **🎯 Timer Management**: Advanced timer management system for extended timeout scenarios
+  - **🔧 MAX_DELAY Handling**: Proper handling of Node.js setTimeout maximum delay limitations (2,147,483,647 ms)
+  - **⚡ Chain Calculation**: Intelligent timer chaining with accurate remaining time calculations
+  - **🛡️ Error Prevention**: Prevents timer overflow errors and ensures reliable long-duration scheduling
+  - **📈 Performance**: Optimized timer chaining with minimal overhead for standard use cases
+
+### Technical Details
+- **🏗️ Timeout Architecture**: Enhanced proactive refresh system with timeout chaining support
+- **📊 Timer Chain Logic**: Automatic detection and handling of timeouts exceeding Node.js limitations
+- **🔧 Compatibility Layer**: Backward-compatible session hydration for various tsvesync versions
+- **⚡ Precision Timing**: Maintains accurate refresh timing regardless of token lifetime duration
+
+### Dependencies
+- **📦 tsvesync**: Updated to 1.3.3 for enhanced cross-project version synchronization
+
+### Summary of All Enhancements from v1.2.0 onwards
+
+#### Session Management & Authentication System (v1.2.0-1.3.3)
+- **💾 Complete Session Persistence**: Sessions survive across Homebridge restarts with enhanced validation
+- **⏰ Advanced Proactive Token Refresh**: Intelligent refresh scheduling with extended timeout support (v1.3.0-1.3.3)
+- **🔐 Enhanced Security**: Username validation and account isolation for multi-user environments
+- **📊 JWT Token Mastery**: Complete lifecycle management with normalized timestamp handling
+- **🛡️ Secure Storage**: Protected session storage with comprehensive validation and recovery
+- **🚀 Performance Optimization**: Reduced authentication overhead with intelligent session reuse
+- **🔄 Cross-Region Support**: Enhanced compatibility with different VeSync regional endpoints
+- **🎯 Extended Timeout Handling**: Reliable scheduling for very long-duration token refresh scenarios (NEW in 1.3.3)
+
+#### Speed Control & HomeKit Integration (v1.2.0-1.3.1)
+- **🎛️ Advanced Speed Control**: Dynamic support for 3-4+ speed air purifiers with model-specific logic
+- **🌙 Intelligent Sleep Mode**: Sleep mode integration as first notch on HomeKit slider
+- **🎯 Precision Mapping**: Accurate percentage-to-speed conversions for different device capabilities
+- **📱 Enhanced UX**: Improved slider positions, speed transitions, and HomeKit responsiveness
+- **🔄 Smart Notch System**: Automatic adjustment based on device capabilities and speed ranges
+
+Full changelog: https://github.com/mickgiles/homebridge-tsvesync/blob/main/CHANGELOG.md
+
 ## 1.3.2 (2025-01-05)
 
 ### Enhanced

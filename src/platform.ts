@@ -28,6 +28,7 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
   private refreshTimer?: NodeJS.Timeout;
   private refreshInProgress = false;
   private scheduledExpMs: number | null = null;
+  private refreshRemainingMs: number | null = null;
   private readonly updateInterval!: number;
   private readonly debug!: boolean;
   private lastLoginAttempt: Date = new Date(0);
@@ -110,7 +111,7 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
             if ((session as any).username && (session as any).username !== this.config.username) {
               this.logger.info('Found persisted session for a different account; ignoring persisted session.');
             } else {
-              (this.client as any).hydrateSession(session);
+              this.hydrateSessionCompat(session);
               const ts = decodeJwtTimestampsLocal(session.token);
               // Use actual token issuance time if available to avoid overextending lifetime
               this.lastTokenRefresh = ts?.iat ? new Date(ts.iat * 1000) : new Date();
@@ -359,6 +360,28 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
   }
 
   /**
+   * Backward-compatible session hydration when using older tsvesync versions
+   */
+  private hydrateSessionCompat(session: { token: string; accountId: string; countryCode?: string | null; apiBaseUrl?: string; region?: string }) {
+    const client: any = this.client as any;
+    if (typeof client.hydrateSession === 'function') {
+      client.hydrateSession(session);
+      return;
+    }
+    // Fallback: set core fields directly
+    client.token = session.token;
+    client.accountId = session.accountId;
+    client.countryCode = session.countryCode ?? null;
+    if (session.apiBaseUrl) {
+      client.apiBaseUrl = session.apiBaseUrl;
+    }
+    if (session.region) {
+      try { client.region = session.region; } catch { /* ignore */ }
+    }
+    client.enabled = true;
+  }
+
+  /**
    * Schedule a proactive token refresh before JWT expiry
    */
   private scheduleProactiveRefreshFromToken(token: string) {
@@ -411,25 +434,52 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
         clearTimeout(this.refreshTimer);
       }
       this.scheduledExpMs = expMs;
-      this.refreshTimer = setTimeout(async () => {
-        if (this.refreshInProgress) {
-          this.logger.debug('Proactive refresh already in progress; skipping.');
-          return;
-        }
-        this.refreshInProgress = true;
-        this.logger.debug('Proactively refreshing VeSync session before token expiry');
-        try {
-          await this.ensureLogin(true);
-        } finally {
-          this.refreshInProgress = false;
-        }
-      }, refreshIn);
+      // Handle Node.js setTimeout max delay (~24.8 days). Chain timers when needed.
+      const MAX_DELAY = 0x7fffffff; // 2,147,483,647 ms
+      if (refreshIn > MAX_DELAY) {
+        this.refreshRemainingMs = refreshIn - MAX_DELAY;
+        this.logger.debug('Proactive refresh scheduled beyond setTimeout max; chaining timers.');
+        this.refreshTimer = setTimeout(() => this.chainRefreshTimer(), MAX_DELAY);
+      } else {
+        this.refreshRemainingMs = 0;
+        this.refreshTimer = setTimeout(async () => {
+          if (this.refreshInProgress) {
+            this.logger.debug('Proactive refresh already in progress; skipping.');
+            return;
+          }
+          this.refreshInProgress = true;
+          this.logger.debug('Proactively refreshing VeSync session before token expiry');
+          try {
+            await this.ensureLogin(true);
+          } finally {
+            this.refreshInProgress = false;
+          }
+        }, refreshIn);
+      }
 
       const hours = Math.round(refreshIn / (60 * 60 * 1000));
       this.logger.debug(`Scheduled proactive token refresh in ~${hours}h`);
     } catch (e) {
       // Best-effort scheduling; ignore errors
     }
+  }
+
+  private chainRefreshTimer() {
+    if (!this.refreshRemainingMs || this.refreshRemainingMs <= 0) {
+      // Final hop: trigger refresh now
+      if (this.refreshInProgress) {
+        this.logger.debug('Proactive refresh already in progress; skipping.');
+        return;
+      }
+      this.refreshInProgress = true;
+      this.logger.debug('Proactively refreshing VeSync session before token expiry');
+      void this.ensureLogin(true).finally(() => { this.refreshInProgress = false; });
+      return;
+    }
+    const MAX_DELAY = 0x7fffffff;
+    const hop = Math.min(this.refreshRemainingMs, MAX_DELAY);
+    this.refreshRemainingMs -= hop;
+    this.refreshTimer = setTimeout(() => this.chainRefreshTimer(), hop);
   }
 
   /**
