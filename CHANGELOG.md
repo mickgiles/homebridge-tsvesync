@@ -1,5 +1,57 @@
 # Changelog
 
+## 1.3.2 (2025-01-05)
+
+### Enhanced
+- **🔐 Advanced Session Management**: Comprehensive improvements to session persistence and authentication reliability
+  - **👤 Enhanced Username Validation**: Session reuse now validates username to prevent cross-account authentication conflicts
+  - **🔒 Improved Account Isolation**: Persisted sessions are properly isolated and validated against configured accounts
+  - **💾 Optimized Session Persistence**: Best-effort session saving immediately after successful authentication
+  - **📝 Detailed Session Logging**: Comprehensive debug logging for session save/load operations with expiration tracking
+  - **🛡️ Robust Error Handling**: Enhanced error messages and recovery flows for session hydration failures
+
+- **🔧 JWT Timestamp Precision Handling**: Enhanced token timestamp processing for consistent authentication
+  - **📊 Timestamp Normalization**: Automatic detection and conversion of millisecond timestamps to seconds
+  - **⚡ Improved Token Validation**: Ensures accurate token expiration calculations across different token formats
+  - **🔄 Cross-Region Compatibility**: Better handling of JWT tokens from different VeSync regional endpoints
+  - **🛡️ Edge Case Prevention**: Fixes authentication issues with tokens using inconsistent timestamp precision
+
+### Fixed
+- **🎛️ Session Hydration Reliability**: Improved session recovery and validation processes
+  - **🔍 Better Error Detection**: Enhanced detection of invalid or corrupted session data
+  - **📈 Startup Performance**: Optimized authentication flow to reduce unnecessary login attempts
+  - **⚡ Token Lifecycle Management**: Better coordination with tsvesync library's token refresh mechanisms
+  - **🛡️ Authentication Stability**: Reduced authentication interruptions during long-running sessions
+
+### Technical Details
+- **🏗️ Session Architecture**: Enhanced session store with improved persistence and validation logic
+- **📊 Token Management**: Advanced JWT token handling with normalized timestamp precision
+- **🔧 Error Handling**: Comprehensive error recovery flows with detailed logging and debugging
+- **⚡ Performance**: Optimized session operations for better startup performance and reliability
+
+### Dependencies
+- **📦 tsvesync**: Updated to 1.3.2 for enhanced JWT timestamp handling and session management improvements
+
+### Summary of All Enhancements from v1.2.0 onwards
+
+#### Session Management & Authentication System (v1.2.0-1.3.2)
+- **💾 Complete Session Persistence**: Sessions survive across Homebridge restarts with enhanced validation
+- **⏰ Advanced Proactive Token Refresh**: Intelligent refresh scheduling prevents JWT expiration (v1.3.0)
+- **🔐 Enhanced Security**: Username validation and account isolation for multi-user environments
+- **📊 JWT Token Mastery**: Complete lifecycle management with normalized timestamp handling
+- **🛡️ Secure Storage**: Protected session storage with comprehensive validation and recovery
+- **🚀 Performance Optimization**: Reduced authentication overhead with intelligent session reuse
+- **🔄 Cross-Region Support**: Enhanced compatibility with different VeSync regional endpoints
+
+#### Speed Control & HomeKit Integration (v1.2.0-1.3.1)
+- **🎛️ Advanced Speed Control**: Dynamic support for 3-4+ speed air purifiers with model-specific logic
+- **🌙 Intelligent Sleep Mode**: Sleep mode integration as first notch on HomeKit slider
+- **🎯 Precision Mapping**: Accurate percentage-to-speed conversions for different device capabilities
+- **📱 Enhanced UX**: Improved slider positions, speed transitions, and HomeKit responsiveness
+- **🔄 Smart Notch System**: Automatic adjustment based on device capabilities and speed ranges
+
+Full changelog: https://github.com/mickgiles/homebridge-tsvesync/blob/main/CHANGELOG.md
+
 ## 1.3.1 (2025-09-04)
 
 ### Fixed
