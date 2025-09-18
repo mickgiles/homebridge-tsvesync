@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.3.4 (2025-09-18)
+
+### Added
+- **🕹️ ESWD16 Dimming in HomeKit**: ESWD16 dimmer switches now register as HomeKit `Lightbulb` accessories with native On/Off and Brightness control.
+- **🌈 Indicator Ring Control**: Introduced a dedicated "Indicator" light service for the ESWD16 locator ring, including Hue/Saturation control powered by automatic HSV→RGB conversion.
+
+### Improved
+- **🔄 State Synchronization**: On/Off and brightness updates now refresh ESWD16 cloud state immediately, keeping HomeKit characteristics accurate even when VeSync lags.
+- **🛡️ Polling Guardrails**: Background discovery is now serialized and paired with UUID-stable Air Quality accessories, preventing duplicate registrations and overlapping sync loops.
+
+### Dependencies
+- **📦 tsvesync**: Upgraded to 1.3.4 to stay aligned with the latest ESWD16 API surfaces.
+
 ## 1.3.3 (2025-01-05)
 
 ### Fixed
