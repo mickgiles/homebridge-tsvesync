@@ -22,6 +22,7 @@ export interface VeSyncDeviceWithPower extends VeSyncBaseDevice {
   deviceStatus: string;
   turnOn(): Promise<boolean>;
   turnOff(): Promise<boolean>;
+  getDetails?: (...args: any[]) => any;
 }
 
 export interface VeSyncDeviceWithBrightness extends VeSyncDeviceWithPower {
@@ -84,7 +85,24 @@ export interface VeSyncFan extends VeSyncDeviceWithPower, VeSyncDeviceWithSpeed,
   setMode(mode: 'normal' | 'auto' | 'sleep' | 'turbo'): Promise<boolean>;
 }
 
+export interface VeSyncDimmerSwitch extends VeSyncDeviceWithBrightness {
+  rgbLightStatus: string;
+  indicatorLightStatus: string;
+  rgbLightValue: {
+    red: number;
+    green: number;
+    blue: number;
+  };
+  rgbColorSet(red: number, green: number, blue: number): Promise<boolean>;
+  rgbColorOn(): Promise<boolean>;
+  rgbColorOff(): Promise<boolean>;
+  indicatorLightOn(): Promise<boolean>;
+  indicatorLightOff(): Promise<boolean>;
+}
+
 export interface VeSyncBulb extends VeSyncDeviceWithPower, VeSyncDeviceWithBrightness, VeSyncDeviceWithColor {}
+
+export type VeSyncLightDevice = VeSyncBulb | VeSyncDimmerSwitch;
 
 export interface VeSyncOutlet extends VeSyncDeviceWithPower {
   power?: number;

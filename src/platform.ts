@@ -344,7 +344,27 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
    * Update device states periodically
    */
   private async updateDeviceStates() {
-    await this.discoverDevices();
+    if (this.refreshInProgress) {
+      return;
+    }
+
+    this.refreshInProgress = true;
+
+    try {
+      await this.discoverDevices();
+
+      const syncTasks = Array.from(this.deviceAccessories.values()).map(async accessory => {
+        try {
+          await accessory.syncDeviceState();
+        } catch (error) {
+          this.logger.warn('Failed to sync device state during scheduled refresh', error as Error);
+        }
+      });
+
+      await Promise.all(syncTasks);
+    } finally {
+      this.refreshInProgress = false;
+    }
   }
 
   /**

@@ -9,11 +9,12 @@ import { OutletAccessory } from '../accessories/outlet.accessory';
 import { SwitchAccessory } from '../accessories/switch.accessory';
 import { BaseAccessory } from '../accessories/base.accessory';
 import { AirQualitySensorAccessory } from '../accessories/air-quality-sensor.accessory';
-import { 
+import {
   VeSyncAirPurifier,
   VeSyncHumidifier,
   VeSyncFan,
   VeSyncBulb,
+  VeSyncDimmerSwitch,
   VeSyncOutlet,
   VeSyncSwitch
 } from '../types/device.types';
@@ -38,7 +39,9 @@ const OUTLET_MODELS = [
   'ESW10-USA', 'wifi-switch-1.3'
 ];
 
-const SWITCH_MODELS = ['ESWD16', 'ESWL01', 'ESWL03'];
+const SWITCH_MODELS = ['ESWL01', 'ESWL03'];
+
+const DIMMER_MODELS = ['ESWD16'];
 
 export class DeviceFactory {
   private static modelMatches(deviceType: string, models: string[]): boolean {
@@ -64,6 +67,10 @@ export class DeviceFactory {
 
   private static isBulb(deviceType: string): boolean {
     return deviceType.startsWith('ESL') || deviceType === 'XYD0001';
+  }
+
+  private static isDimmer(deviceType: string): boolean {
+    return this.modelMatches(deviceType, DIMMER_MODELS);
   }
 
   private static isOutlet(deviceType: string): boolean {
@@ -94,6 +101,11 @@ export class DeviceFactory {
     // Fans
     if (this.isFan(deviceType)) {
       return new FanAccessory(platform, accessory, device as VeSyncFan);
+    }
+
+    // Dimmers
+    if (this.isDimmer(deviceType)) {
+      return new LightAccessory(platform, accessory, device as VeSyncDimmerSwitch);
     }
 
     // Bulbs
@@ -131,7 +143,7 @@ export class DeviceFactory {
       return Categories.FAN;
     }
 
-    if (this.isBulb(type)) {
+    if (this.isDimmer(type) || this.isBulb(type)) {
       return Categories.LIGHTBULB;
     }
 

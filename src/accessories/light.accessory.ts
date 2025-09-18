@@ -1,7 +1,7 @@
-import { CharacteristicValue, PlatformAccessory } from 'homebridge';
+import { CharacteristicValue, PlatformAccessory, Service } from 'homebridge';
 import { BaseAccessory } from './base.accessory';
 import { TSVESyncPlatform } from '../platform';
-import { DeviceCapabilities, VeSyncBulb } from '../types/device.types';
+import { DeviceCapabilities, VeSyncBulb, VeSyncDimmerSwitch, VeSyncLightDevice } from '../types/device.types';
 
 // Constants for color temperature
 const MIN_COLOR_TEMP = 140; // 7143K (cool)
@@ -9,16 +9,23 @@ const MAX_COLOR_TEMP = 500; // 2000K (warm)
 const DEFAULT_COLOR_TEMP = MIN_COLOR_TEMP;
 
 export class LightAccessory extends BaseAccessory {
-  protected readonly device: VeSyncBulb;
+  protected readonly device: VeSyncLightDevice;
   private readonly capabilities: DeviceCapabilities;
+  private readonly isDimmerDevice: boolean;
+  private indicatorService?: Service;
+  private indicatorColorState = { hue: 0, saturation: 0 };
+  private indicatorColorUpdateTimeout?: NodeJS.Timeout;
+  private lastDimmerRefresh = 0;
+  private static readonly DIMMER_REFRESH_DEBOUNCE_MS = 2000;
 
   constructor(
     platform: TSVESyncPlatform,
     accessory: PlatformAccessory,
-    device: VeSyncBulb
+    device: VeSyncLightDevice
   ) {
     super(platform, accessory, device);
     this.device = device;
+    this.isDimmerDevice = this.detectDimmer(device);
     this.capabilities = this.getDeviceCapabilities();
   }
 
@@ -35,7 +42,7 @@ export class LightAccessory extends BaseAccessory {
     );
 
     // Set up optional characteristics based on device capabilities
-    const capabilities = this.getDeviceCapabilities();
+    const capabilities = this.capabilities;
 
     if (capabilities.hasBrightness) {
       this.setupCharacteristic(
@@ -58,6 +65,10 @@ export class LightAccessory extends BaseAccessory {
       this.platform.Characteristic.Name,
       async () => this.device.deviceName
     );
+
+    if (this.isDimmerDevice) {
+      this.setupIndicatorService();
+    }
   }
 
   private setupColorTemperature(): void {
@@ -92,9 +103,7 @@ export class LightAccessory extends BaseAccessory {
    * Update device states based on the latest details
    */
   protected async updateDeviceSpecificStates(details: any): Promise<void> {
-    const lightDetails = details as {
-      deviceStatus: string;
-      brightness?: number;
+    const lightDetails = details as VeSyncLightDevice & {
       colorTemp?: number;
       hue?: number;
       saturation?: number;
@@ -138,10 +147,41 @@ export class LightAccessory extends BaseAccessory {
         );
       }
     }
+
+    if (this.isDimmerDevice && this.indicatorService) {
+      const dimmer = lightDetails as VeSyncDimmerSwitch;
+      const isRgbOn = dimmer.rgbLightStatus === 'on';
+      this.updateIndicatorCharacteristic(
+        this.platform.Characteristic.On,
+        isRgbOn
+      );
+
+      const { hue, saturation } = this.rgbToHsv(
+        dimmer.rgbLightValue.red,
+        dimmer.rgbLightValue.green,
+        dimmer.rgbLightValue.blue
+      );
+      this.indicatorColorState = { hue, saturation };
+      this.updateIndicatorCharacteristic(this.platform.Characteristic.Hue, hue);
+      this.updateIndicatorCharacteristic(this.platform.Characteristic.Saturation, saturation);
+    }
   }
 
   protected getDeviceCapabilities(): DeviceCapabilities {
-    // Determine capabilities based on model
+    if (this.isDimmerDevice) {
+      return {
+        hasBrightness: true,
+        hasColorTemp: false,
+        hasColor: false,
+        hasSpeed: false,
+        hasHumidity: false,
+        hasAirQuality: false,
+        hasWaterLevel: false,
+        hasChildLock: false,
+        hasSwingMode: false,
+      };
+    }
+
     const model = this.device.deviceType.toUpperCase();
     return {
       hasBrightness: true, // All VeSync bulbs support brightness
@@ -170,6 +210,10 @@ export class LightAccessory extends BaseAccessory {
       }
       
       await this.persistDeviceState('deviceStatus', isOn ? 'on' : 'off');
+
+      if (this.isDimmerDevice) {
+        await this.refreshDimmerDetails();
+      }
     } catch (error) {
       this.handleDeviceError('set on state', error);
     }
@@ -181,34 +225,67 @@ export class LightAccessory extends BaseAccessory {
 
   private async setBrightness(value: CharacteristicValue): Promise<void> {
     try {
-      const success = await this.device.setBrightness(value as number);
-      
-      if (!success) {
-        throw new Error(`Failed to set brightness to ${value}`);
+      const target = Math.round(Number(value));
+
+      if (this.isDimmerDevice && target <= 0) {
+        const success = await this.device.turnOff();
+        if (!success) {
+          throw new Error('Failed to turn off device when setting brightness to 0');
+        }
+        await this.persistDeviceState('deviceStatus', 'off');
+        await this.persistDeviceState('brightness', 0);
+        await this.refreshDimmerDetails();
+        return;
       }
-      
-      await this.persistDeviceState('brightness', value);
+
+      const brightness = Math.min(100, Math.max(this.isDimmerDevice ? 1 : 0, target));
+
+      const success = await this.device.setBrightness(brightness);
+
+      if (!success) {
+        throw new Error(`Failed to set brightness to ${brightness}`);
+      }
+
+      await this.persistDeviceState('brightness', brightness);
+      if (this.isDimmerDevice && brightness > 0) {
+        await this.persistDeviceState('deviceStatus', 'on');
+      }
+
+      if (this.isDimmerDevice) {
+        await this.refreshDimmerDetails();
+      }
     } catch (error) {
       this.handleDeviceError('set brightness', error);
     }
   }
 
   private async getColorTemperature(): Promise<CharacteristicValue> {
-    return this.device.colorTemp || DEFAULT_COLOR_TEMP;
+    if (this.isDimmerDevice) {
+      return DEFAULT_COLOR_TEMP;
+    }
+
+    const bulb = this.device as VeSyncBulb;
+    return bulb.colorTemp || DEFAULT_COLOR_TEMP;
   }
 
   private async setColorTemperature(value: CharacteristicValue): Promise<void> {
     try {
-      if (!this.device.setColorTemperature) {
+      if (this.isDimmerDevice) {
         throw new Error('Device does not support color temperature');
       }
-      
-      const success = await this.device.setColorTemperature(value as number);
-      
+
+      const bulb = this.device as VeSyncBulb;
+
+      if (!bulb.setColorTemperature) {
+        throw new Error('Device does not support color temperature');
+      }
+
+      const success = await bulb.setColorTemperature(value as number);
+
       if (!success) {
         throw new Error(`Failed to set color temperature to ${value}`);
       }
-      
+
       await this.persistDeviceState('colorTemp', value);
     } catch (error) {
       this.handleDeviceError('set color temperature', error);
@@ -216,24 +293,40 @@ export class LightAccessory extends BaseAccessory {
   }
 
   private async getHue(): Promise<CharacteristicValue> {
-    return this.device.hue || 0;
+    if (this.isDimmerDevice) {
+      return 0;
+    }
+
+    const bulb = this.device as VeSyncBulb;
+    return bulb.hue || 0;
   }
 
   private async getSaturation(): Promise<CharacteristicValue> {
-    return this.device.saturation || 0;
+    if (this.isDimmerDevice) {
+      return 0;
+    }
+
+    const bulb = this.device as VeSyncBulb;
+    return bulb.saturation || 0;
   }
 
   private async setHue(value: CharacteristicValue): Promise<void> {
     try {
-      if (!this.device.setColor) {
+      if (this.isDimmerDevice) {
         throw new Error('Device does not support color');
       }
-      
-      const success = await this.device.setColor(
+
+      const bulb = this.device as VeSyncBulb;
+
+      if (!bulb.setColor) {
+        throw new Error('Device does not support color');
+      }
+
+      const success = await bulb.setColor(
         value as number,
-        this.device.saturation || 0
+        bulb.saturation || 0
       );
-      
+
       if (!success) {
         throw new Error(`Failed to set hue to ${value}`);
       }
@@ -246,22 +339,310 @@ export class LightAccessory extends BaseAccessory {
 
   private async setSaturation(value: CharacteristicValue): Promise<void> {
     try {
-      if (!this.device.setColor) {
+      if (this.isDimmerDevice) {
         throw new Error('Device does not support color');
       }
-      
-      const success = await this.device.setColor(
-        this.device.hue || 0,
+
+      const bulb = this.device as VeSyncBulb;
+
+      if (!bulb.setColor) {
+        throw new Error('Device does not support color');
+      }
+
+      const success = await bulb.setColor(
+        bulb.hue || 0,
         value as number
       );
-      
+
       if (!success) {
         throw new Error(`Failed to set saturation to ${value}`);
       }
-      
+
       await this.persistDeviceState('saturation', value);
     } catch (error) {
       this.handleDeviceError('set saturation', error);
     }
   }
-} 
+
+  private detectDimmer(device: VeSyncLightDevice): device is VeSyncDimmerSwitch {
+    return typeof (device as VeSyncDimmerSwitch).rgbColorSet === 'function';
+  }
+
+  private setupIndicatorService(): void {
+    const serviceName = `${this.device.deviceName} Indicator`;
+    const existing = this.accessory.getService(serviceName);
+    this.indicatorService = existing || this.accessory.addService(
+      this.platform.Service.Lightbulb,
+      serviceName,
+      'indicator'
+    );
+
+    const indicatorService = this.indicatorService;
+    if (!indicatorService) {
+      return;
+    }
+
+    this.setupCharacteristicForService(
+      indicatorService,
+      this.platform.Characteristic.On,
+      this.getIndicatorOn.bind(this),
+      this.setIndicatorOn.bind(this)
+    );
+
+    this.setupCharacteristicForService(
+      indicatorService,
+      this.platform.Characteristic.Hue,
+      this.getIndicatorHue.bind(this),
+      this.setIndicatorHue.bind(this)
+    );
+
+    this.setupCharacteristicForService(
+      indicatorService,
+      this.platform.Characteristic.Saturation,
+      this.getIndicatorSaturation.bind(this),
+      this.setIndicatorSaturation.bind(this)
+    );
+  }
+
+  private setupCharacteristicForService(
+    service: Service,
+    characteristic: any,
+    onGet?: () => Promise<CharacteristicValue>,
+    onSet?: (value: CharacteristicValue) => Promise<void>
+  ): void {
+    this.withService(service, () => {
+      this.setupCharacteristic(characteristic, onGet, onSet);
+    });
+  }
+
+  private updateIndicatorCharacteristic(
+    characteristic: any,
+    value: CharacteristicValue
+  ): void {
+    if (!this.indicatorService) {
+      return;
+    }
+
+    this.withService(this.indicatorService, () => {
+      this.updateCharacteristicValue(characteristic, value);
+    });
+  }
+
+  private withService<T>(service: Service, fn: () => T): T {
+    const currentService = this.service;
+    this.service = service;
+    try {
+      return fn();
+    } finally {
+      this.service = currentService;
+    }
+  }
+
+  private async getIndicatorOn(): Promise<CharacteristicValue> {
+    if (!this.isDimmerDevice) {
+      return false;
+    }
+    const dimmer = this.device as VeSyncDimmerSwitch;
+    return dimmer.rgbLightStatus === 'on';
+  }
+
+  private async setIndicatorOn(value: CharacteristicValue): Promise<void> {
+    if (!this.isDimmerDevice) {
+      return;
+    }
+
+    const isOn = Boolean(value);
+    const dimmer = this.device as VeSyncDimmerSwitch;
+    const success = isOn ? await dimmer.rgbColorOn() : await dimmer.rgbColorOff();
+
+    if (!success) {
+      throw new Error(`Failed to turn ${isOn ? 'on' : 'off'} indicator light`);
+    }
+
+    await this.refreshDimmerDetails();
+  }
+
+  private async getIndicatorHue(): Promise<CharacteristicValue> {
+    if (!this.isDimmerDevice) {
+      return 0;
+    }
+
+    const { hue } = this.rgbToHsv(
+      (this.device as VeSyncDimmerSwitch).rgbLightValue.red,
+      (this.device as VeSyncDimmerSwitch).rgbLightValue.green,
+      (this.device as VeSyncDimmerSwitch).rgbLightValue.blue
+    );
+    this.indicatorColorState.hue = hue;
+    return hue;
+  }
+
+  private async setIndicatorHue(value: CharacteristicValue): Promise<void> {
+    if (!this.isDimmerDevice) {
+      return;
+    }
+
+    this.indicatorColorState.hue = Number(value);
+    this.scheduleIndicatorColorUpdate();
+  }
+
+  private async getIndicatorSaturation(): Promise<CharacteristicValue> {
+    if (!this.isDimmerDevice) {
+      return 0;
+    }
+
+    const { saturation } = this.rgbToHsv(
+      (this.device as VeSyncDimmerSwitch).rgbLightValue.red,
+      (this.device as VeSyncDimmerSwitch).rgbLightValue.green,
+      (this.device as VeSyncDimmerSwitch).rgbLightValue.blue
+    );
+    this.indicatorColorState.saturation = saturation;
+    return saturation;
+  }
+
+  private async setIndicatorSaturation(value: CharacteristicValue): Promise<void> {
+    if (!this.isDimmerDevice) {
+      return;
+    }
+
+    this.indicatorColorState.saturation = Number(value);
+    this.scheduleIndicatorColorUpdate();
+  }
+
+  private scheduleIndicatorColorUpdate(): void {
+    if (this.indicatorColorUpdateTimeout) {
+      clearTimeout(this.indicatorColorUpdateTimeout);
+    }
+
+    this.indicatorColorUpdateTimeout = setTimeout(() => {
+      void this.pushIndicatorColor().catch(error => {
+        void this.handleDeviceError('set indicator color', error);
+      });
+    }, 250);
+  }
+
+  private async pushIndicatorColor(): Promise<void> {
+    if (!this.isDimmerDevice) {
+      return;
+    }
+
+    const [red, green, blue] = this.hsvToRgb(
+      this.indicatorColorState.hue,
+      this.indicatorColorState.saturation,
+      100
+    );
+
+    const dimmer = this.device as VeSyncDimmerSwitch;
+    const success = await dimmer.rgbColorSet(red, green, blue);
+
+    if (!success) {
+      throw new Error('Failed to update indicator color');
+    }
+
+    this.indicatorColorState = {
+      hue: this.indicatorColorState.hue,
+      saturation: this.indicatorColorState.saturation,
+    };
+
+    await this.refreshDimmerDetails();
+  }
+
+  private hsvToRgb(h: number, s: number, v: number): [number, number, number] {
+    let hue = h % 360;
+    if (hue < 0) {
+      hue += 360;
+    }
+    const saturation = Math.max(0, Math.min(100, s)) / 100;
+    const value = Math.max(0, Math.min(100, v)) / 100;
+
+    const c = value * saturation;
+    const x = c * (1 - Math.abs(((hue / 60) % 2) - 1));
+    const m = value - c;
+
+    let rPrime = 0;
+    let gPrime = 0;
+    let bPrime = 0;
+
+    if (hue < 60) {
+      rPrime = c;
+      gPrime = x;
+    } else if (hue < 120) {
+      rPrime = x;
+      gPrime = c;
+    } else if (hue < 180) {
+      gPrime = c;
+      bPrime = x;
+    } else if (hue < 240) {
+      gPrime = x;
+      bPrime = c;
+    } else if (hue < 300) {
+      rPrime = x;
+      bPrime = c;
+    } else {
+      rPrime = c;
+      bPrime = x;
+    }
+
+    const red = Math.round((rPrime + m) * 255);
+    const green = Math.round((gPrime + m) * 255);
+    const blue = Math.round((bPrime + m) * 255);
+
+    return [red, green, blue];
+  }
+
+  private rgbToHsv(r: number, g: number, b: number): { hue: number; saturation: number; value: number } {
+    const red = r / 255;
+    const green = g / 255;
+    const blue = b / 255;
+
+    const max = Math.max(red, green, blue);
+    const min = Math.min(red, green, blue);
+    const delta = max - min;
+
+    let hue = 0;
+    if (delta !== 0) {
+      if (max === red) {
+        hue = ((green - blue) / delta) % 6;
+      } else if (max === green) {
+        hue = (blue - red) / delta + 2;
+      } else {
+        hue = (red - green) / delta + 4;
+      }
+      hue *= 60;
+      if (hue < 0) {
+        hue += 360;
+      }
+    }
+
+    const saturation = max === 0 ? 0 : (delta / max) * 100;
+    const value = max * 100;
+
+    return {
+      hue: Math.round(hue),
+      saturation: Math.round(saturation),
+      value: Math.round(value),
+    };
+  }
+
+  private async refreshDimmerDetails(): Promise<void> {
+    if (!this.isDimmerDevice) {
+      return;
+    }
+
+    const dimmer = this.device as VeSyncDimmerSwitch;
+    try {
+      const now = Date.now();
+      if (
+        now - this.lastDimmerRefresh >= LightAccessory.DIMMER_REFRESH_DEBOUNCE_MS &&
+        typeof (dimmer as any).getDetails === 'function'
+      ) {
+        await (dimmer as any).getDetails();
+        this.lastDimmerRefresh = now;
+      }
+    } catch (error) {
+      this.platform.log.debug(
+        `${this.device.deviceName}: failed to refresh details after state change`,
+        error instanceof Error ? error : new Error(String(error))
+      );
+    }
+  }
+}
