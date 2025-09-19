@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.3.5 (2025-09-19)
+
+### Fixed
+- **🚨 ESWD16 Initialization Regression**: Restore dimmer detection during accessory setup so HomeKit now shows the brightness slider and indicator service without crashing on launch.
+- **🛠️ Safe Capability Fallbacks**: Ensure cached ESWD16 accessories derive capabilities before the base constructor runs, preventing `hasBrightness` errors during rediscovery and background polls.
+
+### Packaging
+- **📦 Built Distribution**: Regenerated compiled `dist/` output and verified release bundle to include the new dimmer logic.
+
 ## 1.3.4 (2025-09-18)
 
 ### Added
