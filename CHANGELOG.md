@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.6 (2025-09-19)
+
+### Dependencies
+- **📦 tsvesync**: Updated to 1.3.5 to keep the plugin aligned with the latest library release.
+
 ## 1.3.5 (2025-09-19)
 
 ### Fixed
