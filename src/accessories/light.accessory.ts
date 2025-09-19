@@ -10,8 +10,8 @@ const DEFAULT_COLOR_TEMP = MIN_COLOR_TEMP;
 
 export class LightAccessory extends BaseAccessory {
   protected readonly device: VeSyncLightDevice;
-  private readonly capabilities: DeviceCapabilities;
-  private readonly isDimmerDevice: boolean;
+  private capabilities!: DeviceCapabilities;
+  private isDimmerDevice = false;
   private indicatorService?: Service;
   private indicatorColorState = { hue: 0, saturation: 0 };
   private indicatorColorUpdateTimeout?: NodeJS.Timeout;
@@ -25,8 +25,6 @@ export class LightAccessory extends BaseAccessory {
   ) {
     super(platform, accessory, device);
     this.device = device;
-    this.isDimmerDevice = this.detectDimmer(device);
-    this.capabilities = this.getDeviceCapabilities();
   }
 
   protected setupService(): void {
@@ -42,6 +40,8 @@ export class LightAccessory extends BaseAccessory {
     );
 
     // Set up optional characteristics based on device capabilities
+    this.isDimmerDevice = this.detectDimmer(this.device);
+    this.capabilities = this.getDeviceCapabilities();
     const capabilities = this.capabilities;
 
     if (capabilities.hasBrightness) {
