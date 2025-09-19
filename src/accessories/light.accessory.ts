@@ -15,6 +15,7 @@ export class LightAccessory extends BaseAccessory {
   private indicatorService?: Service;
   private indicatorColorState = { hue: 0, saturation: 0 };
   private indicatorColorUpdateTimeout?: NodeJS.Timeout;
+  private lastKnownDimmerBrightness = 100;
   private lastDimmerRefresh = 0;
   private static readonly DIMMER_REFRESH_DEBOUNCE_MS = 2000;
 
@@ -25,6 +26,11 @@ export class LightAccessory extends BaseAccessory {
   ) {
     super(platform, accessory, device);
     this.device = device;
+
+    const initialBrightness = Number((device as any)?.brightness);
+    if (!Number.isNaN(initialBrightness) && initialBrightness > 0) {
+      this.lastKnownDimmerBrightness = Math.min(100, Math.max(1, initialBrightness));
+    }
   }
 
   protected setupService(): void {
@@ -122,6 +128,10 @@ export class LightAccessory extends BaseAccessory {
         this.platform.Characteristic.Brightness,
         lightDetails.brightness
       );
+
+      if (this.isDimmerDevice && lightDetails.brightness > 0) {
+        this.lastKnownDimmerBrightness = lightDetails.brightness;
+      }
     }
 
     // Update color temperature if supported
@@ -203,17 +213,20 @@ export class LightAccessory extends BaseAccessory {
   private async setOn(value: CharacteristicValue): Promise<void> {
     try {
       const isOn = value as boolean;
+
+      if (this.isDimmerDevice) {
+        const targetBrightness = isOn ? this.resolveDimmerOnBrightness() : 0;
+        await this.setBrightness(targetBrightness);
+        return;
+      }
+
       const success = isOn ? await this.device.turnOn() : await this.device.turnOff();
-      
+
       if (!success) {
         throw new Error(`Failed to turn ${isOn ? 'on' : 'off'} device`);
       }
-      
-      await this.persistDeviceState('deviceStatus', isOn ? 'on' : 'off');
 
-      if (this.isDimmerDevice) {
-        await this.refreshDimmerDetails();
-      }
+      await this.persistDeviceState('deviceStatus', isOn ? 'on' : 'off');
     } catch (error) {
       this.handleDeviceError('set on state', error);
     }
@@ -226,32 +239,31 @@ export class LightAccessory extends BaseAccessory {
   private async setBrightness(value: CharacteristicValue): Promise<void> {
     try {
       const target = Math.round(Number(value));
+      const brightness = Math.min(100, Math.max(this.isDimmerDevice ? 0 : 0, target));
 
-      if (this.isDimmerDevice && target <= 0) {
-        const success = await this.device.turnOff();
-        if (!success) {
+      let success = await this.device.setBrightness(brightness);
+
+      if (!success && this.isDimmerDevice && brightness === 0) {
+        const fallback = await (this.device as VeSyncDimmerSwitch).turnOff();
+        if (!fallback) {
           throw new Error('Failed to turn off device when setting brightness to 0');
         }
-        await this.persistDeviceState('deviceStatus', 'off');
-        await this.persistDeviceState('brightness', 0);
-        await this.refreshDimmerDetails();
-        return;
+        success = true;
       }
-
-      const brightness = Math.min(100, Math.max(this.isDimmerDevice ? 1 : 0, target));
-
-      const success = await this.device.setBrightness(brightness);
 
       if (!success) {
         throw new Error(`Failed to set brightness to ${brightness}`);
       }
 
       await this.persistDeviceState('brightness', brightness);
-      if (this.isDimmerDevice && brightness > 0) {
-        await this.persistDeviceState('deviceStatus', 'on');
-      }
 
       if (this.isDimmerDevice) {
+        if (brightness > 0) {
+          this.lastKnownDimmerBrightness = brightness;
+          await this.persistDeviceState('deviceStatus', 'on');
+        } else {
+          await this.persistDeviceState('deviceStatus', 'off');
+        }
         await this.refreshDimmerDetails();
       }
     } catch (error) {
@@ -532,6 +544,9 @@ export class LightAccessory extends BaseAccessory {
     );
 
     const dimmer = this.device as VeSyncDimmerSwitch;
+    if (dimmer.rgbLightStatus !== 'on') {
+      await dimmer.rgbColorOn();
+    }
     const success = await dimmer.rgbColorSet(red, green, blue);
 
     if (!success) {
@@ -644,5 +659,22 @@ export class LightAccessory extends BaseAccessory {
         error instanceof Error ? error : new Error(String(error))
       );
     }
+  }
+
+  private resolveDimmerOnBrightness(): number {
+    const dimmer = this.device as VeSyncDimmerSwitch;
+    const current = Number((dimmer as any).brightness);
+    if (!Number.isNaN(current) && current > 0) {
+      this.lastKnownDimmerBrightness = Math.min(100, Math.max(1, current));
+      return this.lastKnownDimmerBrightness;
+    }
+
+    const persisted = Number(this.accessory.context?.device?.details?.brightness);
+    if (!Number.isNaN(persisted) && persisted > 0) {
+      this.lastKnownDimmerBrightness = Math.min(100, Math.max(1, persisted));
+      return this.lastKnownDimmerBrightness;
+    }
+
+    return Math.min(100, Math.max(1, this.lastKnownDimmerBrightness));
   }
 }

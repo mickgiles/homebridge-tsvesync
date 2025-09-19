@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.3.8 (2025-09-19)
+
+### Fixed
+- **🔌 HomeKit Toggle Reliability**: ESWD16 dimmer switches now translate HomeKit On/Off into brightness updates, restoring the wall switch behavior that regressed in 1.3.7.
+- **🌈 Indicator Ring Activation**: Hue/Saturation changes automatically wake the locator ring before applying new colors, so the Home app color picker works every time.
+- **🔁 State Refresh**: Brightness changes persist the latest level and refresh the cloud snapshot, keeping HomeKit and VeSync in sync after manual toggles.
+
+### Dependencies
+- **📦 tsvesync**: Updated to 1.3.8 for matching ESWD16 API fixes and the exported `VeSyncDimmerSwitch` helper.
+
 ## 1.3.7 (2025-09-19)
 
 ### Dependencies

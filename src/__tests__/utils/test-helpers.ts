@@ -1,11 +1,8 @@
 import { Logger } from 'homebridge';
 import { PluginLogger } from '../../utils/logger';
 import { RetryManager } from '../../utils/retry';
-import { VeSyncOutlet } from '../../types/device.types';
+import { VeSyncOutlet, VeSyncSwitch, VeSyncBulb, VeSyncFan, VeSyncDimmerSwitch } from '../../types/device.types';
 import { VeSync } from 'tsvesync';
-import { VeSyncSwitch } from '../../types/device.types';
-import { VeSyncBulb } from '../../types/device.types';
-import { VeSyncFan } from '../../types/device.types';
 
 /**
  * Creates a mock Logger instance for testing
@@ -537,6 +534,97 @@ export const createMockBulb = (config: MockBulbConfig = {}): jest.Mocked<VeSyncB
     setColorTemperature: jest.fn().mockResolvedValue(true),
     setColor: jest.fn().mockResolvedValue(true),
   } as unknown as jest.Mocked<VeSyncBulb>;
+};
+
+export interface MockDimmerConfig {
+  deviceName?: string;
+  deviceType?: string;
+  cid?: string;
+  uuid?: string;
+  brightness?: number;
+  deviceStatus?: 'on' | 'off';
+  rgbLightStatus?: 'on' | 'off';
+  indicatorLightStatus?: 'on' | 'off';
+  failBrightnessOnZero?: boolean;
+}
+
+export const createMockDimmer = (config: MockDimmerConfig = {}): jest.Mocked<VeSyncDimmerSwitch> => {
+  const state = {
+    brightness: config.brightness ?? 50,
+    deviceStatus: config.deviceStatus ?? 'off',
+    rgbLightStatus: config.rgbLightStatus ?? 'off',
+    indicatorLightStatus: config.indicatorLightStatus ?? 'off',
+    rgbLightValue: { red: 0, green: 0, blue: 0 },
+  };
+
+  const dimmer: Partial<VeSyncDimmerSwitch> = {
+    deviceName: config.deviceName || 'Test Dimmer',
+    deviceType: config.deviceType || 'ESWD16',
+    cid: config.cid || 'test-dimmer-cid',
+    uuid: config.uuid || 'test-dimmer-uuid',
+    deviceStatus: state.deviceStatus,
+    brightness: state.brightness,
+    rgbLightStatus: state.rgbLightStatus,
+    indicatorLightStatus: state.indicatorLightStatus,
+    rgbLightValue: state.rgbLightValue,
+    getDetails: jest.fn().mockResolvedValue(true),
+    turnOn: jest.fn().mockImplementation(async () => {
+      state.deviceStatus = 'on';
+      dimmer.deviceStatus = 'on';
+      return true;
+    }),
+    turnOff: jest.fn().mockImplementation(async () => {
+      state.deviceStatus = 'off';
+      dimmer.deviceStatus = 'off';
+      state.brightness = 0;
+      dimmer.brightness = 0;
+      return true;
+    }),
+    setBrightness: jest.fn().mockImplementation(async (value: number) => {
+      if (config.failBrightnessOnZero && value === 0) {
+        return false;
+      }
+      state.brightness = value;
+      dimmer.brightness = value;
+      if (value > 0) {
+        state.deviceStatus = 'on';
+        dimmer.deviceStatus = 'on';
+      } else {
+        state.deviceStatus = 'off';
+        dimmer.deviceStatus = 'off';
+      }
+      return true;
+    }),
+    rgbColorSet: jest.fn().mockImplementation(async (red: number, green: number, blue: number) => {
+      state.rgbLightValue = { red, green, blue };
+      dimmer.rgbLightValue = state.rgbLightValue;
+      state.rgbLightStatus = 'on';
+      dimmer.rgbLightStatus = 'on';
+      return true;
+    }),
+    rgbColorOn: jest.fn().mockImplementation(async () => {
+      state.rgbLightStatus = 'on';
+      dimmer.rgbLightStatus = 'on';
+      return true;
+    }),
+    rgbColorOff: jest.fn().mockImplementation(async () => {
+      state.rgbLightStatus = 'off';
+      dimmer.rgbLightStatus = 'off';
+      return true;
+    }),
+    indicatorLightOn: jest.fn().mockImplementation(async () => {
+      state.indicatorLightStatus = 'on';
+      dimmer.indicatorLightStatus = 'on';
+      return true;
+    }),
+    indicatorLightOff: jest.fn().mockImplementation(async () => {
+      state.indicatorLightStatus = 'off';
+      dimmer.indicatorLightStatus = 'off';
+      return true;
+    }),
+  };
+
+  return dimmer as jest.Mocked<VeSyncDimmerSwitch>;
 };
 
 /**

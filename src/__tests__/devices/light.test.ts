@@ -7,10 +7,11 @@ import { API, Logger, PlatformAccessory, Service as ServiceType, Characteristic 
 import { VeSync } from 'tsvesync';
 import { TSVESyncPlatform } from '../../platform';
 import { TEST_CONFIG } from '../setup';
-import { createMockLogger, createMockBulb } from '../utils/test-helpers';
+import { createMockLogger, createMockBulb, createMockDimmer, flushPromises } from '../utils/test-helpers';
 import { DeviceFactory } from '../../utils/device-factory';
 import { BaseAccessory } from '../../accessories/base.accessory';
-import { VeSyncBulb } from '../../types/device.types';
+import { LightAccessory } from '../../accessories/light.accessory';
+import { VeSyncBulb, VeSyncDimmerSwitch } from '../../types/device.types';
 import { RetryManager } from '../../utils/retry';
 
 const mockDeviceFactory = jest.mocked(DeviceFactory);
@@ -378,6 +379,195 @@ describe('Light Device Tests', () => {
       const lightService = mockAccessory.getService(platform.Service.Lightbulb);
       expect(lightService).toBeDefined();
       expect(mockBulb.deviceType).toBe('ESL100MC');
+    });
+  });
+
+  describe('dimmer device behaviour', () => {
+    const createCharacteristic = (name: string) => {
+      const characteristic: any = {
+        name,
+        onSet: jest.fn().mockImplementation((handler) => {
+          characteristic._onSet = handler;
+          return characteristic;
+        }),
+        onGet: jest.fn().mockImplementation((handler) => {
+          characteristic._onGet = handler;
+          return characteristic;
+        }),
+        updateValue: jest.fn().mockReturnThis(),
+        setProps: jest.fn().mockReturnThis(),
+      };
+      return characteristic;
+    };
+
+    const createService = (characteristics: Map<string, any>) => ({
+      getCharacteristic: jest.fn().mockImplementation((characteristic: any) => {
+        const name = characteristic.name ?? characteristic;
+        if (!characteristics.has(name)) {
+          characteristics.set(name, createCharacteristic(name));
+        }
+        return characteristics.get(name);
+      }),
+      setCharacteristic: jest.fn().mockReturnThis(),
+    });
+
+    interface DimmerTestContext {
+      dimmer: jest.Mocked<VeSyncDimmerSwitch>;
+      accessory: LightAccessory;
+      lightCharacteristics: Map<string, any>;
+      indicatorCharacteristicMaps: Map<string, Map<string, any>>;
+      platformApi: { updatePlatformAccessories: jest.Mock };
+    }
+
+    const buildDimmerContext = (config: Parameters<typeof createMockDimmer>[0] = {}): DimmerTestContext => {
+      const dimmer = createMockDimmer(config);
+      const lightCharacteristics = new Map<string, any>();
+      const indicatorCharacteristicMaps = new Map<string, Map<string, any>>();
+      const indicatorServices = new Map<string, any>();
+
+      const platformApi = {
+        updatePlatformAccessories: jest.fn().mockResolvedValue(undefined),
+      };
+
+      const infoService = {
+        setCharacteristic: jest.fn().mockReturnThis(),
+      };
+
+      const platform = {
+        log: mockLogger,
+        config: {
+          debug: true,
+          retry: {
+            maxRetries: 3,
+          },
+        },
+        api: platformApi,
+        Service: {
+          Lightbulb: { displayName: 'Lightbulb' },
+          AccessoryInformation: { displayName: 'AccessoryInformation' },
+        },
+        Characteristic: {
+          On: { name: 'On' },
+          Brightness: { name: 'Brightness' },
+          ColorTemperature: { name: 'ColorTemperature' },
+          Hue: { name: 'Hue' },
+          Saturation: { name: 'Saturation' },
+          Name: { name: 'Name' },
+        },
+        isReady: jest.fn().mockResolvedValue(true),
+        logError: jest.fn(),
+      } as unknown as TSVESyncPlatform;
+
+      const lightService = createService(lightCharacteristics);
+
+      const accessory = {
+        UUID: 'test-uuid',
+        displayName: 'Dining Lights',
+        context: {},
+        getService: jest.fn().mockImplementation((serviceOrName: any) => {
+          if (serviceOrName === platform.Service.AccessoryInformation) {
+            return infoService;
+          }
+          if (serviceOrName === platform.Service.Lightbulb) {
+            return lightService;
+          }
+          if (typeof serviceOrName === 'string') {
+            return indicatorServices.get(serviceOrName);
+          }
+          return undefined;
+        }),
+        addService: jest.fn().mockImplementation((serviceToken: any, name?: string) => {
+          if (serviceToken === platform.Service.Lightbulb && !name) {
+            return lightService;
+          }
+
+          if (serviceToken === platform.Service.Lightbulb && name) {
+            const characteristicMap = new Map<string, any>();
+            indicatorCharacteristicMaps.set(name, characteristicMap);
+            const service = createService(characteristicMap);
+            indicatorServices.set(name, service);
+            return service;
+          }
+
+          if (serviceToken === platform.Service.AccessoryInformation) {
+            return infoService;
+          }
+
+          return createService(new Map<string, any>());
+        }),
+      } as unknown as PlatformAccessory;
+
+      const accessoryInstance = new LightAccessory(platform, accessory, dimmer);
+
+      return {
+        dimmer,
+        accessory: accessoryInstance,
+        lightCharacteristics,
+        indicatorCharacteristicMaps,
+        platformApi,
+      };
+    };
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('turns a dimmer on by restoring the last brightness level', async () => {
+      const { dimmer, lightCharacteristics } = buildDimmerContext({ brightness: 37 });
+      const onCharacteristic = lightCharacteristics.get('On');
+      expect(onCharacteristic?._onSet).toBeDefined();
+
+      await onCharacteristic._onSet(true);
+
+      expect(dimmer.setBrightness).toHaveBeenCalledWith(37);
+    });
+
+    it('remembers brightness when toggled off and on again', async () => {
+      const { dimmer, lightCharacteristics } = buildDimmerContext({ brightness: 45 });
+      const onCharacteristic = lightCharacteristics.get('On');
+
+      await onCharacteristic._onSet(true);
+      await onCharacteristic._onSet(false);
+      dimmer.setBrightness.mockClear();
+
+      await onCharacteristic._onSet(true);
+
+      expect(dimmer.setBrightness).toHaveBeenCalledWith(45);
+    });
+
+    it('falls back to turnOff when the API rejects zero brightness', async () => {
+      const { dimmer, lightCharacteristics } = buildDimmerContext({ brightness: 60, failBrightnessOnZero: true });
+      const brightnessCharacteristic = lightCharacteristics.get('Brightness');
+      expect(brightnessCharacteristic?._onSet).toBeDefined();
+
+      await brightnessCharacteristic._onSet(0);
+
+      expect(dimmer.setBrightness).toHaveBeenCalledWith(0);
+      expect(dimmer.turnOff).toHaveBeenCalled();
+    });
+
+    it('powers the indicator ring before applying color changes', async () => {
+      jest.useFakeTimers();
+      const { dimmer, indicatorCharacteristicMaps } = buildDimmerContext();
+      const indicatorServiceName = 'Test Dimmer Indicator';
+      const indicatorMap = indicatorCharacteristicMaps.get(indicatorServiceName);
+      expect(indicatorMap).toBeDefined();
+
+      const hueCharacteristic = indicatorMap?.get('Hue');
+      const saturationCharacteristic = indicatorMap?.get('Saturation');
+      expect(hueCharacteristic?._onSet).toBeDefined();
+      expect(saturationCharacteristic?._onSet).toBeDefined();
+
+      await hueCharacteristic._onSet(120);
+      await saturationCharacteristic._onSet(80);
+
+      jest.runOnlyPendingTimers();
+      await flushPromises();
+
+      expect(dimmer.rgbColorOn).toHaveBeenCalled();
+      expect(dimmer.rgbColorSet).toHaveBeenCalled();
+
+      jest.useRealTimers();
     });
   });
 }); 
