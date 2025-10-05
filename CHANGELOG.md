@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.3.9 (2025-10-05)
+
+### Fixed
+- **🗻 EverestAir Toggle Reliability**: HomeKit power commands now relay the updated tsvesync `powerSwitch` payloads so EverestAir purifiers actually turn on/off instead of silently ignoring requests.
+- **🎚️ Manual Fan Control**: Fan speed updates forward the new manual speed payloads, preventing EverestAir and Vital purifiers from snapping back to auto at max speed after HomeKit adjustments.
+
+### Dependencies
+- **📦 tsvesync**: Updated to 1.3.9 for the synchronized bypassV2 API fixes and auto-state normalization.
+
 ## 1.3.8 (2025-09-19)
 
 ### Fixed
