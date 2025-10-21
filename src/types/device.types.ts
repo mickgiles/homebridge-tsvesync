@@ -28,14 +28,23 @@ export interface VeSyncDeviceWithPower extends VeSyncBaseDevice {
 export interface VeSyncDeviceWithBrightness extends VeSyncDeviceWithPower {
   brightness: number;
   setBrightness(value: number): Promise<boolean>;
+  getBrightness?(): number;
 }
 
 export interface VeSyncDeviceWithColor extends VeSyncDeviceWithBrightness {
   colorTemp?: number;
   hue?: number;
   saturation?: number;
+  getColorTempPercent?(): number;
+  getColorTempKelvin?(): number;
+  getColorHue?(): number;
+  getColorSaturation?(): number;
+  getColorValue?(): number;
+  getRGBValues?(): { red: number; green: number; blue: number };
+  hasFeature?(feature: string): boolean;
+  getColorModel?(): string;
   setColorTemperature?(value: number): Promise<boolean>;
-  setColor?(hue: number, saturation: number): Promise<boolean>;
+  setColor?(hue: number, saturation: number, value?: number): Promise<boolean>;
 }
 
 export interface VeSyncDeviceWithSpeed extends VeSyncDeviceWithPower {

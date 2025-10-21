@@ -7,6 +7,17 @@ import { DeviceCapabilities, VeSyncBulb, VeSyncDimmerSwitch, VeSyncLightDevice }
 const MIN_COLOR_TEMP = 140; // 7143K (cool)
 const MAX_COLOR_TEMP = 500; // 2000K (warm)
 const DEFAULT_COLOR_TEMP = MIN_COLOR_TEMP;
+const DEVICE_MIN_KELVIN = 2700;
+const DEVICE_MAX_KELVIN = 6500;
+
+const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max);
+const clampMired = (value: number): number => clamp(Math.round(value), MIN_COLOR_TEMP, MAX_COLOR_TEMP);
+const percentToKelvin = (percent: number): number => DEVICE_MIN_KELVIN + ((DEVICE_MAX_KELVIN - DEVICE_MIN_KELVIN) * clamp(percent, 0, 100) / 100);
+const kelvinToPercent = (kelvin: number): number => ((clamp(kelvin, DEVICE_MIN_KELVIN, DEVICE_MAX_KELVIN) - DEVICE_MIN_KELVIN) / (DEVICE_MAX_KELVIN - DEVICE_MIN_KELVIN)) * 100;
+const kelvinToMired = (kelvin: number): number => Math.round(1_000_000 / clamp(kelvin, DEVICE_MIN_KELVIN, DEVICE_MAX_KELVIN));
+const miredToKelvin = (mired: number): number => clamp(Math.round(1_000_000 / clamp(mired, MIN_COLOR_TEMP, MAX_COLOR_TEMP)), DEVICE_MIN_KELVIN, DEVICE_MAX_KELVIN);
+const percentToMired = (percent: number): number => clampMired(kelvinToMired(percentToKelvin(percent)));
+const miredToPercent = (mired: number): number => kelvinToPercent(miredToKelvin(mired));
 
 export class LightAccessory extends BaseAccessory {
   protected readonly device: VeSyncLightDevice;
@@ -115,46 +126,82 @@ export class LightAccessory extends BaseAccessory {
       saturation?: number;
     };
 
-    // Update active state
-    const isActive = lightDetails.deviceStatus === 'on';
+    const deviceStatus = lightDetails.deviceStatus ?? this.device.deviceStatus;
+    const isActive = deviceStatus === 'on';
     this.updateCharacteristicValue(
       this.platform.Characteristic.On,
       isActive
     );
 
     // Update brightness if supported
-    if (this.capabilities.hasBrightness && lightDetails.brightness !== undefined) {
-      this.updateCharacteristicValue(
-        this.platform.Characteristic.Brightness,
-        lightDetails.brightness
-      );
+    if (this.capabilities.hasBrightness) {
+      let brightness: number | undefined = lightDetails.brightness;
 
-      if (this.isDimmerDevice && lightDetails.brightness > 0) {
-        this.lastKnownDimmerBrightness = lightDetails.brightness;
+      if (!this.isDimmerDevice) {
+        const bulb = this.device as VeSyncBulb;
+        if (typeof bulb.getBrightness === 'function') {
+          brightness = bulb.getBrightness();
+        }
+      }
+
+      if (brightness !== undefined) {
+        this.updateCharacteristicValue(
+          this.platform.Characteristic.Brightness,
+          brightness
+        );
+
+        if (this.isDimmerDevice && brightness > 0) {
+          this.lastKnownDimmerBrightness = brightness;
+        }
       }
     }
 
     // Update color temperature if supported
-    if (this.capabilities.hasColorTemp && lightDetails.colorTemp !== undefined) {
-      this.updateCharacteristicValue(
-        this.platform.Characteristic.ColorTemperature,
-        lightDetails.colorTemp
-      );
+    if (this.capabilities.hasColorTemp && !this.isDimmerDevice) {
+      const bulb = this.device as VeSyncBulb;
+      let tempPercent: number | undefined;
+
+      if (typeof bulb.getColorTempPercent === 'function') {
+        tempPercent = bulb.getColorTempPercent();
+      } else if (typeof lightDetails.colorTemp === 'number') {
+        tempPercent = lightDetails.colorTemp > 100
+          ? miredToPercent(lightDetails.colorTemp)
+          : lightDetails.colorTemp;
+      }
+
+      if (typeof tempPercent === 'number' && !Number.isNaN(tempPercent) && tempPercent > 0) {
+        const mired = percentToMired(tempPercent);
+        this.updateCharacteristicValue(
+          this.platform.Characteristic.ColorTemperature,
+          mired
+        );
+      }
     }
 
     // Update color if supported
-    if (this.capabilities.hasColor) {
-      if (lightDetails.hue !== undefined) {
-        this.updateCharacteristicValue(
-          this.platform.Characteristic.Hue,
-          lightDetails.hue
-        );
-      }
-      if (lightDetails.saturation !== undefined) {
-        this.updateCharacteristicValue(
-          this.platform.Characteristic.Saturation,
-          lightDetails.saturation
-        );
+    if (this.capabilities.hasColor && !this.isDimmerDevice) {
+      const bulb = this.device as VeSyncBulb;
+      const colorModel = typeof bulb.getColorModel === 'function' ? bulb.getColorModel() : 'none';
+
+      if (colorModel === 'rgb' && typeof bulb.getRGBValues === 'function') {
+        const rgb = bulb.getRGBValues();
+        const hsv = this.rgbToHsv(rgb.red, rgb.green, rgb.blue);
+        this.updateCharacteristicValue(this.platform.Characteristic.Hue, hsv.hue);
+        this.updateCharacteristicValue(this.platform.Characteristic.Saturation, hsv.saturation);
+      } else {
+        const hue = typeof bulb.getColorHue === 'function'
+          ? bulb.getColorHue()
+          : lightDetails.hue;
+        const saturation = typeof bulb.getColorSaturation === 'function'
+          ? bulb.getColorSaturation()
+          : lightDetails.saturation;
+
+        if (typeof hue === 'number') {
+          this.updateCharacteristicValue(this.platform.Characteristic.Hue, hue);
+        }
+        if (typeof saturation === 'number') {
+          this.updateCharacteristicValue(this.platform.Characteristic.Saturation, saturation);
+        }
       }
     }
 
@@ -193,10 +240,26 @@ export class LightAccessory extends BaseAccessory {
     }
 
     const model = this.device.deviceType.toUpperCase();
+    const bulb = this.device as VeSyncBulb;
+    const supports = typeof bulb.hasFeature === 'function'
+      ? bulb.hasFeature.bind(bulb)
+      : (feature: string): boolean => {
+        if (feature === 'color_temp') {
+          return model.includes('CW') || model.includes('MC') || model === 'XYD0001';
+        }
+        if (feature === 'rgb_shift') {
+          return model.includes('MC') || model === 'XYD0001';
+        }
+        if (feature === 'dimmable') {
+          return true;
+        }
+        return false;
+      };
+
     return {
-      hasBrightness: true, // All VeSync bulbs support brightness
-      hasColorTemp: model.includes('CW') || model.includes('MC'), // CW and MC models support color temperature
-      hasColor: model.includes('MC') || model === 'XYD0001', // MC models and XYD0001 support color
+      hasBrightness: typeof (this.device as any).setBrightness === 'function',
+      hasColorTemp: supports('color_temp'),
+      hasColor: supports('rgb_shift'),
       hasSpeed: false,
       hasHumidity: false,
       hasAirQuality: false,
@@ -233,6 +296,10 @@ export class LightAccessory extends BaseAccessory {
   }
 
   private async getBrightness(): Promise<CharacteristicValue> {
+    const deviceWithGetter = this.device as VeSyncDimmerSwitch & { getBrightness?: () => number };
+    if (typeof deviceWithGetter.getBrightness === 'function') {
+      return deviceWithGetter.getBrightness();
+    }
     return this.device.brightness;
   }
 
@@ -277,7 +344,19 @@ export class LightAccessory extends BaseAccessory {
     }
 
     const bulb = this.device as VeSyncBulb;
-    return bulb.colorTemp || DEFAULT_COLOR_TEMP;
+    if (typeof bulb.getColorTempPercent === 'function') {
+      const percent = bulb.getColorTempPercent();
+      if (percent > 0) {
+        return percentToMired(percent);
+      }
+    }
+
+    const stored = this.accessory.context?.device?.details?.colorTemp;
+    if (typeof stored === 'number') {
+      return clampMired(stored);
+    }
+
+    return DEFAULT_COLOR_TEMP;
   }
 
   private async setColorTemperature(value: CharacteristicValue): Promise<void> {
@@ -292,7 +371,8 @@ export class LightAccessory extends BaseAccessory {
         throw new Error('Device does not support color temperature');
       }
 
-      const success = await bulb.setColorTemperature(value as number);
+      const percent = miredToPercent(Number(value));
+      const success = await bulb.setColorTemperature(percent);
 
       if (!success) {
         throw new Error(`Failed to set color temperature to ${value}`);
@@ -310,7 +390,18 @@ export class LightAccessory extends BaseAccessory {
     }
 
     const bulb = this.device as VeSyncBulb;
-    return bulb.hue || 0;
+    const colorModel = typeof bulb.getColorModel === 'function' ? bulb.getColorModel() : 'none';
+
+    if (colorModel === 'rgb' && typeof bulb.getRGBValues === 'function') {
+      const rgb = bulb.getRGBValues();
+      return this.rgbToHsv(rgb.red, rgb.green, rgb.blue).hue;
+    }
+
+    if (typeof bulb.getColorHue === 'function') {
+      return bulb.getColorHue();
+    }
+
+    return 0;
   }
 
   private async getSaturation(): Promise<CharacteristicValue> {
@@ -319,7 +410,18 @@ export class LightAccessory extends BaseAccessory {
     }
 
     const bulb = this.device as VeSyncBulb;
-    return bulb.saturation || 0;
+    const colorModel = typeof bulb.getColorModel === 'function' ? bulb.getColorModel() : 'none';
+
+    if (colorModel === 'rgb' && typeof bulb.getRGBValues === 'function') {
+      const rgb = bulb.getRGBValues();
+      return this.rgbToHsv(rgb.red, rgb.green, rgb.blue).saturation;
+    }
+
+    if (typeof bulb.getColorSaturation === 'function') {
+      return bulb.getColorSaturation();
+    }
+
+    return 0;
   }
 
   private async setHue(value: CharacteristicValue): Promise<void> {
@@ -334,9 +436,18 @@ export class LightAccessory extends BaseAccessory {
         throw new Error('Device does not support color');
       }
 
+      const fallbackSaturation = this.service.getCharacteristic(this.platform.Characteristic.Saturation).value as number | undefined;
+      const currentSaturation = typeof bulb.getColorSaturation === 'function'
+        ? bulb.getColorSaturation()
+        : (typeof fallbackSaturation === 'number' ? fallbackSaturation : 0);
+      const currentValue = typeof bulb.getColorValue === 'function'
+        ? bulb.getColorValue()
+        : 100;
+
       const success = await bulb.setColor(
-        value as number,
-        bulb.saturation || 0
+        Number(value),
+        currentSaturation || 0,
+        currentValue || 100
       );
 
       if (!success) {
@@ -361,9 +472,18 @@ export class LightAccessory extends BaseAccessory {
         throw new Error('Device does not support color');
       }
 
+      const fallbackHue = this.service.getCharacteristic(this.platform.Characteristic.Hue).value as number | undefined;
+      const currentHue = typeof bulb.getColorHue === 'function'
+        ? bulb.getColorHue()
+        : (typeof fallbackHue === 'number' ? fallbackHue : 0);
+      const currentValue = typeof bulb.getColorValue === 'function'
+        ? bulb.getColorValue()
+        : 100;
+
       const success = await bulb.setColor(
-        bulb.hue || 0,
-        value as number
+        currentHue || 0,
+        Number(value),
+        currentValue || 100
       );
 
       if (!success) {

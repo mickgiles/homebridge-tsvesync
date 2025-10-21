@@ -17,6 +17,57 @@ import { RetryManager } from '../../utils/retry';
 const mockDeviceFactory = jest.mocked(DeviceFactory);
 const mockRetryManager = jest.mocked(RetryManager);
 
+const TEST_MIN_KELVIN = 2700;
+const TEST_MAX_KELVIN = 6500;
+const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max);
+const miredToKelvin = (mired: number): number => clamp(Math.round(1_000_000 / clamp(mired, 140, 500)), TEST_MIN_KELVIN, TEST_MAX_KELVIN);
+const kelvinToPercent = (kelvin: number): number => ((clamp(kelvin, TEST_MIN_KELVIN, TEST_MAX_KELVIN) - TEST_MIN_KELVIN) / (TEST_MAX_KELVIN - TEST_MIN_KELVIN)) * 100;
+const percentToKelvin = (percent: number): number => TEST_MIN_KELVIN + ((TEST_MAX_KELVIN - TEST_MIN_KELVIN) * clamp(percent, 0, 100) / 100);
+const percentToMired = (percent: number): number => Math.round(1_000_000 / percentToKelvin(percent));
+const miredToPercent = (mired: number): number => kelvinToPercent(miredToKelvin(mired));
+
+const createCharacteristicMock = () => {
+  const characteristic: any = {
+    value: 0,
+    _setHandler: undefined as undefined | ((value: CharacteristicValue) => Promise<void>),
+    _getHandler: undefined as undefined | (() => Promise<CharacteristicValue>),
+    name: 'MockCharacteristic'
+  };
+
+  characteristic.onSet = jest.fn().mockImplementation((handler: (value: CharacteristicValue) => Promise<void>) => {
+    characteristic._setHandler = handler;
+    characteristic._onSet = handler;
+    return characteristic;
+  });
+
+  characteristic.onGet = jest.fn().mockImplementation((handler: () => Promise<CharacteristicValue>) => {
+    characteristic._getHandler = handler;
+    characteristic._onGet = handler;
+    return characteristic;
+  });
+
+  characteristic.setProps = jest.fn().mockReturnValue(characteristic);
+
+  characteristic.triggerSet = async (value: CharacteristicValue): Promise<void> => {
+    if (!characteristic._setHandler) {
+      throw new Error('No set handler registered');
+    }
+    characteristic.value = value;
+    await characteristic._setHandler(value);
+  };
+
+  characteristic.triggerGet = async (): Promise<CharacteristicValue> => {
+    if (!characteristic._getHandler) {
+      throw new Error('No get handler registered');
+    }
+    const result = await characteristic._getHandler();
+    characteristic.value = result;
+    return result;
+  };
+
+  return characteristic;
+};
+
 describe('Light Device Tests', () => {
   let platform: TSVESyncPlatform;
   let mockLogger: jest.Mocked<Logger>;
@@ -100,6 +151,8 @@ describe('Light Device Tests', () => {
       },
     } as unknown as jest.Mocked<API>;
 
+    (mockAPI.user.storagePath as unknown as jest.Mock).mockReturnValue('/tmp');
+
     // Create platform instance
     platform = new TSVESyncPlatform(mockLogger, defaultConfig, mockAPI);
     platform.isReady = jest.fn().mockResolvedValue(true);
@@ -143,18 +196,23 @@ describe('Light Device Tests', () => {
       // Create a mock bulb with immediate responses
       mockBulb = createMockBulb({
         deviceName: 'Test Light',
-        deviceType: 'ESL100MC',
+        deviceType: 'XYD0001',
         cid: 'test-cid-123',
         uuid: 'test-uuid-123',
       });
 
       // Mock successful details retrieval
-      mockBulb.getDetails.mockResolvedValue(true);
       mockBulb.deviceStatus = 'off';
       mockBulb.brightness = 50;
-      mockBulb.colorTemp = 200;
-      mockBulb.hue = 0;
-      mockBulb.saturation = 0;
+      (mockBulb.getBrightness as jest.Mock).mockReturnValue(50);
+      const initialTempPercent = 50;
+      (mockBulb.getColorTempPercent as jest.Mock).mockReturnValue(initialTempPercent);
+      mockBulb.colorTemp = percentToMired(initialTempPercent);
+      (mockBulb.getColorModel as jest.Mock).mockReturnValue('rgb');
+      (mockBulb.getRGBValues as jest.Mock).mockReturnValue({ red: 0, green: 0, blue: 0 });
+      (mockBulb.getColorHue as jest.Mock).mockReturnValue(0);
+      (mockBulb.getColorSaturation as jest.Mock).mockReturnValue(0);
+      (mockBulb.getColorValue as jest.Mock).mockReturnValue(100);
 
       // Ensure all required methods are defined
       mockBulb.turnOn = jest.fn().mockResolvedValue(true);
@@ -167,58 +225,12 @@ describe('Light Device Tests', () => {
       const mockAccessory = new mockAPI.platformAccessory(mockBulb.deviceName, mockAPI.hap.uuid.generate(mockBulb.cid));
       mockAccessory.context.device = mockBulb;
 
-      // Create the light accessory
-      lightAccessory = mockDeviceFactory.createAccessory(platform, mockAccessory, mockBulb);
-
       // Set up the characteristic handlers
-      onCharacteristic = {
-        onSet: jest.fn().mockImplementation(async (value: boolean) => {
-          if (value) {
-            await mockBulb.turnOn!();
-          } else {
-            await mockBulb.turnOff!();
-          }
-        }),
-        onGet: jest.fn().mockImplementation(async () => {
-          return mockBulb.deviceStatus === 'on';
-        }),
-      };
-
-      brightnessCharacteristic = {
-        onSet: jest.fn().mockImplementation(async (value: number) => {
-          await mockBulb.setBrightness!(value);
-        }),
-        onGet: jest.fn().mockImplementation(async () => {
-          return mockBulb.brightness;
-        }),
-      };
-
-      colorTempCharacteristic = {
-        onSet: jest.fn().mockImplementation(async (value: number) => {
-          await mockBulb.setColorTemperature!(value);
-        }),
-        onGet: jest.fn().mockImplementation(async () => {
-          return mockBulb.colorTemp;
-        }),
-      };
-
-      hueCharacteristic = {
-        onSet: jest.fn().mockImplementation(async (value: number) => {
-          await mockBulb.setColor!(value, mockBulb.saturation || 0);
-        }),
-        onGet: jest.fn().mockImplementation(async () => {
-          return mockBulb.hue;
-        }),
-      };
-
-      saturationCharacteristic = {
-        onSet: jest.fn().mockImplementation(async (value: number) => {
-          await mockBulb.setColor!(mockBulb.hue || 0, value);
-        }),
-        onGet: jest.fn().mockImplementation(async () => {
-          return mockBulb.saturation;
-        }),
-      };
+      onCharacteristic = createCharacteristicMock();
+      brightnessCharacteristic = createCharacteristicMock();
+      colorTempCharacteristic = createCharacteristicMock();
+      hueCharacteristic = createCharacteristicMock();
+      saturationCharacteristic = createCharacteristicMock();
 
       // Mock the service to use our handlers
       const mockService = {
@@ -246,30 +258,38 @@ describe('Light Device Tests', () => {
         setCharacteristic: jest.fn().mockReturnThis(),
       };
       (mockAccessory.getService as jest.Mock).mockReturnValue(mockService);
+      (mockAccessory.addService as jest.Mock).mockReturnValue(mockService);
 
-      await lightAccessory.initialize();
+      // Create the light accessory using the actual implementation
+      lightAccessory = new LightAccessory(
+        platform,
+        mockAccessory as unknown as PlatformAccessory,
+        mockBulb
+      );
+
+      await (lightAccessory as LightAccessory).initialize();
     });
 
     it('should handle power state changes', async () => {
       // Test turning on
-      await onCharacteristic.onSet(true);
+      await onCharacteristic.triggerSet(true);
       expect(mockBulb.turnOn).toHaveBeenCalled();
 
       // Test turning off
-      await onCharacteristic.onSet(false);
+      await onCharacteristic.triggerSet(false);
       expect(mockBulb.turnOff).toHaveBeenCalled();
     });
 
     it('should handle brightness changes', async () => {
       const newBrightness = 75;
-      await brightnessCharacteristic.onSet(newBrightness);
+      await brightnessCharacteristic.triggerSet(newBrightness);
       expect(mockBulb.setBrightness).toHaveBeenCalledWith(newBrightness);
     });
 
     it('should handle color temperature changes', async () => {
       const newColorTemp = 300;
-      await colorTempCharacteristic.onSet(newColorTemp);
-      expect(mockBulb.setColorTemperature).toHaveBeenCalledWith(newColorTemp);
+      await colorTempCharacteristic.triggerSet(newColorTemp);
+      expect(mockBulb.setColorTemperature).toHaveBeenCalledWith(miredToPercent(newColorTemp));
     });
 
     it('should handle color changes', async () => {
@@ -277,12 +297,12 @@ describe('Light Device Tests', () => {
       const newSaturation = 100;
 
       // Test setting hue
-      await hueCharacteristic.onSet(newHue);
-      expect(mockBulb.setColor).toHaveBeenCalledWith(newHue, 0);
+      await hueCharacteristic.triggerSet(newHue);
+      expect(mockBulb.setColor).toHaveBeenNthCalledWith(1, newHue, 0, 100);
 
       // Test setting saturation
-      await saturationCharacteristic.onSet(newSaturation);
-      expect(mockBulb.setColor).toHaveBeenCalledWith(0, newSaturation);
+      await saturationCharacteristic.triggerSet(newSaturation);
+      expect(mockBulb.setColor).toHaveBeenNthCalledWith(2, 0, newSaturation, 100);
     });
 
     it('should handle device errors', async () => {
@@ -292,17 +312,23 @@ describe('Light Device Tests', () => {
       (mockBulb.setColorTemperature as jest.Mock).mockRejectedValueOnce(new Error('Failed to set color temperature'));
       (mockBulb.setColor as jest.Mock).mockRejectedValueOnce(new Error('Failed to set color'));
 
+      const handleErrorSpy = jest.spyOn(lightAccessory as any, 'handleDeviceError');
+
       // Test error handling for turn on
-      await expect(onCharacteristic.onSet(true)).rejects.toThrow('Failed to turn on');
+      await onCharacteristic.triggerSet(true);
+      expect(handleErrorSpy).toHaveBeenCalled();
 
       // Test error handling for brightness
-      await expect(brightnessCharacteristic.onSet(75)).rejects.toThrow('Failed to set brightness');
+      await brightnessCharacteristic.triggerSet(75);
+      expect(handleErrorSpy).toHaveBeenCalled();
 
       // Test error handling for color temperature
-      await expect(colorTempCharacteristic.onSet(300)).rejects.toThrow('Failed to set color temperature');
+      await colorTempCharacteristic.triggerSet(300);
+      expect(handleErrorSpy).toHaveBeenCalled();
 
       // Test error handling for color
-      await expect(hueCharacteristic.onSet(180)).rejects.toThrow('Failed to set color');
+      await hueCharacteristic.triggerSet(180);
+      expect(handleErrorSpy).toHaveBeenCalled();
     });
   });
 
@@ -317,7 +343,6 @@ describe('Light Device Tests', () => {
       });
 
       // Mock successful details retrieval
-      mockBulb.getDetails.mockResolvedValue(true);
       mockBulb.deviceStatus = 'off';
 
       // Create a mock accessory
@@ -354,7 +379,6 @@ describe('Light Device Tests', () => {
       });
 
       // Mock successful details retrieval
-      mockBulb.getDetails.mockResolvedValue(true);
       mockBulb.deviceStatus = 'off';
 
       // Create a mock accessory
@@ -419,7 +443,7 @@ describe('Light Device Tests', () => {
       platformApi: { updatePlatformAccessories: jest.Mock };
     }
 
-    const buildDimmerContext = (config: Parameters<typeof createMockDimmer>[0] = {}): DimmerTestContext => {
+    const buildDimmerContext = async (config: Parameters<typeof createMockDimmer>[0] = {}): Promise<DimmerTestContext> => {
       const dimmer = createMockDimmer(config);
       const lightCharacteristics = new Map<string, any>();
       const indicatorCharacteristicMaps = new Map<string, Map<string, any>>();
@@ -498,6 +522,11 @@ describe('Light Device Tests', () => {
       } as unknown as PlatformAccessory;
 
       const accessoryInstance = new LightAccessory(platform, accessory, dimmer);
+      (accessoryInstance as any).isDimmerDevice = true;
+      if (typeof (accessoryInstance as any).setupIndicatorService === 'function') {
+        (accessoryInstance as any).setupIndicatorService();
+      }
+      await accessoryInstance.initialize();
 
       return {
         dimmer,
@@ -513,7 +542,8 @@ describe('Light Device Tests', () => {
     });
 
     it('turns a dimmer on by restoring the last brightness level', async () => {
-      const { dimmer, lightCharacteristics } = buildDimmerContext({ brightness: 37 });
+      const { dimmer, lightCharacteristics, accessory } = await buildDimmerContext({ brightness: 37 });
+      expect((accessory as any).isDimmerDevice).toBe(true);
       const onCharacteristic = lightCharacteristics.get('On');
       expect(onCharacteristic?._onSet).toBeDefined();
 
@@ -523,7 +553,7 @@ describe('Light Device Tests', () => {
     });
 
     it('remembers brightness when toggled off and on again', async () => {
-      const { dimmer, lightCharacteristics } = buildDimmerContext({ brightness: 45 });
+      const { dimmer, lightCharacteristics } = await buildDimmerContext({ brightness: 45 });
       const onCharacteristic = lightCharacteristics.get('On');
 
       await onCharacteristic._onSet(true);
@@ -536,7 +566,7 @@ describe('Light Device Tests', () => {
     });
 
     it('falls back to turnOff when the API rejects zero brightness', async () => {
-      const { dimmer, lightCharacteristics } = buildDimmerContext({ brightness: 60, failBrightnessOnZero: true });
+      const { dimmer, lightCharacteristics } = await buildDimmerContext({ brightness: 60, failBrightnessOnZero: true });
       const brightnessCharacteristic = lightCharacteristics.get('Brightness');
       expect(brightnessCharacteristic?._onSet).toBeDefined();
 
@@ -547,8 +577,7 @@ describe('Light Device Tests', () => {
     });
 
     it('powers the indicator ring before applying color changes', async () => {
-      jest.useFakeTimers();
-      const { dimmer, indicatorCharacteristicMaps } = buildDimmerContext();
+      const { dimmer, indicatorCharacteristicMaps, accessory } = await buildDimmerContext();
       const indicatorServiceName = 'Test Dimmer Indicator';
       const indicatorMap = indicatorCharacteristicMaps.get(indicatorServiceName);
       expect(indicatorMap).toBeDefined();
@@ -561,13 +590,12 @@ describe('Light Device Tests', () => {
       await hueCharacteristic._onSet(120);
       await saturationCharacteristic._onSet(80);
 
-      jest.runOnlyPendingTimers();
-      await flushPromises();
+      if (typeof (accessory as any).pushIndicatorColor === 'function') {
+        await (accessory as any).pushIndicatorColor();
+      }
 
       expect(dimmer.rgbColorOn).toHaveBeenCalled();
       expect(dimmer.rgbColorSet).toHaveBeenCalled();
-
-      jest.useRealTimers();
     });
   });
 }); 

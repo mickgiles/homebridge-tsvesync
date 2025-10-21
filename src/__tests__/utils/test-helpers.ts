@@ -4,6 +4,11 @@ import { RetryManager } from '../../utils/retry';
 import { VeSyncOutlet, VeSyncSwitch, VeSyncBulb, VeSyncFan, VeSyncDimmerSwitch } from '../../types/device.types';
 import { VeSync } from 'tsvesync';
 
+const TEST_DEVICE_MIN_KELVIN = 2700;
+const TEST_DEVICE_MAX_KELVIN = 6500;
+
+const percentToKelvin = (percent: number): number => TEST_DEVICE_MIN_KELVIN + ((TEST_DEVICE_MAX_KELVIN - TEST_DEVICE_MIN_KELVIN) * Math.max(0, Math.min(100, percent)) / 100);
+
 /**
  * Creates a mock Logger instance for testing
  */
@@ -501,22 +506,82 @@ export interface MockBulbConfig {
  * Creates a mock bulb instance for testing
  */
 export const createMockBulb = (config: MockBulbConfig = {}): jest.Mocked<VeSyncBulb> => {
-  const state = {
-    brightness: config.brightness || 100,
-    colorTemp: config.colorTemp || 200,
-    hue: config.hue || 0,
-    saturation: config.saturation || 0,
-    deviceStatus: 'off',
+  const deviceType = config.deviceType || 'ESL100MC';
+  const features = new Set<string>(['dimmable']);
+  if (deviceType.includes('CW') || deviceType === 'XYD0001') {
+    features.add('color_temp');
+  }
+  if (deviceType.includes('MC') || deviceType === 'XYD0001') {
+    features.add('rgb_shift');
+  }
+
+  const colorModel = features.has('rgb_shift') ? (deviceType === 'XYD0001' ? 'hsv' : 'rgb') : 'none';
+
+  const hsvToRgb = (h: number, s: number, v: number): { red: number; green: number; blue: number } => {
+    let hue = h % 360;
+    if (hue < 0) {
+      hue += 360;
+    }
+    const saturation = Math.max(0, Math.min(100, s)) / 100;
+    const value = Math.max(0, Math.min(100, v)) / 100;
+
+    const c = value * saturation;
+    const x = c * (1 - Math.abs(((hue / 60) % 2) - 1));
+    const m = value - c;
+
+    let rPrime = 0;
+    let gPrime = 0;
+    let bPrime = 0;
+
+    if (hue < 60) {
+      rPrime = c;
+      gPrime = x;
+    } else if (hue < 120) {
+      rPrime = x;
+      gPrime = c;
+    } else if (hue < 180) {
+      gPrime = c;
+      bPrime = x;
+    } else if (hue < 240) {
+      gPrime = x;
+      bPrime = c;
+    } else if (hue < 300) {
+      rPrime = x;
+      bPrime = c;
+    } else {
+      rPrime = c;
+      bPrime = x;
+    }
+
+    return {
+      red: Math.round((rPrime + m) * 255),
+      green: Math.round((gPrime + m) * 255),
+      blue: Math.round((bPrime + m) * 255)
+    };
   };
 
-  return {
+  const state = {
+    brightness: config.brightness ?? 100,
+    colorTempPercent: config.colorTemp ?? 50,
+    hue: config.hue ?? 0,
+    saturation: config.saturation ?? 0,
+    deviceStatus: 'off' as 'on' | 'off',
+    value: 100,
+    rgb: { red: 0, green: 0, blue: 0 }
+  };
+
+  if (colorModel === 'rgb') {
+    state.rgb = hsvToRgb(state.hue, state.saturation, state.value);
+  }
+
+  const mockBulb: any = {
     deviceName: config.deviceName || 'Test Bulb',
-    deviceType: config.deviceType || 'ESL100MC',
+    deviceType,
     cid: config.cid || 'test-cid',
     uuid: config.uuid || 'test-uuid',
     deviceStatus: state.deviceStatus,
     brightness: state.brightness,
-    colorTemp: state.colorTemp,
+    colorTemp: state.colorTempPercent,
     hue: state.hue,
     saturation: state.saturation,
     subDeviceNo: 0,
@@ -528,12 +593,53 @@ export const createMockBulb = (config: MockBulbConfig = {}): jest.Mocked<VeSyncB
     connectionStatus: 'online',
     getDetails: jest.fn().mockResolvedValue(true),
     setApiBaseUrl: jest.fn(),
-    turnOn: jest.fn().mockResolvedValue(true),
-    turnOff: jest.fn().mockResolvedValue(true),
-    setBrightness: jest.fn().mockResolvedValue(true),
-    setColorTemperature: jest.fn().mockResolvedValue(true),
-    setColor: jest.fn().mockResolvedValue(true),
-  } as unknown as jest.Mocked<VeSyncBulb>;
+    turnOn: jest.fn().mockImplementation(async () => {
+      state.deviceStatus = 'on';
+      mockBulb.deviceStatus = 'on';
+      return true;
+    }),
+    turnOff: jest.fn().mockImplementation(async () => {
+      state.deviceStatus = 'off';
+      mockBulb.deviceStatus = 'off';
+      return true;
+    }),
+    setBrightness: jest.fn().mockImplementation(async (value: number) => {
+      state.brightness = value;
+      mockBulb.brightness = value;
+      if (value > 0) {
+        state.deviceStatus = 'on';
+        mockBulb.deviceStatus = 'on';
+      }
+      return true;
+    }),
+    setColorTemperature: jest.fn().mockImplementation(async (percent: number) => {
+      state.colorTempPercent = percent;
+      mockBulb.colorTemp = percent;
+      return true;
+    }),
+    setColor: jest.fn().mockImplementation(async (hue: number, saturation: number, value: number = 100) => {
+      state.hue = hue;
+      state.saturation = saturation;
+      state.value = value;
+      mockBulb.hue = hue;
+      mockBulb.saturation = saturation;
+      if (colorModel === 'rgb') {
+        state.rgb = hsvToRgb(hue, saturation, value);
+      }
+      return true;
+    }),
+    hasFeature: jest.fn().mockImplementation((feature: string) => features.has(feature)),
+    getColorModel: jest.fn().mockImplementation(() => colorModel),
+    getBrightness: jest.fn().mockImplementation(() => state.brightness),
+    getColorTempPercent: jest.fn().mockImplementation(() => state.colorTempPercent),
+    getColorTempKelvin: jest.fn().mockImplementation(() => percentToKelvin(state.colorTempPercent)),
+    getColorHue: jest.fn().mockImplementation(() => state.hue),
+    getColorSaturation: jest.fn().mockImplementation(() => state.saturation),
+    getColorValue: jest.fn().mockImplementation(() => state.value),
+    getRGBValues: jest.fn().mockImplementation(() => state.rgb),
+  };
+
+  return mockBulb as jest.Mocked<VeSyncBulb>;
 };
 
 export interface MockDimmerConfig {
