@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.3.10 (2025-10-21)
+
+### Fixed
+- **💡 ESL Bulb Control**: HomeKit now routes ESL100/ESL100CW/ESL100MC actions through the corrected tsvesync endpoints, restoring on/off, dimming, and color control for these bulbs.
+- **🎨 Accurate Color & Temperature Updates**: Hue/Saturation commands convert via the shared HSV→RGB helpers and color-temperature sliders translate between mireds and VeSync percentages, eliminating the no-op adjustments users reported.
+
+### Changed
+- **🧩 Capability Detection**: Light accessories consume the new tsvesync bulb helpers, keeping feature detection and state reads aligned with pyvesync and reducing duplicated logic inside the plugin.
+
+### Dependencies
+- **📦 tsvesync**: Updated to 1.3.10 for the ESL bulb API parity, color helpers, and normalized bypass responses.
+
 ## 1.3.9 (2025-10-05)
 
 ### Fixed
