@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.3.11 (2025-10-22)
+
+### Fixed
+- **🔌 ESWD16 Main Tile**: Switched the plugin to the updated tsvesync bypass calls so the primary Dining Lights tile now toggles the load and updates brightness reliably.
+- **🎯 Accurate Capabilities**: Hides the indicator colour service for ESWD16 models, removing the phantom colour picker HomeKit was showing for this white-only dimmer.
+
+### Dependencies
+- **📦 tsvesync**: Updated to 1.3.11 to pick up the new ESWD16 bypass-v1 implementation and state normalization.
+
 ## 1.3.10 (2025-10-21)
 
 ### Fixed
