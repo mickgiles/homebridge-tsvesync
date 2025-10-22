@@ -83,7 +83,7 @@ export class LightAccessory extends BaseAccessory {
       async () => this.device.deviceName
     );
 
-    if (this.isDimmerDevice) {
+    if (this.isDimmerDevice && this.supportsIndicatorLight()) {
       this.setupIndicatorService();
     }
   }
@@ -498,6 +498,14 @@ export class LightAccessory extends BaseAccessory {
 
   private detectDimmer(device: VeSyncLightDevice): device is VeSyncDimmerSwitch {
     return typeof (device as VeSyncDimmerSwitch).rgbColorSet === 'function';
+  }
+
+  private supportsIndicatorLight(): boolean {
+    const model = this.device.deviceType.toUpperCase();
+    if (model.startsWith('ESWD16')) {
+      return false;
+    }
+    return typeof (this.device as VeSyncDimmerSwitch).rgbColorSet === 'function';
   }
 
   private setupIndicatorService(): void {

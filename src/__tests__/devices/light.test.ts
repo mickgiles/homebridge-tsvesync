@@ -523,9 +523,7 @@ describe('Light Device Tests', () => {
 
       const accessoryInstance = new LightAccessory(platform, accessory, dimmer);
       (accessoryInstance as any).isDimmerDevice = true;
-      if (typeof (accessoryInstance as any).setupIndicatorService === 'function') {
-        (accessoryInstance as any).setupIndicatorService();
-      }
+      (accessoryInstance as any).lastKnownDimmerBrightness = config?.brightness ?? 100;
       await accessoryInstance.initialize();
 
       return {
@@ -576,26 +574,9 @@ describe('Light Device Tests', () => {
       expect(dimmer.turnOff).toHaveBeenCalled();
     });
 
-    it('powers the indicator ring before applying color changes', async () => {
-      const { dimmer, indicatorCharacteristicMaps, accessory } = await buildDimmerContext();
-      const indicatorServiceName = 'Test Dimmer Indicator';
-      const indicatorMap = indicatorCharacteristicMaps.get(indicatorServiceName);
-      expect(indicatorMap).toBeDefined();
-
-      const hueCharacteristic = indicatorMap?.get('Hue');
-      const saturationCharacteristic = indicatorMap?.get('Saturation');
-      expect(hueCharacteristic?._onSet).toBeDefined();
-      expect(saturationCharacteristic?._onSet).toBeDefined();
-
-      await hueCharacteristic._onSet(120);
-      await saturationCharacteristic._onSet(80);
-
-      if (typeof (accessory as any).pushIndicatorColor === 'function') {
-        await (accessory as any).pushIndicatorColor();
-      }
-
-      expect(dimmer.rgbColorOn).toHaveBeenCalled();
-      expect(dimmer.rgbColorSet).toHaveBeenCalled();
+    it('does not expose indicator color controls for ESWD16', async () => {
+      const { indicatorCharacteristicMaps } = await buildDimmerContext();
+      expect(indicatorCharacteristicMaps.size).toBe(0);
     });
   });
 }); 
