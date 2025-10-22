@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.3.12 (2025-10-22)
+
+### Fixed
+- **🔌 ESWD16 Toggle Flow**: HomeKit On/Off events now call the dimmer’s `turnOn/turnOff` API before restoring brightness, preventing stalls when the slider was previously set to 0%.
+- **💾 Brightness Memory**: Restores the last dimmer level after a power-on and keeps HomeKit’s slider aligned with the wall switch.
+
+### Tests
+- **🧪 Dimmer Coverage**: Added assertions ensuring the plugin invokes both `turnOn/turnOff` and `setBrightness`, protecting the new toggle flow from regressions.
+
+### Dependencies
+- **📦 tsvesync**: Updated to 1.3.12 for the trace ID parity and ESWD16 state alignment.
+
 ## 1.3.11 (2025-10-22)
 
 ### Fixed

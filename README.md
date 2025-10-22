@@ -4,6 +4,9 @@ This is a Homebridge plugin that allows you to control your VeSync/Levoit/Etekci
 
 ## 🆕 Recent Updates
 
+- **ESWD16 Toggle Parity (v1.3.12)**: HomeKit power buttons now drive the real dimmer toggle API and restore the previous brightness, keeping the slider and wall plate in sync.
+- **ESWD16 Improvements (v1.3.11)**: Dimmer tiles now use the new tsvesync bypass API, restoring reliable on/off control and removing the phantom colour widget for this white-only switch.
+- **ESL Bulb Reliability (v1.3.10)**: Updated to tsvesync 1.3.10 so ESL100/ESL100CW/ESL100MC track the latest payloads for brightness and colour adjustments.
 - **International Account Support**: Full support for accounts worldwide! Australian, New Zealand, European, and Asian users can now authenticate successfully
 - **Country Code Configuration**: New country code dropdown in Homebridge UI for easy international account setup
 - **Enhanced Authentication**: Supports the new VeSync authentication flow (pyvesync PR #340) with automatic fallback to legacy authentication

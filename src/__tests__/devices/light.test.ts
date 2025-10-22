@@ -547,6 +547,7 @@ describe('Light Device Tests', () => {
 
       await onCharacteristic._onSet(true);
 
+      expect(dimmer.turnOn).toHaveBeenCalled();
       expect(dimmer.setBrightness).toHaveBeenCalledWith(37);
     });
 
@@ -556,10 +557,13 @@ describe('Light Device Tests', () => {
 
       await onCharacteristic._onSet(true);
       await onCharacteristic._onSet(false);
+      expect(dimmer.turnOn).toHaveBeenCalledTimes(1);
+      expect(dimmer.turnOff).toHaveBeenCalledTimes(1);
       dimmer.setBrightness.mockClear();
 
       await onCharacteristic._onSet(true);
 
+      expect(dimmer.turnOn).toHaveBeenCalledTimes(2);
       expect(dimmer.setBrightness).toHaveBeenCalledWith(45);
     });
 

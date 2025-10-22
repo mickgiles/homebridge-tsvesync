@@ -278,8 +278,34 @@ export class LightAccessory extends BaseAccessory {
       const isOn = value as boolean;
 
       if (this.isDimmerDevice) {
-        const targetBrightness = isOn ? this.resolveDimmerOnBrightness() : 0;
-        await this.setBrightness(targetBrightness);
+        const dimmer = this.device as VeSyncDimmerSwitch;
+        if (isOn) {
+          const toggled = await dimmer.turnOn();
+          if (!toggled) {
+            throw new Error('Failed to turn on device');
+          }
+
+          const targetBrightness = this.resolveDimmerOnBrightness();
+          if (targetBrightness > 0) {
+            const brightnessSet = await dimmer.setBrightness(targetBrightness);
+            if (!brightnessSet) {
+              throw new Error(`Failed to restore brightness to ${targetBrightness}`);
+            }
+            this.lastKnownDimmerBrightness = targetBrightness;
+            this.updateCharacteristicValue(this.platform.Characteristic.Brightness, targetBrightness);
+            await this.persistDeviceState('brightness', targetBrightness);
+          }
+        } else {
+          const toggled = await dimmer.turnOff();
+          if (!toggled) {
+            throw new Error('Failed to turn off device');
+          }
+          this.updateCharacteristicValue(this.platform.Characteristic.Brightness, 0);
+          await this.persistDeviceState('brightness', 0);
+        }
+
+        await this.persistDeviceState('deviceStatus', isOn ? 'on' : 'off');
+        await this.refreshDimmerDetails();
         return;
       }
 
