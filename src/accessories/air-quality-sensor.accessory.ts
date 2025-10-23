@@ -43,7 +43,6 @@ export class AirQualitySensorAccessory extends BaseAccessory {
           this.platform.Characteristic.AirQuality.GOOD,
           this.platform.Characteristic.AirQuality.FAIR,
           this.platform.Characteristic.AirQuality.INFERIOR,
-          this.platform.Characteristic.AirQuality.POOR,
         ],
       })
       .onGet(this.getAirQuality.bind(this));
@@ -91,12 +90,15 @@ export class AirQualitySensorAccessory extends BaseAccessory {
    */
   async getAirQuality(): Promise<CharacteristicValue> {
     try {
-      // Use the device's native getter for air quality value (PM2.5)
-      const extendedDevice = this.parentDevice as any;
-      const pm25 = extendedDevice.airQualityValue || 0;
-      
-      this.platform.log.debug(`${this.device.deviceName} AQ: PM2.5 value = ${pm25}`);
-      
+      const level = this.readNormalizedAirQualityLevel();
+      if (level >= 1) {
+        const hkValue = this.mapToHomeKitAirQuality(level);
+        this.platform.log.debug(`${this.device.deviceName} AQ: Normalized air quality level = ${level}`);
+        return hkValue;
+      }
+
+      const pm25 = this.getDevicePm25();
+      this.platform.log.debug(`${this.device.deviceName} AQ: Falling back to PM2.5 heuristic (${pm25})`);
       return this.convertPM25ToAirQuality(pm25);
     } catch (error) {
       this.platform.log.error(`${this.device.deviceName} AQ: Failed to get air quality:`, error);
@@ -109,9 +111,7 @@ export class AirQualitySensorAccessory extends BaseAccessory {
    */
   async getPM25Density(): Promise<CharacteristicValue> {
     try {
-      // Use the device's native getter for air quality value (PM2.5)
-      const extendedDevice = this.parentDevice as any;
-      const pm25 = extendedDevice.airQualityValue || 0;
+      const pm25 = this.getDevicePm25();
       
       // HomeKit expects PM2.5 in μg/m³, range 0-1000
       return Math.min(1000, Math.max(0, pm25));
@@ -148,11 +148,89 @@ export class AirQualitySensorAccessory extends BaseAccessory {
       return this.platform.Characteristic.AirQuality.GOOD; // Moderate (12.1-35.4 μg/m³)
     } else if (pm25 <= 55) {
       return this.platform.Characteristic.AirQuality.FAIR; // Unhealthy for Sensitive (35.5-55.4 μg/m³)
-    } else if (pm25 <= 150) {
-      return this.platform.Characteristic.AirQuality.INFERIOR; // Unhealthy (55.5-150.4 μg/m³)
-    } else {
-      return this.platform.Characteristic.AirQuality.POOR; // Very Unhealthy (>150.5 μg/m³)
     }
+    return this.platform.Characteristic.AirQuality.INFERIOR;
+  }
+
+  private mapToHomeKitAirQuality(level: number): CharacteristicValue {
+    switch (level) {
+      case 1:
+        return this.platform.Characteristic.AirQuality.EXCELLENT;
+      case 2:
+        return this.platform.Characteristic.AirQuality.GOOD;
+      case 3:
+        return this.platform.Characteristic.AirQuality.FAIR;
+      case 4:
+        return this.platform.Characteristic.AirQuality.INFERIOR;
+      default:
+        return this.platform.Characteristic.AirQuality.UNKNOWN;
+    }
+  }
+
+  private readNormalizedAirQualityLevel(): number {
+    const extendedDevice = this.parentDevice as any;
+
+    if (typeof extendedDevice.getNormalizedAirQuality === 'function') {
+      try {
+        const normalized = extendedDevice.getNormalizedAirQuality();
+        if (normalized && typeof normalized.level === 'number' && normalized.level >= 1) {
+          return normalized.level;
+        }
+      } catch (error) {
+        this.platform.log.debug(`${this.device.deviceName} AQ: getNormalizedAirQuality failed`, error);
+      }
+    }
+
+    const directLevel = extendedDevice.airQualityLevel ?? extendedDevice.details?.air_quality_level;
+    if (typeof directLevel === 'number' && directLevel >= 1) {
+      return directLevel;
+    }
+
+    const normalized = this.normalizeAirQuality(
+      extendedDevice.airQuality ?? extendedDevice.details?.air_quality ?? extendedDevice.airQualityLabel
+    );
+
+    return normalized.level;
+  }
+
+  private getDevicePm25(): number {
+    const extendedDevice = this.parentDevice as any;
+    const pm25 = extendedDevice.airQualityValue ?? extendedDevice.details?.air_quality_value ?? extendedDevice.pm25 ?? 0;
+    return Number.isFinite(pm25) ? pm25 : 0;
+  }
+
+  private normalizeAirQuality(value: unknown): { level: number; label: string } {
+    const stringMap: Record<string, number> = {
+      'excellent': 1,
+      'very good': 1,
+      'good': 2,
+      'moderate': 3,
+      'fair': 3,
+      'inferior': 4,
+      'poor': 4,
+      'bad': 4,
+    };
+
+    if (typeof value === 'number') {
+      const level = Number.isFinite(value) ? Math.trunc(value) : -1;
+      if (level >= 1 && level <= 4) {
+        return {
+          level,
+          label: level === 1 ? 'excellent' : level === 2 ? 'good' : level === 3 ? 'moderate' : 'poor',
+        };
+      }
+    } else if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      const level = stringMap[normalized];
+      if (level) {
+        return {
+          level,
+          label: level === 1 ? 'excellent' : level === 2 ? 'good' : level === 3 ? 'moderate' : 'poor',
+        };
+      }
+    }
+
+    return { level: -1, label: 'unknown' };
   }
 
   /**

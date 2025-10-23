@@ -9,8 +9,7 @@ describe('Air Quality Methods', () => {
       if (pm25 <= 12) return 1; // EXCELLENT
       if (pm25 <= 35) return 2; // GOOD
       if (pm25 <= 55) return 3; // FAIR
-      if (pm25 <= 150) return 4; // INFERIOR
-      return 5; // POOR
+      return 4; // INFERIOR (VeSync exposes four levels)
     };
 
     it('should convert PM2.5 values to correct HomeKit air quality levels', () => {
@@ -23,8 +22,8 @@ describe('Air Quality Methods', () => {
         { pm25: 55, expected: 3, quality: 'FAIR' },
         { pm25: 56, expected: 4, quality: 'INFERIOR' },
         { pm25: 150, expected: 4, quality: 'INFERIOR' },
-        { pm25: 151, expected: 5, quality: 'POOR' },
-        { pm25: 300, expected: 5, quality: 'POOR' },
+        { pm25: 151, expected: 4, quality: 'INFERIOR' },
+        { pm25: 300, expected: 4, quality: 'INFERIOR' },
       ];
 
       testCases.forEach(({ pm25, expected, quality }) => {
@@ -36,7 +35,7 @@ describe('Air Quality Methods', () => {
     it('should handle edge cases', () => {
       expect(convertPM25ToHomeKit(12.5)).toBe(2); // Just above EXCELLENT boundary
       expect(convertPM25ToHomeKit(35.5)).toBe(3); // Just above GOOD boundary
-      expect(convertPM25ToHomeKit(999)).toBe(5); // Extreme value
+      expect(convertPM25ToHomeKit(999)).toBe(4); // Extreme value capped at INFERIOR
     });
 
     it('should handle zero and negative values', () => {
@@ -236,10 +235,9 @@ describe('Air Quality Methods', () => {
       };
 
       return {
-        homeKitAirQuality: extracted.pm25 <= 12 ? 1 : 
-                          extracted.pm25 <= 35 ? 2 : 
-                          extracted.pm25 <= 55 ? 3 : 
-                          extracted.pm25 <= 150 ? 4 : 5,
+        homeKitAirQuality: extracted.pm25 <= 12 ? 1 :
+                          extracted.pm25 <= 35 ? 2 :
+                          extracted.pm25 <= 55 ? 3 : 4,
         pm25Density: Math.min(1000, Math.max(0, Math.round(extracted.pm25))),
         pm10Density: Math.min(1000, Math.max(0, Math.round(extracted.pm10))),
         filterChangeNeeded: extracted.filterLife < 10,
@@ -274,7 +272,7 @@ describe('Air Quality Methods', () => {
 
       const result = processDeviceData(deviceData);
 
-      expect(result.homeKitAirQuality).toBe(5); // POOR
+      expect(result.homeKitAirQuality).toBe(4); // INFERIOR
       expect(result.pm25Density).toBe(180);
       expect(result.pm10Density).toBe(220);
       expect(result.filterChangeNeeded).toBe(true);
@@ -305,7 +303,7 @@ describe('Air Quality Methods', () => {
 
       const result = processDeviceData(deviceData);
 
-      expect(result.homeKitAirQuality).toBe(5); // POOR
+      expect(result.homeKitAirQuality).toBe(4); // INFERIOR
       expect(result.pm25Density).toBe(999);
       expect(result.pm10Density).toBe(1000); // Clamped
       expect(result.filterLifeLevel).toBe(100); // Clamped

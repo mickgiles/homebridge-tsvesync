@@ -195,7 +195,7 @@ describe('AirPurifierAccessory Integration Tests', () => {
       const filterChange = await (airPurifier as any).getFilterChangeIndication();
       const filterLife = await (airPurifier as any).getFilterLifeLevel();
 
-      expect(airQuality).toBe(5); // POOR
+      expect(airQuality).toBe(4); // INFERIOR
       expect(pm25Density).toBe(180);
       expect(filterChange).toBe(1); // CHANGE_FILTER
       expect(filterLife).toBe(5);

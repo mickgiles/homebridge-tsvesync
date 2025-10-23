@@ -226,8 +226,7 @@ export abstract class BaseAccessory {
     if (pm25 <= 12) return 1;  // EXCELLENT
     if (pm25 <= 35) return 2;  // GOOD
     if (pm25 <= 55) return 3;  // FAIR
-    if (pm25 <= 150) return 4; // INFERIOR
-    return 5;                  // POOR
+    return 4;                  // INFERIOR (VeSync exposes four levels)
   }
 
   /**

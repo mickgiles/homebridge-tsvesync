@@ -299,7 +299,7 @@ describe('BaseAccessory', () => {
       expect((accessory as any).convertAirQualityToHomeKit(30)).toBe(2);  // GOOD
       expect((accessory as any).convertAirQualityToHomeKit(50)).toBe(3);  // FAIR
       expect((accessory as any).convertAirQualityToHomeKit(100)).toBe(4); // INFERIOR
-      expect((accessory as any).convertAirQualityToHomeKit(200)).toBe(5); // POOR
+      expect((accessory as any).convertAirQualityToHomeKit(200)).toBe(4); // INFERIOR
     });
 
     it('should persist device state', async () => {

@@ -67,10 +67,13 @@ export interface VeSyncDeviceWithHumidity extends VeSyncDeviceWithPower {
 
 export interface VeSyncDeviceWithAirQuality extends VeSyncDeviceWithPower {
   airQuality: number;
+  airQualityLevel?: number;
+  airQualityLabel?: string;
   pm25?: number;
   filterLife: number;
   mode: string;
   setMode(mode: string): Promise<boolean>;
+  getNormalizedAirQuality?(): { level: number; label: string };
 }
 
 export interface VeSyncDeviceWithControls extends VeSyncDeviceWithPower {

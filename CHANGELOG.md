@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.3.13 (2025-10-23)
+
+### Fixed
+- **🌫️ HomeKit AQ Automations**: Air Quality accessories now prioritize pyvesync's categorical levels and fall back to PM2.5 thresholds, keeping the Home app's “drops below Inferior” trigger selectable instead of collapsing to Poor.
+
+### Changed
+- **📊 Sensor Mapping**: Clamp PM2.5 heuristics to HomeKit’s four-level scale and reuse tsvesync’s normalized metadata so characteristic values stay identical across the plugin and library.
+
+### Tests
+- **🧪 Air Quality Regression Suite**: Added dedicated sensor tests covering normalized levels, vendor fallbacks, and PM2.5 heuristics to guard against future mapping regressions.
+
+### Dependencies
+- **📦 tsvesync**: Updated to 1.3.13 for the shared normalization helper and purifier metadata alignment.
+
 ## 1.3.12 (2025-10-22)
 
 ### Fixed
