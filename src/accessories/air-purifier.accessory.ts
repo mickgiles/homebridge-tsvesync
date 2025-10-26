@@ -12,6 +12,8 @@ interface ExtendedVeSyncAirPurifier extends VeSyncAirPurifier {
   autoMode?(): Promise<boolean>;
   manualMode?(): Promise<boolean>;
   sleepMode?(): Promise<boolean>;
+  turboMode?(): Promise<boolean>;
+  petMode?(): Promise<boolean>;
   setDisplay?(on: boolean): Promise<boolean>;
   turnOnDisplay?(): Promise<boolean>;
   turnOffDisplay?(): Promise<boolean>;
@@ -20,6 +22,8 @@ interface ExtendedVeSyncAirPurifier extends VeSyncAirPurifier {
   hasFeature?(feature: string): boolean;
   isFeatureSupportedInCurrentMode?(feature: string): boolean;
   getMaxFanSpeed?(): number;
+  getSupportedModes?(): ReadonlyArray<string>;
+  getSupportedAutoPreferences?(): ReadonlyArray<string>;
   // Filter life property from VeSyncFan base class (inherited from VeSyncAirPurifier)
   // filterLife: number; // Already defined in base interface
   details?: {
@@ -302,6 +306,9 @@ export class AirPurifierAccessory extends BaseAccessory {
     // Expose Sleep as the first notch when supported.
     // Core 200S uses 3 manual speeds (25% step). 4-speed models use 20% step.
     if (this.hasFeature('sleep_mode')) {
+      if (this.hasFeature('turbo_mode')) {
+        return 20;
+      }
       if (this.isCore200S()) return 25;
       const max = this.getMaxFanSpeed();
       return max >= 4 ? 20 : 25;
@@ -318,6 +325,10 @@ export class AirPurifierAccessory extends BaseAccessory {
   private speedToPercentage(speed: number): number {
     // Sleep as first notch: map manual speeds to notches based on model
     if (this.hasFeature('sleep_mode')) {
+      const extended = this.device as ExtendedVeSyncAirPurifier;
+      if (this.hasFeature('turbo_mode') && (extended.mode || '').toLowerCase() === 'turbo') {
+        return 100;
+      }
       if (typeof speed !== 'number' || speed <= 0) return 0;
       const step = this.calculateRotationSpeedStep();
       const max = this.isCore200S() ? 3 : this.getMaxFanSpeed();
@@ -389,11 +400,17 @@ export class AirPurifierAccessory extends BaseAccessory {
     // Sleep as first notch: round to nearest step and map notches → speeds
     if (this.hasFeature('sleep_mode')) {
       if (typeof percentage !== 'number') return 1;
+      percentage = Math.min(100, Math.max(0, percentage));
       const step = this.calculateRotationSpeedStep();
       const max = this.isCore200S() ? 3 : this.getMaxFanSpeed();
-      const maxNotch = max + 1; // include Sleep notch
-      const notch = Math.max(0, Math.min(maxNotch, Math.round(Math.min(100, Math.max(0, percentage)) / step)));
-      const manualNotch = Math.max(2, notch);
+      const supportsTurbo = this.hasFeature('turbo_mode');
+      const totalNotches = max + (supportsTurbo ? 2 : 1); // sleep + manual + optional turbo
+      const notch = Math.max(0, Math.min(totalNotches, Math.round(percentage / step)));
+      if (supportsTurbo && notch === totalNotches) {
+        return max;
+      }
+      const manualMaxNotch = totalNotches - (supportsTurbo ? 1 : 0);
+      const manualNotch = Math.max(2, Math.min(manualMaxNotch, notch));
       return Math.min(max, manualNotch - 1);
     }
 
@@ -622,6 +639,7 @@ export class AirPurifierAccessory extends BaseAccessory {
     const extended = this.device as ExtendedVeSyncAirPurifier;
     const mode = (extended.mode || details.mode || '').toLowerCase();
     const isSleep = mode === 'sleep';
+    const isTurbo = this.hasFeature('turbo_mode') && mode === 'turbo';
     const isOn = isSleep || details.enabled || details.deviceStatus === 'on';
     this.service.updateCharacteristic(this.platform.Characteristic.Active, isOn ? 1 : 0);
     
@@ -652,7 +670,11 @@ export class AirPurifierAccessory extends BaseAccessory {
     );
 
     // Update rotation speed
-    if (isOn && this.hasFeature('sleep_mode') && isSleep) {
+    if (isOn && isTurbo) {
+      this.service.updateCharacteristic(this.platform.Characteristic.RotationSpeed, 100);
+      this.lastSetSpeed = this.getMaxFanSpeed();
+      this.lastSetPercentage = 100;
+    } else if (isOn && this.hasFeature('sleep_mode') && isSleep) {
       const step = this.calculateRotationSpeedStep();
       this.service.updateCharacteristic(this.platform.Characteristic.RotationSpeed, step);
       this.lastSetSpeed = 0;
@@ -800,12 +822,15 @@ export class AirPurifierAccessory extends BaseAccessory {
    * Get rotation speed
    */
   private async getRotationSpeed(): Promise<CharacteristicValue> {
+    const extended = this.device as ExtendedVeSyncAirPurifier;
+    if (this.hasFeature('turbo_mode') && (extended.mode || '').toLowerCase() === 'turbo') {
+      return 100;
+    }
     // If device is off or speed is not defined, return 0
     if (this.device.deviceStatus !== 'on' || 
         this.device.speed === undefined || 
         this.device.speed === null) {
       // If in sleep mode, surface the first notch
-      const extended = this.device as ExtendedVeSyncAirPurifier;
       if (this.hasFeature('sleep_mode') && (extended.mode || '').toLowerCase() === 'sleep') {
         return this.calculateRotationSpeedStep();
       }
@@ -880,8 +905,9 @@ export class AirPurifierAccessory extends BaseAccessory {
       if (this.hasFeature('sleep_mode')) {
         const max = this.isCore200S() ? 3 : this.getMaxFanSpeed();
         const step = this.calculateRotationSpeedStep();
-        const maxNotch = max + 1; // include Sleep notch
-        const notch = Math.max(0, Math.min(maxNotch, Math.round(percentage / step)));
+        const supportsTurbo = this.hasFeature('turbo_mode');
+        const totalNotches = max + (supportsTurbo ? 2 : 1); // sleep + manual + optional turbo
+        const notch = Math.max(0, Math.min(totalNotches, Math.round(percentage / step)));
         if (notch <= 1) {
           // Sleep
           this.platform.log.info(`Changing mode to sleep for device: ${this.device.deviceName}`);
@@ -902,33 +928,54 @@ export class AirPurifierAccessory extends BaseAccessory {
           this.lastSetPercentage = step;
           this.skipNextUpdate = true;
           return;
-        } else {
-          // Map manual notches (2..maxNotch) to speeds 1..max
-          const desiredSpeed = Math.min(max, notch - 1);
-          // Ensure manual mode before speed change if necessary
-          const modeNow = (extendedDevice.mode || '').toLowerCase();
-          if (modeNow === 'auto' || modeNow === 'sleep') {
-            this.platform.log.info(`Changing mode to manual for device: ${this.device.deviceName}`);
-            if (typeof extendedDevice.manualMode === 'function') {
-              await extendedDevice.manualMode();
-            } else if (typeof extendedDevice.setMode === 'function') {
-              await extendedDevice.setMode('manual');
-            }
+        }
+        if (supportsTurbo && notch === totalNotches) {
+          this.platform.log.info(`Changing mode to turbo for device: ${this.device.deviceName}`);
+          let ok = false;
+          if (typeof extendedDevice.turboMode === 'function') {
+            ok = await extendedDevice.turboMode();
+          } else if (typeof extendedDevice.setMode === 'function') {
+            ok = await extendedDevice.setMode('turbo');
           }
-          // Update UI early
-          const uiPct = Math.min(100, (desiredSpeed + 1) * step);
-          this.service.updateCharacteristic(this.platform.Characteristic.RotationSpeed, uiPct);
-          this.lastSetSpeed = desiredSpeed;
-          this.lastSetPercentage = uiPct;
-          this.skipNextUpdate = true;
-          const ok = await this.device.changeFanSpeed(desiredSpeed);
           if (!ok) {
-            this.lastSetSpeed = 0;
-            this.lastSetPercentage = 0;
-            throw new Error(`Failed to set speed to ${desiredSpeed}`);
+            throw new Error('Failed to set turbo mode');
           }
+          this.service.updateCharacteristic(this.platform.Characteristic.RotationSpeed, 100);
+          this.service.updateCharacteristic(this.platform.Characteristic.Active, 1);
+          this.service.updateCharacteristic(this.platform.Characteristic.CurrentAirPurifierState, 2);
+          this.lastSetSpeed = max;
+          this.lastSetPercentage = 100;
+          this.skipNextUpdate = true;
           return;
         }
+
+        // Map manual notches (2..manualMaxNotch) to speeds 1..max
+        const manualMaxNotch = totalNotches - (supportsTurbo ? 1 : 0);
+        const manualNotch = Math.max(2, Math.min(manualMaxNotch, notch));
+        const desiredSpeed = Math.min(max, manualNotch - 1);
+        // Ensure manual mode before speed change if necessary
+        const modeNow = (extendedDevice.mode || '').toLowerCase();
+        if (modeNow === 'auto' || modeNow === 'sleep' || (supportsTurbo && modeNow === 'turbo')) {
+          this.platform.log.info(`Changing mode to manual for device: ${this.device.deviceName}`);
+          if (typeof extendedDevice.manualMode === 'function') {
+            await extendedDevice.manualMode();
+          } else if (typeof extendedDevice.setMode === 'function') {
+            await extendedDevice.setMode('manual');
+          }
+        }
+        // Update UI early
+        const uiPct = Math.min(100, manualNotch * step);
+        this.service.updateCharacteristic(this.platform.Characteristic.RotationSpeed, uiPct);
+        this.lastSetSpeed = desiredSpeed;
+        this.lastSetPercentage = uiPct;
+        this.skipNextUpdate = true;
+        const ok = await this.device.changeFanSpeed(desiredSpeed);
+        if (!ok) {
+          this.lastSetSpeed = 0;
+          this.lastSetPercentage = 0;
+          throw new Error(`Failed to set speed to ${desiredSpeed}`);
+        }
+        return;
       }
 
       // Check if fan speed control is supported in current mode

@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.4.0 (2025-10-26)
+
+### Added
+- **🧪 Everest Regression Coverage**: Extended the Everest Air accessory tests to exercise auto-sentinel state updates and turbo failure paths, locking in the new tsvesync behaviors.
+
+### Changed
+- **🎚️ Slider Semantics**: The air purifier accessory now treats the first notch as Sleep, middle notches as discrete manual speeds, and the top notch as Turbo while automatically shifting HomeKit’s target state to Auto whenever the purifier reports the sentinel fan speed.
+- **📉 Error Resilience**: Turbo failures surface through our logging pipeline without spoofing the UI, and auto state updates keep Rotation Speed at 0% so automations see the correct behavior.
+
+### Dependencies
+- **📦 tsvesync**: Bumped to 1.4.0 for the expanded Everest/Vital mode metadata and bypassV2 parity fixes.
+
 ## 1.3.13 (2025-10-23)
 
 ### Fixed
