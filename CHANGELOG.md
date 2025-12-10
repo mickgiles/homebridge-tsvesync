@@ -1,5 +1,37 @@
 # Changelog
 
+## 1.4.2 (2025-12-09)
+
+### Fixed
+- **Critical Session File Corruption Fix**: Resolved race condition causing session.json corruption from concurrent writes
+  - Implemented write mutex in FileSessionStore to serialize concurrent save operations
+  - Fixed race condition when both tsvesync library and homebridge plugin attempted simultaneous session saves
+  - Session saves now use read-merge-write pattern to preserve all fields (especially 'username') across library-triggered saves
+  - Prevents "Extra data: line X column Y" JSON parse errors that caused repeated login failures
+  - Eliminated API quota exhaustion from constant re-authentication due to corrupted sessions
+- **Enhanced Session Error Logging**: Changed session save errors from debug to error level for better visibility
+  - Critical session persistence failures now properly visible in logs
+  - Improved troubleshooting capability for session-related authentication issues
+- **Removed Duplicate Session Save**: Eliminated redundant save in onTokenChange callback
+  - Prevents duplicate writes that contributed to race condition
+  - Library already saves session after token refresh, plugin no longer needs duplicate save
+  - Reduces filesystem I/O and potential for concurrent write conflicts
+
+### Technical Details
+- **Write Mutex Implementation**: Added saveInProgress promise to serialize concurrent save operations
+- **Read-Merge-Write Pattern**: Session save now reads existing data, merges with new data, preserves all fields
+- **Preserved Fields**: Username and other platform-specific fields now survive library-triggered session saves
+- **Race Condition Context**: Race occurred when:
+  - tsvesync library saved session after token refresh (vesync.ts:354)
+  - Platform's onTokenChange callback saved again with username field (platform.ts:378)
+  - Both writes happened simultaneously causing JSON corruption in containerized environments
+
+### Impact
+- **Containerized Deployments**: Fixes critical bug affecting Docker/Kubernetes deployments where session corruption was common
+- **Authentication Reliability**: Eliminates repeated login failures from corrupted session files
+- **API Quota Management**: Prevents quota exhaustion from constant re-authentication attempts
+- **Startup Reliability**: Ensures consistent session recovery across Homebridge restarts
+
 ## 1.4.1 (2025-12-09)
 
 ### Fixed

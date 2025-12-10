@@ -373,10 +373,9 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
   private onTokenChange(session: { token: string } | undefined) {
     if (!session?.token) return;
     this.scheduleProactiveRefreshFromToken(session.token);
-    // Persist with username to ensure correct account reuse
-    try {
-      void this.sessionStore.save({ ...(session as any), username: this.config.username } as any);
-    } catch { /* noop */ }
+    // NOTE: The library already saved the session via sessionStore.save()
+    // We should NOT save again here as it creates a race condition and corrupts the file
+    // The username field is added during initial login in onSuccessfulLogin()
   }
 
   /**
