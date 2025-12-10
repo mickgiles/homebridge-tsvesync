@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.4.1 (2025-12-09)
+
+### Fixed
+- **🌡️ Core 300S/400S/600S Air Quality Sensors**: Resolved missing air quality sensors for LAP variant devices in HomeKit
+  - Core 400S (LAP-C401S variants) now properly display air quality sensor with PM2.5 readings
+  - Core 300S (LAP-C301S/C302S variants) air quality sensors now appear in HomeKit
+  - Core 600S (LAP-C601S variants) air quality monitoring now fully functional
+  - Fixes issue where devices with air quality hardware were not exposing air quality characteristics
+- **🔧 Multi-Firmware Air Quality Support**: Enhanced air quality data parsing for compatibility across firmware versions
+  - Supports both snake_case and PascalCase API field naming conventions
+  - Handles varying API response formats from different device firmware versions
+  - Improves reliability of air quality readings across all Core series devices
+
+### Enhanced
+- **🎯 Regional Variant Auto-Detection**: Improved device type matching for international market variants
+  - Automatically maps LAP regional codes (e.g., LAP-C401S-WUSR, LAP-C401S-WJP) to correct base configurations
+  - Future-proof support for new regional variants without plugin updates
+  - Enhanced device classification with fallback matching for unknown variant codes
+
+### Dependencies
+- **📦 tsvesync**: Updated to 1.4.1 for air quality sensor fixes and enhanced device type matching
+
 ## 1.4.0 (2025-10-26)
 
 ### Added
