@@ -265,6 +265,12 @@ def appButtonHandler(btn) {
 def authenticate() {
     logDebug "Authenticating with VeSync API"
 
+    if (!settings.username || !settings.password) {
+        state.authMessage = "Please enter username and password"
+        logError "Authentication failed: missing credentials"
+        return
+    }
+
     def apiUrl = getApiUrl()
     def hashedPassword = hashPassword(settings.password)
 
@@ -284,13 +290,14 @@ def authenticate() {
 
     def params = [
         uri: "${apiUrl}/cloud/v1/user/login",
+        requestContentType: "application/json",
         contentType: "application/json",
-        body: JsonOutput.toJson(body),
+        body: body,
         timeout: 30
     ]
 
     try {
-        httpPost(params) { resp ->
+        httpPostJson(params) { resp ->
             if (resp.status == 200) {
                 def data = resp.data
                 if (data.code == 0 && data.result) {
@@ -369,13 +376,14 @@ def discoverDevices() {
 
     def params = [
         uri: "${apiUrl}/cloud/v1/deviceManaged/devices",
+        requestContentType: "application/json",
         contentType: "application/json",
-        body: JsonOutput.toJson(body),
+        body: body,
         timeout: 30
     ]
 
     try {
-        httpPost(params) { resp ->
+        httpPostJson(params) { resp ->
             if (resp.status == 200) {
                 def data = resp.data
                 if (data.code == 0 && data.result?.list) {
@@ -633,13 +641,14 @@ def getDeviceDetails(cid, deviceType, uuid, configModule) {
 
     def params = [
         uri: "${apiUrl}${apiEndpoint}",
+        requestContentType: "application/json",
         contentType: "application/json",
-        body: JsonOutput.toJson(body),
+        body: body,
         timeout: 30
     ]
 
     try {
-        httpPost(params) { resp ->
+        httpPostJson(params) { resp ->
             if (resp.status == 200) {
                 def data = resp.data
                 if (data.code == 0 && data.result) {
@@ -1012,13 +1021,14 @@ def sendDeviceCommand(cid, command, params) {
 
     def httpParams = [
         uri: "${apiUrl}${endpoint}",
+        requestContentType: "application/json",
         contentType: "application/json",
-        body: JsonOutput.toJson(body),
+        body: body,
         timeout: 30
     ]
 
     try {
-        httpPost(httpParams) { resp ->
+        httpPostJson(httpParams) { resp ->
             if (resp.status == 200) {
                 def data = resp.data
                 if (data.code == 0) {
