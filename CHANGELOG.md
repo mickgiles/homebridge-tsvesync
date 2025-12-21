@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.3 (2025-12-21)
+
+### Fixed
+- **🌍 Cross-Region Session + Device Discovery Reliability**: Picks up the tsvesync 1.4.3 pyvesync-parity improvements so non-US/EU accounts can reuse persisted sessions and still discover devices reliably (fixes issue #25).
+
+### Dependencies
+- **📦 tsvesync**: Updated to 1.4.3 for region/session/device-list parity fixes.
+
 ## 1.4.2 (2025-12-09)
 
 ### Fixed
