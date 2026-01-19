@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.5 (2026-01-19)
+
+### Fixed
+- **🧩 Node 24 Compatibility**: Relaxed `engines.node` to allow installation on Node 24.x.
+
+### Dependencies
+- **📦 tsvesync**: Updated to 1.4.5 for version sync (no functional changes).
+
 ## 1.4.4 (2026-01-19)
 
 ### Fixed
