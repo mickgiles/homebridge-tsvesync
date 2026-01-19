@@ -14,7 +14,7 @@ class RateLimiter {
     lastValue: any;
     inProgress: boolean;
   }> = new Map();
-  private quotaManager: QuotaManager;
+  private quotaManager?: QuotaManager;
   private methodCallCounts: Map<string, number> = new Map();
   private lastMethodLogTime = 0;
   private readonly METHOD_LOG_INTERVAL = 10 * 60 * 1000; // 10 minutes in milliseconds
@@ -27,19 +27,21 @@ class RateLimiter {
       priorityMethods?: string[];
     }
   ) {
-    this.quotaManager = new QuotaManager(logger, deviceCount, quotaConfig);
+    if (quotaConfig) {
+      this.quotaManager = new QuotaManager(logger, deviceCount, quotaConfig);
+    }
   }
 
   /**
    * Update the device count for quota calculation
    */
   updateDeviceCount(count: number): void {
-    this.quotaManager.updateDeviceCount(count);
+    this.quotaManager?.updateDeviceCount(count);
   }
 
   async rateLimit(methodName: string): Promise<boolean> {
     // First check if we can make this API call based on quota
-    if (!this.quotaManager.canMakeApiCall(methodName)) {
+    if (this.quotaManager && !this.quotaManager.canMakeApiCall(methodName)) {
       return false;
     }
 
@@ -60,7 +62,7 @@ class RateLimiter {
     this.trackMethodCall(methodName);
     
     // Record this API call in the quota manager
-    this.quotaManager.recordApiCall(methodName);
+    this.quotaManager?.recordApiCall(methodName);
     return true;
   }
   
@@ -113,7 +115,7 @@ class RateLimiter {
 
   debounce<T>(methodName: string, deviceId: string | undefined, fn: () => Promise<T>, args: any[]): Promise<T | null> {
     // First check if we can make this API call based on quota
-    if (!this.quotaManager.canMakeApiCall(methodName)) {
+    if (this.quotaManager && !this.quotaManager.canMakeApiCall(methodName)) {
       // Log at WARN level as requested by user
       this.logger.warn(`Quota exceeded. Skipping API call: ${methodName}${deviceId ? ` for device ${deviceId}` : ''}${args.length > 0 ? ` with args ${JSON.stringify(args)}` : ''}`);
       return Promise.resolve(null);
@@ -277,10 +279,11 @@ export const createRateLimitedVeSync = (
   });
   const logger = customLogger || new PluginLogger(console as any, debug || false);
   
-  // Create rate limiter with quota management if enabled
-  const quotaConfig = config?.quotaManagement?.enabled ? {
-    bufferPercentage: config.quotaManagement.bufferPercentage,
-    priorityMethods: config.quotaManagement.priorityMethods
+  // Create rate limiter with quota management if enabled (default: enabled)
+  const quotaEnabled = config?.quotaManagement?.enabled ?? true;
+  const quotaConfig = quotaEnabled ? {
+    bufferPercentage: config?.quotaManagement?.bufferPercentage,
+    priorityMethods: config?.quotaManagement?.priorityMethods
   } : undefined;
   
   const rateLimiter = new RateLimiter(logger, 0, quotaConfig);

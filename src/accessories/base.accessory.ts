@@ -134,9 +134,26 @@ export abstract class BaseAccessory {
         // Use type assertion to access potential getDetails method
         const deviceWithDetails = this.device as any;
         if (typeof deviceWithDetails.getDetails === 'function') {
-          this.logger.debug('Refreshing device details during initialization', this.getLogContext());
-          await deviceWithDetails.getDetails();
-          this.logger.debug(`Device status after refresh: ${this.device.deviceStatus}`, this.getLogContext());
+          const now = Date.now();
+          const shouldUseCache = this.deviceDetailsCache !== null && 
+                                (now - this.lastDetailsFetch < this.CACHE_TTL);
+          
+          if (shouldUseCache) {
+            this.logger.debug('Using cached device details during initialization', this.getLogContext());
+            Object.assign(deviceWithDetails, this.deviceDetailsCache);
+          } else {
+            this.logger.debug('Refreshing device details during initialization', this.getLogContext());
+            const refreshResult = await deviceWithDetails.getDetails();
+            
+            // Check if the API call was blocked due to quota
+            if (refreshResult === null) {
+              this.logger.warn('Device refresh skipped due to API quota limits during initialization', this.getLogContext());
+            } else {
+              this.logger.debug(`Device status after refresh: ${this.device.deviceStatus}`, this.getLogContext());
+              this.deviceDetailsCache = { ...deviceWithDetails };
+              this.lastDetailsFetch = now;
+            }
+          }
         }
       } catch (refreshError) {
         this.logger.warn('Failed to refresh device details during initialization', 
@@ -161,6 +178,20 @@ export abstract class BaseAccessory {
   private deviceDetailsCache: any = null;
   private lastDetailsFetch = 0;
   private readonly CACHE_TTL = 60 * 1000; // 1 minute cache TTL
+
+  /**
+   * Update the underlying device instance with the latest state from the VeSync client.
+   *
+   * The `tsvesync` library recreates device instances on each `client.update()`. Homebridge
+   * accessories must keep stable handler instances, so we merge the latest device properties
+   * into the existing instance and prime the cache so `syncDeviceState()` won't immediately
+   * refetch details.
+   */
+  public applyUpdatedDeviceState(updatedDevice: VeSyncDeviceWithPower): void {
+    Object.assign(this.device as any, updatedDevice);
+    this.deviceDetailsCache = { ...(this.device as any) };
+    this.lastDetailsFetch = Date.now();
+  }
 
   /**
    * Sync the device state with VeSync

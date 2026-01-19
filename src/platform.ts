@@ -193,10 +193,7 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
         }
       }
 
-      // Get devices from API (will re-login on 401/419 only)
-      await this.client.update();
-
-      // Discover devices
+      // Discover devices (includes a client.update() with retry)
       await this.discoverDevices();
 
       // Mark as initialized before initializing accessories
@@ -627,9 +624,16 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
           accessory.context.device = this.createDeviceContext(device);
         }
 
-        // Create the accessory handler
-        const deviceAccessory = DeviceFactory.createAccessory(this, accessory, device);
-        this.deviceAccessories.set(uuid, deviceAccessory);
+        // Create or reuse the accessory handler (do not recreate on every poll)
+        let deviceAccessory = this.deviceAccessories.get(uuid);
+        if (deviceAccessory) {
+          // tsvesync recreates device instances on each update(); merge latest state into the existing instance
+          deviceAccessory.applyUpdatedDeviceState(device as any);
+        } else {
+          deviceAccessory = DeviceFactory.createAccessory(this, accessory, device);
+          deviceAccessory.applyUpdatedDeviceState(device as any);
+          this.deviceAccessories.set(uuid, deviceAccessory);
+        }
 
         // Check if device needs a separate AQ sensor accessory
         if (this.deviceHasAirQuality(device) && DeviceFactory.isAirPurifier(device.deviceType)) {
@@ -670,18 +674,24 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
           // Store the AQ sensor accessory
           this.aqSensorAccessories.set(aqUuid, aqAccessory);
           
-          // Create the AQ sensor accessory handler
-          const aqSensorAccessory = DeviceFactory.createAQSensorAccessory(this, aqAccessory, device);
-          if (aqSensorAccessory) {
-            this.deviceAccessories.set(aqUuid, aqSensorAccessory);
-            
-            // Register new AQ sensor accessory
-            if (!this.accessories.find(acc => acc.UUID === aqUuid)) {
-              this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [aqAccessory]);
-              this.accessories.push(aqAccessory);
-            }
+          // Create or reuse the AQ sensor accessory handler
+          const existingAqSensorAccessory = this.deviceAccessories.get(aqUuid);
+          if (existingAqSensorAccessory) {
+            existingAqSensorAccessory.applyUpdatedDeviceState(device as any);
           } else {
-            this.logger.warn(`${device.deviceName}: Failed to create AQ sensor accessory handler - DeviceFactory.createAQSensorAccessory returned null`);
+            const createdAqSensorAccessory = DeviceFactory.createAQSensorAccessory(this, aqAccessory, device);
+            if (createdAqSensorAccessory) {
+              createdAqSensorAccessory.applyUpdatedDeviceState(device as any);
+              this.deviceAccessories.set(aqUuid, createdAqSensorAccessory);
+            
+              // Register new AQ sensor accessory
+              if (!this.accessories.find(acc => acc.UUID === aqUuid)) {
+                this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [aqAccessory]);
+                this.accessories.push(aqAccessory);
+              }
+            } else {
+              this.logger.warn(`${device.deviceName}: Failed to create AQ sensor accessory handler - DeviceFactory.createAQSensorAccessory returned null`);
+            }
           }
         }
 
@@ -689,33 +699,6 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
         if (!this.accessories.find(acc => acc.UUID === uuid)) {
           this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
           this.accessories.push(accessory);
-        }
-
-        // Try to update device state with retries
-        let stateRetryCount = 0;
-        let stateSuccess = false;
-        while (!stateSuccess && stateRetryCount < 3) { // Limit retries to 3 attempts
-          try {
-            await deviceAccessory.syncDeviceState();
-            stateSuccess = true;
-          } catch (error) {
-            stateRetryCount++;
-            // Only retry if we haven't hit the limit
-            if (stateRetryCount < 3) {
-              const backoffTime = Math.min(5000 * Math.pow(2, stateRetryCount), 30000);
-              this.logger.warn(`Failed to sync device state for ${device.deviceName}, retry attempt ${stateRetryCount}. Waiting ${backoffTime/1000} seconds...`);
-              await new Promise(resolve => setTimeout(resolve, backoffTime));
-              
-              // Try to ensure we're still logged in before next attempt
-              if (!await this.ensureLogin()) {
-                continue;
-              }
-            } else {
-              this.logger.error(`Failed to sync device state for ${device.deviceName} after ${stateRetryCount} attempts. Skipping.`);
-              // Continue with other devices even if this one fails
-              break;
-            }
-          }
         }
       }
 

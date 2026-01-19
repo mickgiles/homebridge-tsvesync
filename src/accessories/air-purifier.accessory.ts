@@ -492,7 +492,7 @@ export class AirPurifierAccessory extends BaseAccessory {
       targetStateChar.setProps({
         validValues: [0, 1] // MANUAL and AUTO
       });
-      this.platform.log.info(`${this.device.deviceName} (${this.device.deviceType}): Configured for AUTO and MANUAL modes based on feature detection`);
+      this.platform.log.debug(`${this.device.deviceName} (${this.device.deviceType}): Configured for AUTO and MANUAL modes based on feature detection`);
     } else {
       // Devices without auto mode
       targetStateChar.setProps({

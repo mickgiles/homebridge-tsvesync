@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.4.4 (2026-01-19)
+
+### Fixed
+- **🪵 Log Spam (Core 400S + other AirPurifiers)**: Prevented the air purifier accessory from being re-created on every polling cycle, which was repeatedly re-running service setup and spamming "Configured for AUTO and MANUAL modes..." logs.
+- **📊 Quota Management Toggle**: `quotaManagement.enabled=false` now actually disables quota tracking/logging (including the periodic "Daily quota status..." message).
+
+### Changed
+- **🔁 Discovery Efficiency**: Avoid redundant startup `client.update()` calls (discovery already refreshes the device list), reducing unnecessary API traffic.
+- **🧾 Logging**: Downgraded the auto/manual configuration line to `debug` since it does not reflect a state change.
+
 ## 1.4.3 (2025-12-21)
 
 ### Fixed
