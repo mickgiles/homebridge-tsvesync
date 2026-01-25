@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.6 (2026-01-25)
+
+### Fixed
+- **🔑 Token Expiration Recovery (-11001022)**: Pulls in tsvesync's improved token-expiration handling so the plugin automatically re-authenticates and retries when VeSync returns `code: -11001022` ("the token has expired"), even when the HTTP status is 200.
+
+### Dependencies
+- **📦 tsvesync**: Updated to 1.4.6 for token-expiration recovery (`-11001022`) and HTTP 200 token-expired response handling.
+
 ## 1.4.5 (2026-01-19)
 
 ### Fixed
