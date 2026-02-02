@@ -64,7 +64,7 @@ describe('Outlet Device Tests', () => {
       serverVersion: '1.0.0',
       user: {
         configPath: jest.fn(),
-        storagePath: jest.fn(),
+        storagePath: jest.fn().mockReturnValue('/tmp'),
         persistPath: jest.fn(),
       },
       hapLegacyTypes: {},
@@ -155,6 +155,7 @@ describe('Outlet Device Tests', () => {
         accessory,
         device,
         initialize: jest.fn().mockResolvedValue(undefined),
+        applyUpdatedDeviceState: jest.fn(),
         updateCharacteristicValue: jest.fn(),
       } as unknown as BaseAccessory;
       return baseAccessory;
@@ -172,7 +173,7 @@ describe('Outlet Device Tests', () => {
 
       // Setup VeSync client with the mock outlet
       mockVeSync.outlets = [mockOutlet];
-      mockVeSync.getDevices.mockResolvedValue(true);
+      mockVeSync.update.mockResolvedValue(undefined);
       mockVeSync.login.mockResolvedValue(true);
 
       // Initialize platform and wait for discovery
@@ -451,7 +452,7 @@ describe('Outlet Device Tests', () => {
 
       // Setup VeSync client with the mock outlet
       mockVeSync.outlets = [mockOutlet];
-      mockVeSync.getDevices.mockResolvedValue(true);
+      mockVeSync.update.mockResolvedValue(undefined);
       mockVeSync.login.mockResolvedValue(true);
 
       // Initialize platform and wait for discovery
@@ -478,7 +479,7 @@ describe('Outlet Device Tests', () => {
 
       // Setup VeSync client with the mock outlet
       mockVeSync.outlets = [mockOutlet];
-      mockVeSync.getDevices.mockResolvedValue(true);
+      mockVeSync.update.mockResolvedValue(undefined);
       mockVeSync.login.mockResolvedValue(true);
 
       // Initialize platform and wait for discovery
@@ -505,7 +506,7 @@ describe('Outlet Device Tests', () => {
 
       // Setup VeSync client with the mock outlet
       mockVeSync.outlets = [mockOutlet];
-      mockVeSync.getDevices.mockResolvedValue(true);
+      mockVeSync.update.mockResolvedValue(undefined);
       mockVeSync.login.mockResolvedValue(true);
 
       // Initialize platform and wait for discovery

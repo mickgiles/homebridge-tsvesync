@@ -95,7 +95,7 @@ describe('AirPurifierAccessory Filter Maintenance Features', () => {
   }
 
   describe('Filter Service Setup', () => {
-    it('should create filter maintenance service for all air purifiers', () => {
+    it('should not add FilterMaintenance service (migrated to AirPurifier service)', () => {
       const mockDevice = createMockAirPurifier({ filterLife: 60 });
       
       const accessory = {
@@ -109,28 +109,31 @@ describe('AirPurifierAccessory Filter Maintenance Features', () => {
           if (service === platform.Service.FilterMaintenance) return filterService;
           return filterService;
         }),
-      };
-
-      const airPurifier = new AirPurifierAccessory(platform, accessory as any, mockDevice as any);
-
-      // Verify filter maintenance service was added
-      expect(accessory.addService).toHaveBeenCalledWith(platform.Service.FilterMaintenance);
-    });
-
-    it('should reuse existing filter maintenance service', () => {
-      const mockDevice = createMockAirPurifier();
-      
-      const accessory = {
-        getService: jest.fn((service) => {
-          if (service === platform.Service.FilterMaintenance) return filterService;
-          return airPurifierService;
-        }),
-        addService: jest.fn(),
+        removeService: jest.fn(),
       };
 
       new AirPurifierAccessory(platform, accessory as any, mockDevice as any);
 
-      // Verify service was not added again
+      expect(accessory.addService).not.toHaveBeenCalledWith(platform.Service.FilterMaintenance);
+    });
+
+    it('should remove legacy FilterMaintenance service if present', () => {
+      const mockDevice = createMockAirPurifier();
+      
+      const accessory = {
+        getService: jest.fn((service) => {
+          if (service === platform.Service.AccessoryInformation) return infoService;
+          if (service === platform.Service.AirPurifier) return airPurifierService;
+          if (service === platform.Service.FilterMaintenance) return filterService;
+          return null;
+        }),
+        addService: jest.fn(),
+        removeService: jest.fn(),
+      };
+
+      new AirPurifierAccessory(platform, accessory as any, mockDevice as any);
+
+      expect(accessory.removeService).toHaveBeenCalledWith(filterService);
       expect(accessory.addService).not.toHaveBeenCalledWith(platform.Service.FilterMaintenance);
     });
   });
@@ -148,6 +151,7 @@ describe('AirPurifierAccessory Filter Maintenance Features', () => {
           return airPurifierService;
         }),
         addService: jest.fn(),
+        removeService: jest.fn(),
       };
 
       airPurifier = new AirPurifierAccessory(platform, accessory as any, mockDevice as any);
@@ -211,6 +215,7 @@ describe('AirPurifierAccessory Filter Maintenance Features', () => {
       const accessory = {
         getService: jest.fn(() => filterService),
         addService: jest.fn(),
+        removeService: jest.fn(),
       };
 
       airPurifier = new AirPurifierAccessory(platform, accessory as any, mockDevice as any);
@@ -249,9 +254,10 @@ describe('AirPurifierAccessory Filter Maintenance Features', () => {
 
     it('should handle NaN filter life values', async () => {
       mockDevice.filterLife = NaN;
+      mockDevice.details!.filter_life = NaN as any;
       
       const result = await (airPurifier as any).getFilterLifeLevel();
-      expect(result).toBe(0); // Default to 0 for NaN
+      expect(result).toBe(100); // Default to 100% when data is invalid
     });
   });
 
@@ -262,6 +268,7 @@ describe('AirPurifierAccessory Filter Maintenance Features', () => {
       const accessory = {
         getService: jest.fn(() => filterService),
         addService: jest.fn(),
+        removeService: jest.fn(),
       };
 
       // Create base air purifier for testing
@@ -323,16 +330,23 @@ describe('AirPurifierAccessory Filter Maintenance Features', () => {
 
     beforeEach(() => {
       mockCharacteristic = {
+        onGet: jest.fn().mockReturnThis(),
+        onSet: jest.fn().mockReturnThis(),
+        setProps: jest.fn().mockReturnThis(),
         updateValue: jest.fn(),
       };
 
       mockDevice = createMockAirPurifier();
       
       const accessory = {
-        getService: jest.fn(() => ({
-          getCharacteristic: jest.fn(() => mockCharacteristic),
-        })),
+        getService: jest.fn((service) => {
+          if (service === platform.Service.AccessoryInformation) return infoService;
+          return {
+            getCharacteristic: jest.fn(() => mockCharacteristic),
+          };
+        }),
         addService: jest.fn(),
+        removeService: jest.fn(),
       };
 
       airPurifier = new AirPurifierAccessory(platform, accessory as any, mockDevice as any);
@@ -380,19 +394,30 @@ describe('AirPurifierAccessory Filter Maintenance Features', () => {
     let airPurifier: AirPurifierAccessory;
     let mockDevice: MockAirPurifierWithFilter;
     let mockCharacteristic: any;
+    let airPurifierServiceMock: any;
 
     beforeEach(() => {
       mockCharacteristic = {
+        onGet: jest.fn().mockReturnThis(),
+        onSet: jest.fn().mockReturnThis(),
+        setProps: jest.fn().mockReturnThis(),
         updateValue: jest.fn(),
       };
 
       mockDevice = createMockAirPurifier();
+
+      airPurifierServiceMock = {
+        getCharacteristic: jest.fn(() => mockCharacteristic),
+        updateCharacteristic: jest.fn(),
+      };
       
       const accessory = {
-        getService: jest.fn(() => ({
-          getCharacteristic: jest.fn(() => mockCharacteristic),
-        })),
+        getService: jest.fn((service) => {
+          if (service === platform.Service.AccessoryInformation) return infoService;
+          return airPurifierServiceMock;
+        }),
         addService: jest.fn(),
+        removeService: jest.fn(),
       };
 
       airPurifier = new AirPurifierAccessory(platform, accessory as any, mockDevice as any);
@@ -402,10 +427,17 @@ describe('AirPurifierAccessory Filter Maintenance Features', () => {
       // Simulate device update
       mockDevice.filterLife = 30;
       
-      await (airPurifier as any).updateDeviceState();
+      await (airPurifier as any).updateDeviceSpecificStates(mockDevice);
 
-      // Verify characteristics were updated
-      expect(mockCharacteristic.updateValue).toHaveBeenCalled();
+      // Verify filter characteristics were updated
+      expect(airPurifierServiceMock.updateCharacteristic).toHaveBeenCalledWith(
+        platform.Characteristic.FilterChangeIndication,
+        0
+      );
+      expect(airPurifierServiceMock.updateCharacteristic).toHaveBeenCalledWith(
+        platform.Characteristic.FilterLifeLevel,
+        30
+      );
     });
 
     it('should handle rapid filter life changes', async () => {
@@ -433,6 +465,7 @@ describe('AirPurifierAccessory Filter Maintenance Features', () => {
       const accessory = {
         getService: jest.fn(() => filterService),
         addService: jest.fn(),
+        removeService: jest.fn(),
       };
 
       airPurifier = new AirPurifierAccessory(platform, accessory as any, mockDevice as any);
@@ -464,8 +497,8 @@ describe('AirPurifierAccessory Filter Maintenance Features', () => {
       const lifeResult = await (airPurifier as any).getFilterLifeLevel();
       const changeResult = await (airPurifier as any).getFilterChangeIndication();
       
-      expect(lifeResult).toBe(0);
-      expect(changeResult).toBe(1); // CHANGE_FILTER for corrupted data
+      expect(lifeResult).toBe(100);
+      expect(changeResult).toBe(0); // FILTER_OK when data is missing/invalid
     });
 
     it('should handle invalid filter life types', async () => {
@@ -473,7 +506,7 @@ describe('AirPurifierAccessory Filter Maintenance Features', () => {
       mockDevice.details!.filter_life = 'invalid' as any;
 
       const lifeResult = await (airPurifier as any).getFilterLifeLevel();
-      expect(lifeResult).toBe(0);
+      expect(lifeResult).toBe(100);
     });
 
     it('should handle extreme filter life values gracefully', async () => {
@@ -500,6 +533,7 @@ describe('AirPurifierAccessory Filter Maintenance Features', () => {
       const accessory = {
         getService: jest.fn(() => filterService),
         addService: jest.fn(),
+        removeService: jest.fn(),
       };
 
       const airPurifier = new AirPurifierAccessory(platform, accessory as any, coreDevice as any);
@@ -518,6 +552,7 @@ describe('AirPurifierAccessory Filter Maintenance Features', () => {
       const accessory = {
         getService: jest.fn(() => filterService),
         addService: jest.fn(),
+        removeService: jest.fn(),
       };
 
       const airPurifier = new AirPurifierAccessory(platform, accessory as any, lapDevice as any);
@@ -536,6 +571,7 @@ describe('AirPurifierAccessory Filter Maintenance Features', () => {
       const accessory = {
         getService: jest.fn(() => filterService),
         addService: jest.fn(),
+        removeService: jest.fn(),
       };
 
       const airPurifier = new AirPurifierAccessory(platform, accessory as any, lvDevice as any);
@@ -555,6 +591,7 @@ describe('AirPurifierAccessory Filter Maintenance Features', () => {
       const accessory = {
         getService: jest.fn(() => filterService),
         addService: jest.fn(),
+        removeService: jest.fn(),
       };
 
       airPurifier = new AirPurifierAccessory(platform, accessory as any, mockDevice as any);

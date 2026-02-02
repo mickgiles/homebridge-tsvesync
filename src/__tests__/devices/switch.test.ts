@@ -54,7 +54,7 @@ describe('Switch Device Tests', () => {
       serverVersion: '1.0.0',
       user: {
         configPath: jest.fn(),
-        storagePath: jest.fn(),
+        storagePath: jest.fn().mockReturnValue('/tmp'),
         persistPath: jest.fn(),
       },
       hapLegacyTypes: {},
@@ -140,7 +140,7 @@ describe('Switch Device Tests', () => {
     // Setup VeSync mock
     mockVeSync = {
       login: jest.fn().mockResolvedValue(true),
-      getDevices: jest.fn().mockResolvedValue(true),
+      update: jest.fn().mockResolvedValue(undefined),
       switches: [],
     } as unknown as jest.Mocked<VeSync>;
 
@@ -182,7 +182,7 @@ describe('Switch Device Tests', () => {
       });
 
       // Mock successful details retrieval
-      mockSwitch.getDetails.mockResolvedValue(true);
+      (mockSwitch.getDetails as unknown as jest.Mock).mockResolvedValue(true);
       mockSwitch.deviceStatus = 'off';
 
       // Create a mock accessory
@@ -255,7 +255,7 @@ describe('Switch Device Tests', () => {
       });
 
       // Mock successful details retrieval
-      mockSwitch.getDetails.mockResolvedValue(true);
+      (mockSwitch.getDetails as unknown as jest.Mock).mockResolvedValue(true);
       mockSwitch.deviceStatus = 'off';
 
       // Create a mock accessory
@@ -282,7 +282,7 @@ describe('Switch Device Tests', () => {
       });
 
       // Mock successful details retrieval
-      mockSwitch.getDetails.mockResolvedValue(true);
+      (mockSwitch.getDetails as unknown as jest.Mock).mockResolvedValue(true);
       mockSwitch.deviceStatus = 'off';
 
       // Create a mock accessory

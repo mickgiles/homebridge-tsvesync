@@ -23,6 +23,8 @@ describe('Fan Device Tests', () => {
           RotationDirection: jest.fn(),
           SwingMode: jest.fn(),
           LockPhysicalControls: jest.fn(),
+          On: 'On',
+          Name: 'Name',
           Manufacturer: jest.fn(),
           Model: jest.fn(),
           SerialNumber: jest.fn(),
@@ -70,6 +72,15 @@ describe('Fan Device Tests', () => {
         uuid: 'test-uuid',
       });
 
+      const modeCharacteristic = {
+        onGet: jest.fn().mockReturnThis(),
+        onSet: jest.fn().mockReturnThis(),
+      };
+
+      const modeService = {
+        getCharacteristic: jest.fn().mockReturnValue(modeCharacteristic),
+      };
+
       // Create mock services
       infoService = {
         setCharacteristic: jest.fn().mockReturnThis(),
@@ -99,6 +110,9 @@ describe('Fan Device Tests', () => {
       // Create mock accessory
       accessory = {
         getService: jest.fn((service) => {
+          if (service === 'Fan Mode') {
+            return modeService;
+          }
           if (service === platform.Service.AccessoryInformation) {
             return infoService;
           }
@@ -136,19 +150,19 @@ describe('Fan Device Tests', () => {
     it('should handle rotation direction changes', async () => {
       expect(handlers.setRotationDirection).toBeDefined();
       await handlers.setRotationDirection(1); // CLOCKWISE
-      expect(mockFan.setRotationDirection).toHaveBeenCalledWith('clockwise');
+      expect(mockFan.setOscillation).toHaveBeenCalledWith(true);
 
       await handlers.setRotationDirection(0); // COUNTER_CLOCKWISE
-      expect(mockFan.setRotationDirection).toHaveBeenCalledWith('counterclockwise');
+      expect(mockFan.setOscillation).toHaveBeenCalledWith(false);
     });
 
     it('should handle swing mode changes', async () => {
       expect(handlers.setSwingMode).toBeDefined();
       await handlers.setSwingMode(1); // SWING_ENABLED
-      expect(mockFan.setSwingMode).toHaveBeenCalledWith(true);
+      expect(mockFan.setOscillation).toHaveBeenCalledWith(true);
 
       await handlers.setSwingMode(0); // SWING_DISABLED
-      expect(mockFan.setSwingMode).toHaveBeenCalledWith(false);
+      expect(mockFan.setOscillation).toHaveBeenCalledWith(false);
     });
 
     it('should handle child lock changes', async () => {

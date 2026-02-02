@@ -189,7 +189,7 @@ export const createMockOutlet = (config: MockOutletConfig = {}): jest.Mocked<VeS
 export const createMockVeSync = (): jest.Mocked<VeSync> => {
   return {
     login: jest.fn().mockResolvedValue(true),
-    getDevices: jest.fn().mockResolvedValue(true),
+    update: jest.fn().mockResolvedValue(undefined),
     fans: [],
     outlets: [],
     switches: [],
@@ -203,7 +203,7 @@ export const createMockVeSync = (): jest.Mocked<VeSync> => {
     username: 'test@example.com',
     password: 'test-password',
     token: 'test-token',
-    accountID: 'test-account',
+    accountId: 'test-account',
     apiKey: 'test-key',
     apiBase: 'test-base',
     timezone: 'UTC',

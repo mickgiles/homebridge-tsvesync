@@ -22,6 +22,14 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
   private readonly deviceAccessories: Map<string, BaseAccessory> = new Map();
   // Track AQ sensor accessories separately
   private readonly aqSensorAccessories: Map<string, PlatformAccessory> = new Map();
+  /**
+   * Track cached accessories that temporarily disappear from the VeSync device list.
+   *
+   * Some devices stop reporting to the VeSync cloud when powered off/unplugged. If we
+   * unregister the HomeKit accessory in those moments, HomeKit treats it as removed and
+   * users lose automations. Instead we keep the accessory cached and let it come back.
+   */
+  private readonly missingAccessories: Set<string> = new Set();
   
   private client!: VeSync;
   private deviceUpdateInterval?: NodeJS.Timeout;
@@ -703,27 +711,72 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
       }
 
       // Remove platform accessories that no longer exist or are now excluded
-      this.accessories
-        .filter(accessory => !processedDeviceUUIDs.has(accessory.UUID))
-        .forEach(accessory => {
-          this.logger.info('Removing existing accessory:', accessory.displayName);
-          try {
-            // Remove from platform's accessories array first
-            const index = this.accessories.indexOf(accessory);
-            if (index > -1) {
-              this.accessories.splice(index, 1);
-            }
-            // Then try to unregister from the bridge
-            this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
-          } catch (error) {
-            this.logger.debug(`Failed to unregister accessory ${accessory.displayName}, it may have already been removed:`, error);
+      // If any previously-missing accessories reappear, clear the missing marker
+      for (const uuid of processedDeviceUUIDs) {
+        if (this.missingAccessories.delete(uuid)) {
+          const accessory = this.accessories.find(acc => acc.UUID === uuid);
+          if (accessory) {
+            this.logger.info('Accessory is back online:', accessory.displayName);
           }
-          // Always clean up the device accessory handler
-          this.deviceAccessories.delete(accessory.UUID);
-        });
+        }
+      }
+
+      // Do NOT automatically unregister accessories just because they weren't returned by the API.
+      // VeSync devices can disappear from the cloud list when offline (e.g., powered off to clean
+      // a filter), and unregistering causes HomeKit automations to be removed/broken.
+      //
+      // We only remove accessories when they are explicitly excluded by config.
+      const orphanedAccessories = this.accessories.filter(accessory => !processedDeviceUUIDs.has(accessory.UUID));
+      for (const accessory of orphanedAccessories) {
+        if (this.isAccessoryExcluded(accessory)) {
+          this.unregisterAccessory(accessory, 'excluded by configuration');
+          continue;
+        }
+
+        if (!this.missingAccessories.has(accessory.UUID)) {
+          this.missingAccessories.add(accessory.UUID);
+          this.logger.warn(
+            `Accessory "${accessory.displayName}" is missing from the VeSync device list. Keeping it cached to preserve HomeKit automations; it should recover automatically when the device comes back online.`
+          );
+        }
+      }
 
     } catch (error) {
       this.logger.error('Failed to discover devices:', error);
+    }
+  }
+
+  private isAccessoryExcluded(accessory: PlatformAccessory): boolean {
+    const device = (accessory.context as any)?.device;
+    if (!device) {
+      return false;
+    }
+    try {
+      return this.shouldExcludeDevice(device);
+    } catch {
+      return false;
+    }
+  }
+
+  private unregisterAccessory(accessory: PlatformAccessory, reason: string) {
+    this.logger.info(`Removing existing accessory (${reason}):`, accessory.displayName);
+
+    // Remove from platform's accessories array first
+    const index = this.accessories.indexOf(accessory);
+    if (index > -1) {
+      this.accessories.splice(index, 1);
+    }
+
+    // Remove from tracking maps
+    this.deviceAccessories.delete(accessory.UUID);
+    this.aqSensorAccessories.delete(accessory.UUID);
+    this.missingAccessories.delete(accessory.UUID);
+
+    // Then try to unregister from the bridge
+    try {
+      this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+    } catch (error) {
+      this.logger.debug(`Failed to unregister accessory ${accessory.displayName}, it may have already been removed:`, error);
     }
   }
 

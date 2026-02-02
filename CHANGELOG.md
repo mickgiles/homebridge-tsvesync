@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.7 (2026-02-02)
+
+### Fixed
+- **🧽 Preserve HomeKit Automations When Devices Go Offline**: Stops unregistering accessories when a device temporarily disappears from the VeSync device list (e.g., powered off/unplugged for filter cleaning), preventing HomeKit name resets and broken automations. Accessories remain cached and should recover automatically when the device comes back online.
+
+### Dependencies
+- **📦 tsvesync**: Updated to 1.4.7 for version sync (no functional changes).
+
 ## 1.4.6 (2026-01-25)
 
 ### Fixed

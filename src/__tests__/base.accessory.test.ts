@@ -1,10 +1,7 @@
-import { PlatformAccessory, Service, Characteristic, Logger } from 'homebridge';
-import { mock, mockDeep } from 'jest-mock-extended';
+import { PlatformAccessory, Logger } from 'homebridge';
 import { BaseAccessory } from '../accessories/base.accessory';
 import { TSVESyncPlatform } from '../platform';
-import { VeSync } from 'tsvesync';
-import { DeviceCapabilities } from '../types';
-import { PollingManager } from '../utils/polling-manager';
+import { DeviceCapabilities } from '../types/device.types';
 import { PluginLogger } from '../utils/logger';
 import { RetryManager } from '../utils/retry';
 
@@ -17,46 +14,22 @@ class TestAccessory extends BaseAccessory {
     this.service = new this.platform.Service.Switch(this.accessory.displayName);
   }
   
-  protected async updateDeviceSpecificStates(): Promise<void> {
+  protected async updateDeviceSpecificStates(_details: any): Promise<void> {
     // Test implementation
   }
   
   protected getDeviceCapabilities(): DeviceCapabilities {
     return {
-      power: true,
-      mode: false,
-      speed: false,
-      timer: false,
       hasBrightness: false,
       hasColorTemp: false,
       hasColor: false,
       hasSpeed: false,
-      hasMode: false,
-      hasTimer: false,
-      hasSchedule: false,
       hasHumidity: false,
       hasAirQuality: false,
       hasWaterLevel: false,
       hasChildLock: false,
       hasSwingMode: false,
     };
-  }
-
-  // Override syncDeviceState to remove retry logic
-  public async syncDeviceState(): Promise<boolean> {
-    try {
-      await this.platform.discoverDevices();
-      
-      if (!this.device.deviceStatus) {
-        return false;
-      }
-      
-      await this.updateDeviceSpecificStates();
-      return true;
-    } catch (error) {
-      (this as any).logger.error('Failed to sync device state', {}, error);
-      throw error;
-    }
   }
 
   // Expose handleDeviceError for testing
@@ -257,39 +230,21 @@ describe('BaseAccessory', () => {
   });
 
   describe('device state management', () => {
-    beforeEach(() => {
-      // Reset mocks
-      mockPlatform.discoverDevices.mockReset();
-      mockPluginLogger.error.mockReset();
+    it('syncDeviceState calls updateDeviceSpecificStates', async () => {
+      const updateSpy = jest.spyOn(accessory as any, 'updateDeviceSpecificStates');
+      await accessory.syncDeviceState();
+      expect(updateSpy).toHaveBeenCalledWith(mockDevice);
     });
 
-    it('should sync device state successfully', async () => {
-      mockDevice.deviceStatus = 'on';
-      mockPlatform.discoverDevices.mockResolvedValue(undefined);
+    it('syncDeviceState swallows update errors and logs', async () => {
+      jest.spyOn(accessory as any, 'updateDeviceSpecificStates').mockRejectedValueOnce(new Error('Boom'));
+      await accessory.syncDeviceState();
 
-      await (accessory as any).syncDeviceState();
-      expect(mockPlatform.discoverDevices).toHaveBeenCalled();
-    });
-
-    it('should handle sync failure', async () => {
-      const error = new Error('Sync failed');
-      mockPlatform.discoverDevices.mockRejectedValue(error);
-
-      await expect((accessory as any).syncDeviceState()).rejects.toThrow(error);
       expect(mockPluginLogger.error).toHaveBeenCalledWith(
         expect.stringContaining('Failed to sync device state'),
         expect.any(Object),
-        error
+        expect.any(Error)
       );
-    });
-
-    it('should handle empty device details', async () => {
-      mockDevice.deviceStatus = undefined;
-      mockPlatform.discoverDevices.mockResolvedValue(undefined);
-
-      const result = await (accessory as any).syncDeviceState();
-      expect(result).toBe(false);
-      expect(mockPlatform.discoverDevices).toHaveBeenCalled();
     });
   });
 
