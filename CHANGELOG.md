@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.4.8 (2026-03-27)
+
+### Fixed
+- **💧 Dual 200S Write Consistency**: Humidifier writes now follow the same optimistic HomeKit update pattern as the air purifier accessory, so successful power and auto-mode commands no longer log false "did not change to desired state/mode" warnings or bounce the Home app back to stale values while VeSync catches up.
+
+### Tests
+- **🧪 Humidifier Regression Coverage**: Added targeted stale-refresh tests for Dual 200S power and auto-mode writes to lock in the eventual-consistency behavior reported in issue #31.
+
+### Dependencies
+- **📦 tsvesync**: Updated to 1.4.8 for version sync (no functional changes).
+
 ## 1.4.7 (2026-02-02)
 
 ### Fixed

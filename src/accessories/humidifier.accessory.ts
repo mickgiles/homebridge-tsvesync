@@ -604,84 +604,62 @@ export class HumidifierAccessory extends BaseAccessory {
       this.platform.log.warn(`Failed to refresh device details: ${error}`);
     }
     
-    // Ensure we're using the most up-to-date status
-    // According to the API documentation, deviceStatus should be 'on' or 'off'
+    this.applyDeviceStatesToHomeKit(details);
+  }
+
+  private applyDeviceStatesToHomeKit(details: any): void {
+    const extendedDevice = this.device as ExtendedVeSyncHumidifier;
     const isActive = this.device.deviceStatus === 'on';
     this.platform.log.debug(`Device ${this.device.deviceName} active state: ${isActive}, Status: ${this.device.deviceStatus}`);
-    
-    // Update active state - this is critical for HomeKit to show the correct state
+
     this.service.updateCharacteristic(
       this.platform.Characteristic.Active,
       isActive ? 1 : 0
     );
 
-    // Update current state based on API mapping
-    // HomeKit states: 0 = INACTIVE, 1 = IDLE, 2 = HUMIDIFYING, 3 = DEHUMIDIFYING
-    // Mapping: 
-    // - If not active -> INACTIVE (0)
-    // - If active and mode is 'manual' -> HUMIDIFYING (2)
-    // - If active and mode is 'auto' or 'sleep' -> Check if we need to be humidifying
-    let currentState = 0; // Default to INACTIVE
-    
+    let currentState = 0;
+
     if (isActive) {
       if (extendedDevice.mode === 'manual') {
-        currentState = 2; // HUMIDIFYING - will show "Rising to X%"
+        currentState = 2;
       } else if (extendedDevice.mode === 'auto' || extendedDevice.mode === 'sleep') {
-        // Get current humidity reading (actual humidity in the room)
-        const currentHumidity = extendedDevice.currentHumidity !== undefined ? 
-                               extendedDevice.currentHumidity : 
-                               extendedDevice.details?.current_humidity || 
-                               0;
-        
-        // Get target humidity (humidity setting)
-        const targetHumidity = extendedDevice.humidity || 
-                              extendedDevice.configuration?.auto_target_humidity || 
-                              extendedDevice.details?.target_humidity || 
-                              45; // Default to 45% if not available
-        
-        // In auto mode, check if we need to be humidifying
+        const currentHumidity = extendedDevice.currentHumidity !== undefined ?
+          extendedDevice.currentHumidity :
+          extendedDevice.details?.current_humidity ||
+          0;
+
+        const targetHumidity = extendedDevice.humidity ||
+          extendedDevice.configuration?.auto_target_humidity ||
+          extendedDevice.details?.target_humidity ||
+          45;
+
         if (currentHumidity < targetHumidity) {
-          currentState = 2; // HUMIDIFYING - will show "Rising to X%"
+          currentState = 2;
           this.platform.log.debug(`Auto mode: Current humidity ${currentHumidity}% is below target ${targetHumidity}%, setting state to HUMIDIFYING`);
         } else {
-          currentState = 1; // IDLE - will show "Set to X%"
+          currentState = 1;
           this.platform.log.debug(`Auto mode: Current humidity ${currentHumidity}% has reached target ${targetHumidity}%, setting state to IDLE`);
         }
       }
     }
-    
+
     this.service.updateCharacteristic(
       this.platform.Characteristic.CurrentHumidifierDehumidifierState,
       currentState
     );
 
-    // Update target state based on device mode
-    // HomeKit Target State: 0 = HUMIDIFIER_OR_DEHUMIDIFIER (Auto), 1 = HUMIDIFIER, 2 = DEHUMIDIFIER
-    // Mapping:
-    // - 'auto' -> HUMIDIFIER_OR_DEHUMIDIFIER (0)
-    // - 'manual' -> HUMIDIFIER (1)
-    // - 'sleep' -> HUMIDIFIER (1) (no direct mapping, default to HUMIDIFIER)
-    let targetState = 1; // Default to HUMIDIFIER
-    
-    if (extendedDevice.mode === 'auto') {
-      targetState = 0; // HUMIDIFIER_OR_DEHUMIDIFIER
-    }
-    
     this.service.updateCharacteristic(
       this.platform.Characteristic.TargetHumidifierDehumidifierState,
-      targetState
+      extendedDevice.mode === 'auto' ? 0 : 1
     );
 
-    // Update rotation speed - convert device speed (1-9) to HomeKit percentage (0-100)
     let rotationSpeed = 0;
-    
-    // For Humid200300S devices, use mistLevel if available
+
     if (isActive) {
       if (this.isHumid200300S && extendedDevice.mistLevel !== undefined) {
         const mistLevel = extendedDevice.mistLevel;
         this.platform.log.debug(`Device ${this.device.deviceName} mist level: ${mistLevel}`);
-        
-        // Convert mist level (1-9) to HomeKit percentage (0-100)
+
         switch (mistLevel) {
           case 1: rotationSpeed = 11; break;
           case 2: rotationSpeed = 22; break;
@@ -694,7 +672,6 @@ export class HumidifierAccessory extends BaseAccessory {
           case 9: rotationSpeed = 100; break;
         }
       } else if (this.device.speed !== undefined) {
-        // Use speed for other humidifier types
         this.platform.log.debug(`Device ${this.device.deviceName} speed: ${this.device.speed}`);
         switch (this.device.speed) {
           case 1: rotationSpeed = 11; break;
@@ -709,38 +686,31 @@ export class HumidifierAccessory extends BaseAccessory {
         }
       }
     }
-    
+
     this.platform.log.debug(`Setting rotation speed to ${rotationSpeed}% for device: ${this.device.deviceName}`);
     this.service.updateCharacteristic(
       this.platform.Characteristic.RotationSpeed,
       rotationSpeed
     );
 
-    // Update relative humidity if supported
     if (this.capabilities && this.capabilities.hasHumidity) {
-      // Get current humidity reading (actual humidity in the room)
-      const currentHumidity = extendedDevice.currentHumidity !== undefined ? 
-                             extendedDevice.currentHumidity : 
-                             extendedDevice.details?.current_humidity || 
-                             0;
-      
-      
-      // Update current humidity characteristic if we have a valid reading
+      const currentHumidity = extendedDevice.currentHumidity !== undefined ?
+        extendedDevice.currentHumidity :
+        extendedDevice.details?.current_humidity ||
+        0;
+
       if (currentHumidity > 0) {
         this.service.updateCharacteristic(
           this.platform.Characteristic.CurrentRelativeHumidity,
           currentHumidity
         );
       }
-      
-      // Get target humidity (humidity setting)
-      // According to API docs, humidifier.humidity returns auto_target_humidity from configuration
-      const targetHumidity = extendedDevice.humidity || 
-                            extendedDevice.configuration?.auto_target_humidity || 
-                            extendedDevice.details?.target_humidity || 
-                            45; // Default to 45% if not available
-      
-      
+
+      const targetHumidity = extendedDevice.humidity ||
+        extendedDevice.configuration?.auto_target_humidity ||
+        extendedDevice.details?.target_humidity ||
+        45;
+
       if (this.service.testCharacteristic(this.platform.Characteristic.RelativeHumidityHumidifierThreshold)) {
         this.service.updateCharacteristic(
           this.platform.Characteristic.RelativeHumidityHumidifierThreshold,
@@ -749,21 +719,16 @@ export class HumidifierAccessory extends BaseAccessory {
       }
     }
 
-    // Update water level if supported (inferred from water_lacks/water_tank_lifted)
     if (this.capabilities && this.capabilities.hasWaterLevel) {
-      // Check for water_lacks or water_tank_lifted in details or device.details
-      const waterLacks = details?.water_lacks || 
+      const waterLacks = details?.water_lacks ||
         (extendedDevice.details && extendedDevice.details.water_lacks);
-      
-      const waterTankLifted = details?.water_tank_lifted || 
+
+      const waterTankLifted = details?.water_tank_lifted ||
         (extendedDevice.details && extendedDevice.details.water_tank_lifted);
-      
+
       const waterLow = waterLacks || waterTankLifted;
-      
-      // Note: VeSync devices only support a boolean water_lacks property, not a percentage water level
-      // We map this to 0% or 100% for HomeKit's WaterLevel characteristic
+
       if (this.service.getCharacteristic(this.platform.Characteristic.WaterLevel)) {
-        // Map water level as 0 for low water, 100 for sufficient water
         this.service.updateCharacteristic(
           this.platform.Characteristic.WaterLevel,
           waterLow ? 0 : 100
@@ -771,51 +736,46 @@ export class HumidifierAccessory extends BaseAccessory {
         this.platform.log.debug(`Water level for ${this.device.deviceName}: ${waterLow ? 'Low (0%)' : 'OK (100%)'}`);
       }
     }
-    
-    // Update night light characteristics for devices that support it
+
     if ((this.isHumid200300S || this.isHumid1000S) && this.lightService) {
-      const brightness = extendedDevice.nightLightBrightness || 
+      const brightness = extendedDevice.nightLightBrightness ||
         (extendedDevice.details && extendedDevice.details.night_light_brightness) || 0;
-      
-      // Update on/off state
+
       this.lightService.updateCharacteristic(
         this.platform.Characteristic.On,
         brightness > 0
       );
-      
-      // Update brightness
+
       this.lightService.updateCharacteristic(
         this.platform.Characteristic.Brightness,
         brightness
       );
     }
-    
-    // Update temperature for Superior6000S
+
     if (this.isSuperior6000S && this.temperatureService) {
-      const temperature = extendedDevice.temperature || 
-        (extendedDevice.details && extendedDevice.details.temperature) || 
-        20; // Default to 20°C if not available
-      
+      const temperature = extendedDevice.temperature ||
+        (extendedDevice.details && extendedDevice.details.temperature) ||
+        20;
+
       this.temperatureService.updateCharacteristic(
         this.platform.Characteristic.CurrentTemperature,
         temperature
       );
     }
-    
-    // Update filter life for Superior6000S
+
     if (this.isSuperior6000S && this.filterService) {
-      const filterLife = extendedDevice.filterLifePercentage || 
-        (extendedDevice.details && extendedDevice.details.filter_life) || 
-        100; // Default to 100% if not available
-      
+      const filterLife = extendedDevice.filterLifePercentage ||
+        (extendedDevice.details && extendedDevice.details.filter_life) ||
+        100;
+
       this.filterService.updateCharacteristic(
         this.platform.Characteristic.FilterLifeLevel,
         filterLife
       );
-      
+
       this.filterService.updateCharacteristic(
         this.platform.Characteristic.FilterChangeIndication,
-        filterLife < 10 ? 1 : 0 // 1 = CHANGE_FILTER, 0 = FILTER_OK
+        filterLife < 10 ? 1 : 0
       );
     }
   }
@@ -940,74 +900,11 @@ export class HumidifierAccessory extends BaseAccessory {
       }
       
       if (!success) {
-        this.platform.log.warn(`API call to turn ${isOn ? 'on' : 'off'} device returned false`);
+        throw new Error(`Failed to turn ${isOn ? 'on' : 'off'} device`);
       }
-      
-      // Refresh device details to get the latest state
-      if (typeof extendedDevice.getDetails === 'function') {
-        await extendedDevice.getDetails();
-        this.platform.log.debug(
-          `Device ${this.device.deviceName} status after setting: ` +
-          `Status: ${this.device.deviceStatus}, ` +
-          `Mode: ${extendedDevice.mode}, ` +
-          `Speed: ${this.device.speed}, ` +
-          `MistLevel: ${extendedDevice.mistLevel}`
-        );
-      }
-      
-      // Verify the device is actually in the desired state
-      const actuallyOn = this.device.deviceStatus === 'on';
-      if (actuallyOn !== isOn) {
-        this.platform.log.warn(
-          `Device ${this.device.deviceName} did not change to desired state. ` +
-          `Wanted: ${isOn ? 'on' : 'off'}, Actual: ${actuallyOn ? 'on' : 'off'}`
-        );
-      }
-      
-      // Always update HomeKit with the actual device state, not the requested state
-      this.service.updateCharacteristic(
-        this.platform.Characteristic.Active,
-        actuallyOn ? 1 : 0
-      );
-      
-      // Update current state based on the actual state and mode
-      let currentState = 0; // Default to INACTIVE
-      
-      if (actuallyOn) {
-        if (extendedDevice.mode === 'manual') {
-          currentState = 2; // HUMIDIFYING - will show "Rising to X%"
-        } else if (extendedDevice.mode === 'auto' || extendedDevice.mode === 'sleep') {
-          // Get current humidity reading (actual humidity in the room)
-          const currentHumidity = extendedDevice.currentHumidity !== undefined ? 
-                                 extendedDevice.currentHumidity : 
-                                 extendedDevice.details?.current_humidity || 
-                                 0;
-          
-          // Get target humidity (humidity setting)
-          const targetHumidity = extendedDevice.humidity || 
-                                extendedDevice.configuration?.auto_target_humidity || 
-                                extendedDevice.details?.target_humidity || 
-                                45; // Default to 45% if not available
-          
-          // In auto mode, check if we need to be humidifying
-          if (currentHumidity < targetHumidity) {
-            currentState = 2; // HUMIDIFYING - will show "Rising to X%"
-            this.platform.log.debug(`Auto mode: Current humidity ${currentHumidity}% is below target ${targetHumidity}%, setting state to HUMIDIFYING`);
-          } else {
-            currentState = 1; // IDLE - will show "Set to X%"
-            this.platform.log.debug(`Auto mode: Current humidity ${currentHumidity}% has reached target ${targetHumidity}%, setting state to IDLE`);
-          }
-        }
-      }
-      
-      this.service.updateCharacteristic(
-        this.platform.Characteristic.CurrentHumidifierDehumidifierState,
-        currentState
-      );
-      
-      // Update device state and characteristics
-      await this.updateDeviceSpecificStates(this.device);
-      await this.persistDeviceState('deviceStatus', actuallyOn ? 'on' : 'off');
+
+      this.applyDeviceStatesToHomeKit(this.device);
+      await this.persistDeviceState('deviceStatus', isOn ? 'on' : 'off');
     } catch (error) {
       this.handleDeviceError('set active state', error);
     }
@@ -1047,12 +944,6 @@ export class HumidifierAccessory extends BaseAccessory {
         const turnOnSuccess = await this.device.turnOn();
         if (!turnOnSuccess) {
           throw new Error('Failed to turn on device before changing mode');
-        }
-        
-        // Refresh device details after turning on
-        if (typeof device.getDetails === 'function') {
-          await device.getDetails();
-          this.platform.log.debug(`Device status after turning on: ${this.device.deviceStatus}`);
         }
       }
       
@@ -1125,66 +1016,8 @@ export class HumidifierAccessory extends BaseAccessory {
       if (!success) {
         throw new Error(`Failed to set device mode to ${mode}`);
       }
-      
-      // Refresh device details to get the latest state
-      if (typeof device.getDetails === 'function') {
-        await device.getDetails();
-        this.platform.log.debug(`Device ${this.device.deviceName} mode after setting: ${device.mode}`);
-      }
-      
-      // Verify the device is actually in the desired mode
-      const actualMode = device.mode;
-      if (actualMode !== mode) {
-        this.platform.log.warn(
-          `Device ${this.device.deviceName} did not change to desired mode. ` +
-          `Wanted: ${mode}, Actual: ${actualMode}`
-        );
-      }
-      
-      // Update the target state based on the actual mode
-      const targetState = actualMode === 'auto' ? 0 : 1;
-      this.updateCharacteristicValue(
-        this.platform.Characteristic.TargetHumidifierDehumidifierState,
-        targetState
-      );
-      
-      // Update current state based on the active state and mode
-      let currentState = 0; // Default to INACTIVE
-      
-      if (this.device.deviceStatus === 'on') {
-        if (actualMode === 'manual') {
-          currentState = 2; // HUMIDIFYING - will show "Rising to X%"
-        } else if (actualMode === 'auto' || actualMode === 'sleep') {
-          // Get current humidity reading (actual humidity in the room)
-          const currentHumidity = device.currentHumidity !== undefined ? 
-                                 device.currentHumidity : 
-                                 device.details?.current_humidity || 
-                                 0;
-          
-          // Get target humidity (humidity setting)
-          const targetHumidity = device.humidity || 
-                                device.configuration?.auto_target_humidity || 
-                                device.details?.target_humidity || 
-                                45; // Default to 45% if not available
-          
-          // In auto mode, check if we need to be humidifying
-          if (currentHumidity < targetHumidity) {
-            currentState = 2; // HUMIDIFYING - will show "Rising to X%"
-            this.platform.log.debug(`Auto mode: Current humidity ${currentHumidity}% is below target ${targetHumidity}%, setting state to HUMIDIFYING`);
-          } else {
-            currentState = 1; // IDLE - will show "Set to X%"
-            this.platform.log.debug(`Auto mode: Current humidity ${currentHumidity}% has reached target ${targetHumidity}%, setting state to IDLE`);
-          }
-        }
-      }
-      
-      this.updateCharacteristicValue(
-        this.platform.Characteristic.CurrentHumidifierDehumidifierState,
-        currentState
-      );
-      
-      // Update device state and characteristics
-      await this.updateDeviceSpecificStates(this.device);
+
+      this.applyDeviceStatesToHomeKit(this.device);
     } catch (error) {
       this.handleDeviceError('set target state', error);
     }
