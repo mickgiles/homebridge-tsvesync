@@ -55,6 +55,7 @@ interface ExtendedVeSyncHumidifier extends VeSyncHumidifier {
   // For device-specific details
   details?: {
     target_humidity?: number;
+    auto_target_humidity?: number;
     night_light_brightness?: number;
     current_humidity?: number;
     water_lacks?: boolean;
@@ -94,8 +95,10 @@ export class HumidifierAccessory extends BaseAccessory {
   private temperatureService?: Service;
   private filterService?: Service;
 
-  // Tracks the last mode we commanded, to protect against stale API responses
+  // Tracks the last mode we commanded, to protect against stale API responses.
+  // Expires after 30s so out-of-band changes (VeSync app) are not masked.
   private _lastCommandedMode: string | null = null;
+  private _lastCommandedModeTime: number = 0;
 
   constructor(
     platform: TSVESyncPlatform,
@@ -267,7 +270,8 @@ export class HumidifierAccessory extends BaseAccessory {
     // Clear the override once the device reports the same mode (caught up).
     let effectiveMode = mode;
     if (this._lastCommandedMode !== null) {
-      if (mode === this._lastCommandedMode) {
+      const elapsed = Date.now() - this._lastCommandedModeTime;
+      if (mode === this._lastCommandedMode || elapsed > 30000) {
         this._lastCommandedMode = null;
       } else {
         this.platform.log.debug(`Using commanded mode '${this._lastCommandedMode}' instead of device-reported '${mode}'`);
@@ -1073,6 +1077,7 @@ export class HumidifierAccessory extends BaseAccessory {
 
       // Track commanded mode so stale getDetails() responses don't revert HomeKit
       this._lastCommandedMode = mode;
+      this._lastCommandedModeTime = Date.now();
 
       this.applyDeviceStatesToHomeKit(this.device);
     } catch (error) {
@@ -1133,6 +1138,7 @@ export class HumidifierAccessory extends BaseAccessory {
           await extendedDevice.setMode('manual');
         }
         this._lastCommandedMode = 'manual';
+        this._lastCommandedModeTime = Date.now();
       }
 
       // For Humid200S devices, limit mist level to 1-3
@@ -1256,6 +1262,8 @@ export class HumidifierAccessory extends BaseAccessory {
       // The next polling cycle will eventually sync the actual value.
       if (extendedDevice.details) {
         extendedDevice.details.target_humidity = targetHumidity;
+        // Humid200300S's humidity getter reads auto_target_humidity
+        extendedDevice.details.auto_target_humidity = targetHumidity;
       }
       this.service.updateCharacteristic(
         this.platform.Characteristic.RelativeHumidityHumidifierThreshold,
