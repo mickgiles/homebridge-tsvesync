@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.4.9 (2026-03-30)
+
+### Fixed
+- **💧 Dual 200S Mode, Mist, and Humidity Control**: Corrected HomeKit target-state mapping for Dual 200S / LUH-D301S humidifiers, constrained mist control to the two supported levels, and switches to manual mode before applying mist-speed changes so Home commands match actual device behavior.
+- **🎯 Humidity Slider Stability**: Prevented target-humidity snap-back by keeping the commanded humidity in memory, updating the humidity field the getter actually reads, and syncing `Active` immediately when humidity changes power the unit on.
+- **🕒 Stale Mode Override Expiry**: Expires the temporary commanded-mode override after 30 seconds so HomeKit stays stable during eventual consistency without masking later mode changes from the VeSync app.
+
+### Changed
+- **🧱 Build Scope**: Excluded test files from the production TypeScript build to avoid type-check failures caused by local/Homebridge test-only type differences.
+
+### Tests
+- **🧪 Dual 200S Regression Coverage**: Expanded humidifier write-consistency coverage around target humidity and stale-response behavior so the plugin-side Dual 200S fixes stay locked in.
+
+### Dependencies
+- **📦 tsvesync**: Updated to 1.4.9 for the Dual 200S humidifier bypass write-method fix.
+
 ## 1.4.8 (2026-03-27)
 
 ### Fixed
