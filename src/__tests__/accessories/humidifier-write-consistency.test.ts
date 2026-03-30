@@ -219,6 +219,8 @@ const createMockHumidifier = (options?: {
       syncState();
       return true;
     }),
+    setMistLevel: jest.fn().mockResolvedValue(true),
+    changeFanSpeed: jest.fn().mockResolvedValue(true),
     uuid: 'uuid',
     getDetails: jest.fn().mockImplementation(async () => {
       if (options?.staleRefresh) {
@@ -279,14 +281,14 @@ describe('HumidifierAccessory write consistency', () => {
     );
   });
 
-  it('keeps HomeKit in auto mode when the first Dual200S refresh is stale after setting mode', async () => {
+  it('keeps HomeKit in manual mode when the first Dual200S refresh is stale after setting mode', async () => {
     const { accessory, humidifierService } = createMockAccessory(platform);
     const device = createMockHumidifier({
       deviceStatus: 'on',
-      mode: 'manual',
+      mode: 'auto',
       staleRefresh: (state) => {
         state.deviceStatus = 'on';
-        state.mode = 'manual';
+        state.mode = 'auto';
       },
     });
 
@@ -294,16 +296,13 @@ describe('HumidifierAccessory write consistency', () => {
     humidifierService.updateCharacteristic.mockClear();
     logger.warn.mockClear();
 
+    // HomeKit state 0 = "Auto" in Home app → VeSync manual for Dual200S
     await (humidifier as any).setTargetState(0);
 
-    expect(device.setAutoMode).toHaveBeenCalledTimes(1);
+    expect(device.setManualMode).toHaveBeenCalledTimes(1);
     expect(humidifierService.updateCharacteristic.mock.calls).toContainEqual([
       platform.Characteristic.TargetHumidifierDehumidifierState,
       0,
-    ]);
-    expect(humidifierService.updateCharacteristic.mock.calls).toContainEqual([
-      platform.Characteristic.CurrentHumidifierDehumidifierState,
-      2,
     ]);
     expect(humidifierService.updateCharacteristic.mock.calls).not.toContainEqual([
       platform.Characteristic.TargetHumidifierDehumidifierState,
@@ -312,5 +311,206 @@ describe('HumidifierAccessory write consistency', () => {
     expect(logger.warn).not.toHaveBeenCalledWith(
       expect.stringContaining('did not change to desired mode'),
     );
+  });
+
+  it('maps Dual200S auto mode to HomeKit target state 1 (Humidity/slider)', async () => {
+    const { accessory, humidifierService } = createMockAccessory(platform);
+    const device = createMockHumidifier({
+      deviceStatus: 'on',
+      mode: 'manual',
+    });
+
+    const humidifier = new HumidifierAccessory(platform, accessory, device as any);
+    humidifierService.updateCharacteristic.mockClear();
+
+    // HomeKit state 1 = HUMIDIFIER ("Humidity" in Home app, shows slider)
+    // For Dual200S, this should trigger VeSync auto mode
+    await (humidifier as any).setTargetState(1);
+
+    expect(device.setAutoMode).toHaveBeenCalledTimes(1);
+    expect(device.setManualMode).not.toHaveBeenCalled();
+  });
+
+  it('maps Dual200S manual mode to HomeKit target state 0 (Auto/no slider)', async () => {
+    const { accessory, humidifierService } = createMockAccessory(platform);
+    const device = createMockHumidifier({
+      deviceStatus: 'on',
+      mode: 'auto',
+    });
+
+    const humidifier = new HumidifierAccessory(platform, accessory, device as any);
+    humidifierService.updateCharacteristic.mockClear();
+
+    // HomeKit state 0 = HUMIDIFIER_OR_DEHUMIDIFIER ("Auto" in Home app, no slider)
+    // For Dual200S, this should trigger VeSync manual mode
+    await (humidifier as any).setTargetState(0);
+
+    expect(device.setManualMode).toHaveBeenCalledTimes(1);
+    expect(device.setAutoMode).not.toHaveBeenCalled();
+  });
+
+  it('reports Dual200S auto mode as HomeKit target state 1 in state sync', async () => {
+    const { accessory, humidifierService } = createMockAccessory(platform);
+    const device = createMockHumidifier({
+      deviceStatus: 'on',
+      mode: 'auto',
+    });
+
+    const humidifier = new HumidifierAccessory(platform, accessory, device as any);
+    humidifierService.updateCharacteristic.mockClear();
+
+    (humidifier as any).applyDeviceStatesToHomeKit(device);
+
+    expect(humidifierService.updateCharacteristic).toHaveBeenCalledWith(
+      platform.Characteristic.TargetHumidifierDehumidifierState,
+      1,
+    );
+  });
+
+  it('reports Dual200S manual mode as HomeKit target state 0 in state sync', async () => {
+    const { accessory, humidifierService } = createMockAccessory(platform);
+    const device = createMockHumidifier({
+      deviceStatus: 'on',
+      mode: 'manual',
+    });
+
+    const humidifier = new HumidifierAccessory(platform, accessory, device as any);
+    humidifierService.updateCharacteristic.mockClear();
+
+    (humidifier as any).applyDeviceStatesToHomeKit(device);
+
+    expect(humidifierService.updateCharacteristic).toHaveBeenCalledWith(
+      platform.Characteristic.TargetHumidifierDehumidifierState,
+      0,
+    );
+  });
+
+  it('detects LUH-D301S-WEU as isHumidDual200S and isHumid200300S', () => {
+    const { accessory } = createMockAccessory(platform);
+    const device = createMockHumidifier({ deviceStatus: 'off', mode: 'manual' });
+    (device as any).deviceType = 'LUH-D301S-WEU';
+
+    const humidifier = new HumidifierAccessory(platform, accessory, device as any);
+
+    expect((humidifier as any).isHumidDual200S).toBe(true);
+    expect((humidifier as any).isHumid200300S).toBe(true);
+    expect((humidifier as any).isHumid200S).toBe(false);
+  });
+
+  it('detects Dual200S as isHumidDual200S, not isHumid200S', () => {
+    const { accessory } = createMockAccessory(platform);
+    const device = createMockHumidifier({ deviceStatus: 'off', mode: 'manual' });
+
+    const humidifier = new HumidifierAccessory(platform, accessory, device as any);
+
+    expect((humidifier as any).isHumidDual200S).toBe(true);
+    expect((humidifier as any).isHumid200300S).toBe(true);
+    expect((humidifier as any).isHumid200S).toBe(false);
+  });
+
+  it('maps Dual200S mist level 1 to 50% rotation speed', async () => {
+    const { accessory, humidifierService } = createMockAccessory(platform);
+    const device = createMockHumidifier({ deviceStatus: 'on', mode: 'manual' });
+    device.mistLevel = 1;
+
+    const humidifier = new HumidifierAccessory(platform, accessory, device as any);
+    humidifierService.updateCharacteristic.mockClear();
+
+    (humidifier as any).applyDeviceStatesToHomeKit(device);
+
+    expect(humidifierService.updateCharacteristic).toHaveBeenCalledWith(
+      platform.Characteristic.RotationSpeed,
+      50,
+    );
+  });
+
+  it('maps Dual200S mist level 2 to 100% rotation speed', async () => {
+    const { accessory, humidifierService } = createMockAccessory(platform);
+    const device = createMockHumidifier({ deviceStatus: 'on', mode: 'manual' });
+    device.mistLevel = 2;
+
+    const humidifier = new HumidifierAccessory(platform, accessory, device as any);
+    humidifierService.updateCharacteristic.mockClear();
+
+    (humidifier as any).applyDeviceStatesToHomeKit(device);
+
+    expect(humidifierService.updateCharacteristic).toHaveBeenCalledWith(
+      platform.Characteristic.RotationSpeed,
+      100,
+    );
+  });
+
+  it('converts Dual200S rotation speed 50% to mist level 1', async () => {
+    const { accessory } = createMockAccessory(platform);
+    const device = createMockHumidifier({ deviceStatus: 'on', mode: 'manual' });
+    device.setMistLevel = jest.fn().mockResolvedValue(true);
+
+    const humidifier = new HumidifierAccessory(platform, accessory, device as any);
+
+    await (humidifier as any).handleSetRotationSpeed(50);
+
+    expect(device.setMistLevel).toHaveBeenCalledWith(1);
+  });
+
+  it('converts Dual200S rotation speed 100% to mist level 2', async () => {
+    const { accessory } = createMockAccessory(platform);
+    const device = createMockHumidifier({ deviceStatus: 'on', mode: 'manual' });
+    device.setMistLevel = jest.fn().mockResolvedValue(true);
+
+    const humidifier = new HumidifierAccessory(platform, accessory, device as any);
+
+    await (humidifier as any).handleSetRotationSpeed(100);
+
+    expect(device.setMistLevel).toHaveBeenCalledWith(2);
+  });
+
+  it('snaps Dual200S rotation speed 30% down to mist level 1', async () => {
+    const { accessory } = createMockAccessory(platform);
+    const device = createMockHumidifier({ deviceStatus: 'on', mode: 'manual' });
+    device.setMistLevel = jest.fn().mockResolvedValue(true);
+
+    const humidifier = new HumidifierAccessory(platform, accessory, device as any);
+
+    await (humidifier as any).handleSetRotationSpeed(30);
+
+    expect(device.setMistLevel).toHaveBeenCalledWith(1);
+  });
+
+  it('snaps Dual200S rotation speed 80% up to mist level 2', async () => {
+    const { accessory } = createMockAccessory(platform);
+    const device = createMockHumidifier({ deviceStatus: 'on', mode: 'manual' });
+    device.setMistLevel = jest.fn().mockResolvedValue(true);
+
+    const humidifier = new HumidifierAccessory(platform, accessory, device as any);
+
+    await (humidifier as any).handleSetRotationSpeed(80);
+
+    expect(device.setMistLevel).toHaveBeenCalledWith(2);
+  });
+
+  it('switches Dual200S from auto to manual mode when adjusting rotation speed', async () => {
+    const { accessory } = createMockAccessory(platform);
+    const device = createMockHumidifier({ deviceStatus: 'on', mode: 'auto' });
+    device.setMistLevel = jest.fn().mockResolvedValue(true);
+
+    const humidifier = new HumidifierAccessory(platform, accessory, device as any);
+
+    await (humidifier as any).handleSetRotationSpeed(100);
+
+    expect(device.setManualMode).toHaveBeenCalledTimes(1);
+    expect(device.setMistLevel).toHaveBeenCalledWith(2);
+  });
+
+  it('does not switch mode when Dual200S is already in manual mode', async () => {
+    const { accessory } = createMockAccessory(platform);
+    const device = createMockHumidifier({ deviceStatus: 'on', mode: 'manual' });
+    device.setMistLevel = jest.fn().mockResolvedValue(true);
+
+    const humidifier = new HumidifierAccessory(platform, accessory, device as any);
+
+    await (humidifier as any).handleSetRotationSpeed(50);
+
+    expect(device.setManualMode).not.toHaveBeenCalled();
+    expect(device.setMistLevel).toHaveBeenCalledWith(1);
   });
 });

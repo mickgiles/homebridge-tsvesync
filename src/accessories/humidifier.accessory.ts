@@ -55,6 +55,7 @@ interface ExtendedVeSyncHumidifier extends VeSyncHumidifier {
   // For device-specific details
   details?: {
     target_humidity?: number;
+    auto_target_humidity?: number;
     night_light_brightness?: number;
     current_humidity?: number;
     water_lacks?: boolean;
@@ -83,6 +84,7 @@ export class HumidifierAccessory extends BaseAccessory {
   private capabilities: DeviceCapabilities; // Removed readonly to allow re-initialization
   
   // Device type flags
+  private isHumidDual200S: boolean;
   private isHumid200S: boolean;
   private isHumid200300S: boolean;
   private isHumid1000S: boolean;
@@ -92,6 +94,11 @@ export class HumidifierAccessory extends BaseAccessory {
   private lightService?: Service;
   private temperatureService?: Service;
   private filterService?: Service;
+
+  // Tracks the last mode we commanded, to protect against stale API responses.
+  // Expires after 30s so out-of-band changes (VeSync app) are not masked.
+  private _lastCommandedMode: string | null = null;
+  private _lastCommandedModeTime: number = 0;
 
   constructor(
     platform: TSVESyncPlatform,
@@ -114,14 +121,17 @@ export class HumidifierAccessory extends BaseAccessory {
       hasSwingMode: false,
     };
     
-    // Detect device type
+    // Detect device type — order matters: specific types first
+    this.isHumidDual200S = this.detectHumidDual200S();
     this.isHumid200S = this.detectHumid200S();
     this.isHumid200300S = this.detectHumid200300S();
     this.isHumid1000S = this.detectHumid1000S();
     this.isSuperior6000S = this.detectSuperior6000S();
-    
+
     // Log detected device type
-    if (this.isHumid200S) {
+    if (this.isHumidDual200S) {
+      this.platform.log.debug(`Detected Dual200S device: ${this.device.deviceName}`);
+    } else if (this.isHumid200S) {
       this.platform.log.debug(`Detected Humid200S device: ${this.device.deviceName}`);
     } else if (this.isHumid200300S) {
       this.platform.log.debug(`Detected Humid200300S device: ${this.device.deviceName}`);
@@ -135,6 +145,14 @@ export class HumidifierAccessory extends BaseAccessory {
   }
   
   /**
+   * Detect if the device is a HumidDual200S (or regional variant LUH-D301S)
+   */
+  private detectHumidDual200S(): boolean {
+    const deviceType = this.device.deviceType.toUpperCase();
+    return deviceType.includes('DUAL200S') || deviceType.includes('LUH-D301S');
+  }
+
+  /**
    * Detect if the device is a Humid200S
    */
   private detectHumid200S(): boolean {
@@ -145,7 +163,11 @@ export class HumidifierAccessory extends BaseAccessory {
       return true;
     }
     
-    // Check for mist level range 1-3 which is specific to Humid200S
+    // Check for mist level range 1-3 which is specific to Humid200S,
+    // but exclude Dual200S which also has low mist levels
+    if (this.isHumidDual200S) {
+      return false;
+    }
     const extendedDevice = this.device as ExtendedVeSyncHumidifier;
     if (extendedDevice.mistLevel !== undefined && extendedDevice.mistLevel <= 3) {
       return true;
@@ -167,7 +189,7 @@ export class HumidifierAccessory extends BaseAccessory {
     
     // Check device type for Classic300S or Dual200S
     const deviceType = this.device.deviceType.toUpperCase();
-    if (deviceType.includes('CLASSIC300S') || deviceType.includes('DUAL200S')) {
+    if (deviceType.includes('CLASSIC300S') || this.isHumidDual200S) {
       return true;
     }
     
@@ -235,6 +257,45 @@ export class HumidifierAccessory extends BaseAccessory {
     return false;
   }
 
+  /**
+   * Convert a VeSync mode string to a HomeKit TargetHumidifierDehumidifierState value.
+   *
+   * For Dual200S the mapping is swapped so that VeSync "auto" (which needs a
+   * humidity target) lands on HomeKit state 1 (HUMIDIFIER / "Humidity" in the
+   * Home app) where Apple shows the humidity slider, and VeSync "manual"
+   * (fixed mist, no target) lands on state 0 ("Auto", no slider).
+   */
+  private modeToTargetState(mode: string | undefined): number {
+    // Prefer last commanded mode to protect against stale API responses.
+    // Clear the override once the device reports the same mode (caught up).
+    let effectiveMode = mode;
+    if (this._lastCommandedMode !== null) {
+      const elapsed = Date.now() - this._lastCommandedModeTime;
+      if (mode === this._lastCommandedMode || elapsed > 30000) {
+        this._lastCommandedMode = null;
+      } else {
+        this.platform.log.debug(`Using commanded mode '${this._lastCommandedMode}' instead of device-reported '${mode}'`);
+        effectiveMode = this._lastCommandedMode;
+      }
+    }
+
+    if (this.isHumidDual200S) {
+      return effectiveMode === 'auto' ? 1 : 0;
+    }
+    return effectiveMode === 'auto' ? 0 : 1;
+  }
+
+  /**
+   * Convert a HomeKit TargetHumidifierDehumidifierState value to a VeSync mode.
+   * Inverse of modeToTargetState.
+   */
+  private targetStateToMode(value: CharacteristicValue): string {
+    if (this.isHumidDual200S) {
+      return value === 1 ? 'auto' : 'manual';
+    }
+    return value === 0 ? 'auto' : 'manual';
+  }
+
   protected setupService(): void {
     // No need to check for capabilities initialization since we set defaults in constructor
 
@@ -242,12 +303,22 @@ export class HumidifierAccessory extends BaseAccessory {
     this.service = this.accessory.getService(this.platform.Service.HumidifierDehumidifier) ||
       this.accessory.addService(this.platform.Service.HumidifierDehumidifier);
       
-    // Initialize all characteristics with explicit values
+    // Initialize characteristics
     this.service.updateCharacteristic(this.platform.Characteristic.CurrentRelativeHumidity, 40);
     this.service.updateCharacteristic(this.platform.Characteristic.RelativeHumidityHumidifierThreshold, 60);
     this.service.updateCharacteristic(this.platform.Characteristic.CurrentHumidifierDehumidifierState, 1);
     this.service.updateCharacteristic(this.platform.Characteristic.TargetHumidifierDehumidifierState, 1);
-    this.platform.log.debug('Initialized humidifier characteristics with explicit values');
+
+    // Register humidity handlers IMMEDIATELY after updateCharacteristic — no separation.
+    // The updateCharacteristic creates the instance; onGet/onSet must be on that same instance.
+    this.service
+      .getCharacteristic(this.platform.Characteristic.RelativeHumidityHumidifierThreshold)
+      .setProps({ minValue: 30, maxValue: 80, minStep: 1 })
+      .onGet(this.getTargetHumidity.bind(this))
+      .onSet(async (value: CharacteristicValue) => {
+        this.platform.log.info(`Setting target humidity to ${value}% for ${this.device.deviceName}`);
+        await this.setTargetHumidity(value);
+      });
 
     // Set up required characteristics
     this.setupCharacteristic(
@@ -274,7 +345,7 @@ export class HumidifierAccessory extends BaseAccessory {
     
     this.setupCharacteristic(
       this.platform.Characteristic.TargetHumidifierDehumidifierState,
-      async () => extendedDevice.mode === 'auto' ? 0 : 1,
+      async () => this.modeToTargetState(extendedDevice.mode),
       this.setTargetState.bind(this)
     );
 
@@ -285,49 +356,30 @@ export class HumidifierAccessory extends BaseAccessory {
       this.handleSetRotationSpeed.bind(this)
     );
 
+    // Constrain rotation speed to 2 steps for Dual200S (Low=50%, High=100%)
+    if (this.isHumidDual200S) {
+      const rotationSpeedChar = this.service.getCharacteristic(this.platform.Characteristic.RotationSpeed);
+      rotationSpeedChar.setProps({
+        minValue: 0,
+        maxValue: 100,
+        minStep: 50,
+      });
+    }
+
     // Add Name characteristic
     this.setupCharacteristic(
       this.platform.Characteristic.Name,
       async () => this.device.deviceName
     );
 
-    // Add Current Relative Humidity if supported
+    // CurrentRelativeHumidity getter
     if (this.capabilities && this.capabilities.hasHumidity) {
-      if (!this.service.testCharacteristic(this.platform.Characteristic.CurrentRelativeHumidity)) {
-        this.service.addCharacteristic(this.platform.Characteristic.CurrentRelativeHumidity);
-      }
-      
-      // Add Target Relative Humidity characteristic
-      if (!this.service.testCharacteristic(this.platform.Characteristic.RelativeHumidityHumidifierThreshold)) {
-        this.service.addCharacteristic(this.platform.Characteristic.RelativeHumidityHumidifierThreshold);
-      }
-      
-      // Configure the target humidity characteristic with proper properties
-      const targetHumidityChar = this.service.getCharacteristic(this.platform.Characteristic.RelativeHumidityHumidifierThreshold);
-      targetHumidityChar.setProps({
-        minValue: 30,
-        maxValue: 80,
-        minStep: 1
-      });
-      
-      // Set an initial value to ensure the characteristic is not blank
-      targetHumidityChar.updateValue(45);
-      this.platform.log.debug(`Configured RelativeHumidityHumidifierThreshold characteristic with initial value 45%`);
-      
-      // Set up handlers for target humidity
-      this.setupCharacteristic(
-        this.platform.Characteristic.RelativeHumidityHumidifierThreshold,
-        this.getTargetHumidity.bind(this),
-        this.setTargetHumidity.bind(this)
-      );
-      
-      // Immediately get and set the actual target humidity to ensure it's displayed correctly
-      this.getTargetHumidity().then(targetHumidity => {
-        this.platform.log.debug(`Initial target humidity value: ${targetHumidity}%`);
-        targetHumidityChar.updateValue(targetHumidity);
-      }).catch(error => {
-        this.platform.log.warn(`Failed to get initial target humidity: ${error}`);
-      });
+      this.service
+        .getCharacteristic(this.platform.Characteristic.CurrentRelativeHumidity)
+        .onGet(async () => {
+          const extDev = this.device as ExtendedVeSyncHumidifier;
+          return extDev.currentHumidity ?? extDev.details?.current_humidity ?? 0;
+        });
     }
 
     // Add Water Level characteristic if supported (mapping inferred from water_lacks/water_tank_lifted)
@@ -650,13 +702,16 @@ export class HumidifierAccessory extends BaseAccessory {
 
     this.service.updateCharacteristic(
       this.platform.Characteristic.TargetHumidifierDehumidifierState,
-      extendedDevice.mode === 'auto' ? 0 : 1
+      this.modeToTargetState(extendedDevice.mode)
     );
 
     let rotationSpeed = 0;
 
     if (isActive) {
-      if (this.isHumid200300S && extendedDevice.mistLevel !== undefined) {
+      if (this.isHumidDual200S && extendedDevice.mistLevel !== undefined) {
+        // Dual200S has 2 levels: 1 (Low) = 50%, 2 (High) = 100%
+        rotationSpeed = extendedDevice.mistLevel === 1 ? 50 : 100;
+      } else if (this.isHumid200300S && extendedDevice.mistLevel !== undefined) {
         const mistLevel = extendedDevice.mistLevel;
         this.platform.log.debug(`Device ${this.device.deviceName} mist level: ${mistLevel}`);
 
@@ -911,6 +966,16 @@ export class HumidifierAccessory extends BaseAccessory {
   }
 
   private async getRotationSpeed(): Promise<CharacteristicValue> {
+    const extendedDevice = this.device as ExtendedVeSyncHumidifier;
+
+    if (this.isHumidDual200S) {
+      const level = extendedDevice.mistLevel;
+      if (level === undefined || level === null || level === 0) {
+        return 0;
+      }
+      return level === 1 ? 50 : 100;
+    }
+
     if (this.device.speed === undefined || this.device.speed === null) {
       return 0;
     }
@@ -947,23 +1012,16 @@ export class HumidifierAccessory extends BaseAccessory {
         }
       }
       
-      // Map HomeKit target states to device modes
-      let mode: string = 'manual'; // Default to manual mode
-      
-      switch (value) {
-        case 0: // Auto
-          mode = 'auto';
-          break;
-        case 1: // Humidifier
-          mode = 'manual';
-          break;
-        case 2: // Dehumidifier (not supported, but we'll handle it gracefully)
-          this.platform.log.warn(`Dehumidifier mode not supported for device: ${this.device.deviceName}, using manual mode instead`);
-          mode = 'manual';
-          break;
-        default:
-          this.platform.log.warn(`Unknown target state value: ${value}, using manual mode as default`);
-          mode = 'manual';
+      let mode: string;
+
+      if (value === 2) {
+        this.platform.log.warn(`Dehumidifier mode not supported for device: ${this.device.deviceName}, using manual mode instead`);
+        mode = 'manual';
+      } else if (value === 0 || value === 1) {
+        mode = this.targetStateToMode(value);
+      } else {
+        this.platform.log.warn(`Unknown target state value: ${value}, using manual mode as default`);
+        mode = 'manual';
       }
       
       // Check current mode first
@@ -971,7 +1029,7 @@ export class HumidifierAccessory extends BaseAccessory {
         this.platform.log.debug(`Device ${this.device.deviceName} is already in ${mode} mode, skipping API call`);
         
         // Update target state to reflect the current mode
-        const targetState = mode === 'auto' ? 0 : 1;
+        const targetState = this.modeToTargetState(mode);
         this.updateCharacteristicValue(
           this.platform.Characteristic.TargetHumidifierDehumidifierState,
           targetState
@@ -1017,6 +1075,10 @@ export class HumidifierAccessory extends BaseAccessory {
         throw new Error(`Failed to set device mode to ${mode}`);
       }
 
+      // Track commanded mode so stale getDetails() responses don't revert HomeKit
+      this._lastCommandedMode = mode;
+      this._lastCommandedModeTime = Date.now();
+
       this.applyDeviceStatesToHomeKit(this.device);
     } catch (error) {
       this.handleDeviceError('set target state', error);
@@ -1038,9 +1100,12 @@ export class HumidifierAccessory extends BaseAccessory {
         return;
       }
   
-      // Convert HomeKit percentage (0-100) to device speed (1-9)
+      // Convert percentage to mist level based on device type
       let speed: number;
-      if (percentage <= 11) {
+      if (this.isHumidDual200S) {
+        // Dual200S: 2 levels — 1-50% = Low (1), 51-100% = High (2)
+        speed = percentage <= 50 ? 1 : 2;
+      } else if (percentage <= 11) {
         speed = 1;
       } else if (percentage <= 22) {
         speed = 2;
@@ -1063,7 +1128,19 @@ export class HumidifierAccessory extends BaseAccessory {
       // Adjust speed based on device type
       const extendedDevice = this.device as ExtendedVeSyncHumidifier;
       let success = false;
-      
+
+      // Dual200S: adjusting speed while in auto mode implies the user wants manual control
+      if (this.isHumidDual200S && extendedDevice.mode === 'auto') {
+        this.platform.log.debug(`Switching Dual200S to manual mode before setting mist level: ${this.device.deviceName}`);
+        if (typeof extendedDevice.setManualMode === 'function') {
+          await extendedDevice.setManualMode();
+        } else if (typeof extendedDevice.setMode === 'function') {
+          await extendedDevice.setMode('manual');
+        }
+        this._lastCommandedMode = 'manual';
+        this._lastCommandedModeTime = Date.now();
+      }
+
       // For Humid200S devices, limit mist level to 1-3
       if (this.isHumid200S) {
         // Limit speed to 1-3 for Humid200S devices
@@ -1154,6 +1231,8 @@ export class HumidifierAccessory extends BaseAccessory {
         if (!turnOnSuccess) {
           throw new Error('Failed to turn on device before setting humidity');
         }
+        // Sync Active state immediately so HomeKit tile reflects power-on
+        this.service.updateCharacteristic(this.platform.Characteristic.Active, 1);
       }
       
       let success = false;
@@ -1176,27 +1255,21 @@ export class HumidifierAccessory extends BaseAccessory {
       if (!success) {
         throw new Error(`Failed to set target humidity to ${targetHumidity}%`);
       }
-      
-      // Refresh device details to get the latest state
-      if (typeof extendedDevice.getDetails === 'function') {
-        await extendedDevice.getDetails();
-        
-        // Log the target humidity after setting
-        const currentTarget = extendedDevice.details?.target_humidity || extendedDevice.targetHumidity;
-        this.platform.log.debug(`Device ${this.device.deviceName} target humidity after setting: ${currentTarget}%`);
-        
+
+      // Push the commanded value to HomeKit and update in-memory state.
+      // Do NOT call getDetails/updateDeviceSpecificStates here — the API
+      // returns stale target humidity, causing the slider to snap back.
+      // The next polling cycle will eventually sync the actual value.
+      if (extendedDevice.details) {
+        extendedDevice.details.target_humidity = targetHumidity;
+        // Humid200300S's humidity getter reads auto_target_humidity
+        extendedDevice.details.auto_target_humidity = targetHumidity;
       }
-      
-      // Update the target humidity characteristic
       this.service.updateCharacteristic(
         this.platform.Characteristic.RelativeHumidityHumidifierThreshold,
         targetHumidity
       );
-      
-      // Update device state and characteristics
-      await this.updateDeviceSpecificStates(this.device);
-      
-      // Persist the target humidity
+
       await this.persistDeviceState('targetHumidity', targetHumidity);
     } catch (error) {
       this.handleDeviceError('set target humidity', error);
