@@ -309,7 +309,7 @@ export class HumidifierAccessory extends BaseAccessory {
     // The updateCharacteristic creates the instance; onGet/onSet must be on that same instance.
     this.service
       .getCharacteristic(this.platform.Characteristic.RelativeHumidityHumidifierThreshold)
-      .setProps({ minValue: 0, maxValue: 100, minStep: 1 })
+      .setProps({ minValue: 30, maxValue: 80, minStep: 1 })
       .onGet(this.getTargetHumidity.bind(this))
       .onSet(async (value: CharacteristicValue) => {
         this.platform.log.info(`Setting target humidity to ${value}% for ${this.device.deviceName}`);
@@ -1225,6 +1225,8 @@ export class HumidifierAccessory extends BaseAccessory {
         if (!turnOnSuccess) {
           throw new Error('Failed to turn on device before setting humidity');
         }
+        // Sync Active state immediately so HomeKit tile reflects power-on
+        this.service.updateCharacteristic(this.platform.Characteristic.Active, 1);
       }
       
       let success = false;
@@ -1248,10 +1250,13 @@ export class HumidifierAccessory extends BaseAccessory {
         throw new Error(`Failed to set target humidity to ${targetHumidity}%`);
       }
 
-      // Push the commanded value to HomeKit immediately.
+      // Push the commanded value to HomeKit and update in-memory state.
       // Do NOT call getDetails/updateDeviceSpecificStates here — the API
       // returns stale target humidity, causing the slider to snap back.
       // The next polling cycle will eventually sync the actual value.
+      if (extendedDevice.details) {
+        extendedDevice.details.target_humidity = targetHumidity;
+      }
       this.service.updateCharacteristic(
         this.platform.Characteristic.RelativeHumidityHumidifierThreshold,
         targetHumidity
