@@ -549,11 +549,103 @@ export class AirPurifierAccessory extends BaseAccessory {
       this.accessory.removeService(existingFilterService);
     }
     
+    // Add a Pet Mode switch for devices that support it (e.g. Vital 200S / LAP-V201S)
+    this.setupPetModeSwitch();
+
     // Check and log important features for debugging
     const autoModeSupported = this.hasFeature('auto_mode');
     this.platform.log.debug(`${this.device.deviceName} (${this.device.deviceType}): Features detected:`);
     this.platform.log.debug(`  - auto_mode: ${autoModeSupported} (controls mode switch)`);
+    this.platform.log.debug(`  - pet_mode: ${this.hasFeature('pet_mode')} (controls Pet Mode switch)`);
     this.platform.log.debug(`  - filter_life: ${this.hasFeature('filter_life')} (controls filter display)`);
+  }
+
+  /**
+   * Pet mode is exposed as a dedicated Switch service because HomeKit's
+   * AirPurifier service has no native representation for it. Only added for
+   * devices whose tsvesync profile advertises the `pet_mode` feature
+   * (e.g. the Vital 200S / LAP-V201S family); any stale cached switch is
+   * removed for devices that don't support it.
+   */
+  private static readonly PET_MODE_SERVICE_NAME = 'Pet Mode';
+
+  private setupPetModeSwitch(): void {
+    const name = AirPurifierAccessory.PET_MODE_SERVICE_NAME;
+    const existing = this.accessory.getService(name);
+
+    if (!this.hasFeature('pet_mode')) {
+      if (existing) {
+        this.platform.log.debug(`${this.device.deviceName}: Removing Pet Mode switch - device does not support pet mode`);
+        this.accessory.removeService(existing);
+      }
+      return;
+    }
+
+    const petService = existing ||
+      this.accessory.addService(this.platform.Service.Switch, name, 'pet-mode');
+
+    if (!petService) {
+      this.platform.log.warn(`${this.device.deviceName}: Unable to create Pet Mode switch service`);
+      return;
+    }
+
+    petService.getCharacteristic(this.platform.Characteristic.On)
+      .onGet(this.getPetMode.bind(this))
+      .onSet(this.setPetMode.bind(this));
+
+    this.platform.log.debug(`${this.device.deviceName}: Pet Mode switch configured`);
+  }
+
+  /**
+   * Get pet mode state (on when the device's current mode is 'pet')
+   */
+  private async getPetMode(): Promise<CharacteristicValue> {
+    const extendedDevice = this.device as ExtendedVeSyncAirPurifier;
+    return (extendedDevice.mode || '').toLowerCase() === 'pet';
+  }
+
+  /**
+   * Set pet mode. Enabling switches the device into pet mode; disabling
+   * returns it to auto (pet is an automatic mode), falling back to manual
+   * for the rare device that supports pet but not auto.
+   */
+  private async setPetMode(value: CharacteristicValue): Promise<void> {
+    try {
+      const extendedDevice = this.device as ExtendedVeSyncAirPurifier;
+      let success = false;
+
+      if (value) {
+        this.platform.log.info(`Enabling pet mode for device: ${this.device.deviceName}`);
+        if (typeof extendedDevice.petMode === 'function') {
+          success = await extendedDevice.petMode();
+        } else if (typeof extendedDevice.setMode === 'function') {
+          success = await extendedDevice.setMode('pet');
+        } else {
+          throw new Error('Device API does not support pet mode');
+        }
+      } else {
+        const fallbackMode = this.hasFeature('auto_mode') ? 'auto' : 'manual';
+        this.platform.log.info(`Disabling pet mode for device: ${this.device.deviceName} (returning to ${fallbackMode})`);
+        if (fallbackMode === 'auto' && typeof extendedDevice.autoMode === 'function') {
+          success = await extendedDevice.autoMode();
+        } else if (fallbackMode === 'manual' && typeof extendedDevice.manualMode === 'function') {
+          success = await extendedDevice.manualMode();
+        } else if (typeof extendedDevice.setMode === 'function') {
+          success = await extendedDevice.setMode(fallbackMode);
+        } else {
+          throw new Error('Device API does not support mode setting operations');
+        }
+      }
+
+      if (!success) {
+        throw new Error(`Failed to ${value ? 'enable' : 'disable'} pet mode`);
+      }
+
+      // Refresh characteristics so the main service and switch stay consistent
+      await this.updateDeviceSpecificStates(this.device);
+    } catch (error) {
+      this.handleDeviceError('set pet mode', error);
+    }
   }
 
 
@@ -660,14 +752,22 @@ export class AirPurifierAccessory extends BaseAccessory {
       // Core200S always reports MANUAL mode
       targetState = 0; // MANUAL
     } else if (extendedDevice.mode) {
-      // For other devices, including Core300S, use the reported mode
-      targetState = extendedDevice.mode === 'auto' ? 1 : 0;
+      // For other devices, including Core300S, use the reported mode.
+      // Pet mode is an automatic mode, so surface it as AUTO on the main service.
+      const reportedMode = (extendedDevice.mode || '').toLowerCase();
+      targetState = (reportedMode === 'auto' || reportedMode === 'pet') ? 1 : 0;
     }
-    
+
     this.service.updateCharacteristic(
       this.platform.Characteristic.TargetAirPurifierState,
       targetState
     );
+
+    // Keep the Pet Mode switch (if present) in sync with the device mode
+    const petService = this.accessory.getService(AirPurifierAccessory.PET_MODE_SERVICE_NAME);
+    if (petService) {
+      petService.updateCharacteristic(this.platform.Characteristic.On, mode === 'pet');
+    }
 
     // Update rotation speed
     if (isOn && isTurbo) {
@@ -767,8 +867,10 @@ export class AirPurifierAccessory extends BaseAccessory {
     }
     
     const extendedDevice = this.device as ExtendedVeSyncAirPurifier;
-    const targetState = extendedDevice.mode === 'auto' ? 1 : 0;
-    
+    // Pet mode is an automatic mode, so report it as AUTO on the main service.
+    const reportedMode = (extendedDevice.mode || '').toLowerCase();
+    const targetState = (reportedMode === 'auto' || reportedMode === 'pet') ? 1 : 0;
+
     return targetState;
   }
 
