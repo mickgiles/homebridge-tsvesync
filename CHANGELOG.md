@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.10 (2026-07-07)
+
+### Fixed
+- **Offline Accessory Detail Refreshes**: Avoids redundant VeSync detail refreshes for offline devices, so Homebridge keeps cached accessory state without generating unnecessary API traffic or update noise while devices are unplugged or unreachable.
+
+### Dependencies
+- **tsvesync**: Updated to 1.4.10 for the matching offline-device detail polling guard.
+
 ## 1.4.9 (2026-03-30)
 
 ### Fixed
