@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.4.11 (2026-07-08)
+
+### Fixed
+- **Vital/Everest Offline Refreshes**: Lets LAP-V and LAP-EL purifier accessories refresh details even when VeSync's device list reports them offline, preserving the `1.4.10` offline-skip behavior for generic devices while allowing these purifiers to recover accurate state.
+- **Air Quality Parent Refreshes**: Applies the same offline-refresh opt-in to parent purifier detail refreshes used by air-quality accessories, avoiding stale HomeKit readings for affected Vital/Everest devices.
+
+### Tests
+- **Offline Refresh Regression Coverage**: Adds base-accessory tests for generic offline skips, Vital/Everest refresh opt-ins, device-level opt-ins, and initialization behavior.
+
+### Dependencies
+- **tsvesync**: Updated to 1.4.11 for the matching Vital/Everest offline detail polling opt-in.
+
 ## 1.4.10 (2026-07-07)
 
 ### Fixed
