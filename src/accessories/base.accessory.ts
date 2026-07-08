@@ -137,7 +137,7 @@ export abstract class BaseAccessory {
           const now = Date.now();
           const shouldUseCache = this.hasFreshDeviceDetails(now);
           
-          if (this.isDeviceOffline(deviceWithDetails)) {
+          if (this.shouldSkipDeviceDetailsRefresh(deviceWithDetails)) {
             this.logger.debug('Skipping device details refresh during initialization because device is offline', this.getLogContext());
           } else if (shouldUseCache) {
             this.logger.debug('Using cached device details during initialization', this.getLogContext());
@@ -183,6 +183,19 @@ export abstract class BaseAccessory {
     return String(device?.connectionStatus || '').toLowerCase() === 'offline';
   }
 
+  protected shouldRefreshDetailsWhenOffline(device: any = this.device): boolean {
+    if (typeof device?.shouldPollDetailsWhenOffline === 'function') {
+      return Boolean(device.shouldPollDetailsWhenOffline());
+    }
+
+    const deviceType = String(device?.deviceType || '').toUpperCase();
+    return deviceType.startsWith('LAP-V') || deviceType.startsWith('LAP-EL');
+  }
+
+  protected shouldSkipDeviceDetailsRefresh(device: any = this.device): boolean {
+    return this.isDeviceOffline(device) && !this.shouldRefreshDetailsWhenOffline(device);
+  }
+
   protected hasFreshDeviceDetails(now = Date.now()): boolean {
     return this.deviceDetailsCache !== null &&
       (now - this.lastDetailsFetch < this.CACHE_TTL);
@@ -209,6 +222,11 @@ export abstract class BaseAccessory {
    */
   public applyUpdatedDeviceState(updatedDevice: VeSyncDeviceWithPower): void {
     Object.assign(this.device as any, updatedDevice);
+    if (this.isDeviceOffline(this.device) && this.shouldRefreshDetailsWhenOffline(this.device)) {
+      this.logger.debug('Not caching offline device-list state because details refresh is still allowed', this.getLogContext());
+      return;
+    }
+
     this.cacheDeviceDetails(this.device as any);
   }
 
@@ -225,7 +243,7 @@ export abstract class BaseAccessory {
           const now = Date.now();
           const shouldUseCache = this.hasFreshDeviceDetails(now);
           
-          if (this.isDeviceOffline(deviceWithDetails)) {
+          if (this.shouldSkipDeviceDetailsRefresh(deviceWithDetails)) {
             this.logger.debug('Skipping device details refresh because device is offline', this.getLogContext());
           } else if (shouldUseCache) {
             this.logger.debug('Using cached device details', this.getLogContext());

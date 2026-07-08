@@ -240,7 +240,7 @@ export class AirQualitySensorAccessory extends BaseAccessory {
     try {
       // Make sure device data is current
       const extendedDevice = this.parentDevice as any;
-      if (this.isDeviceOffline(extendedDevice)) {
+      if (this.shouldSkipDeviceDetailsRefresh(extendedDevice)) {
         this.platform.log.debug(`${this.device.deviceName} AQ: Skipping refresh because parent device is offline`);
       } else if (!this.hasFreshDeviceDetails() && typeof extendedDevice.getDetails === 'function') {
         await extendedDevice.getDetails();
