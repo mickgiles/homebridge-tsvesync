@@ -68,6 +68,7 @@ describe('BaseAccessory', () => {
     mockLogger = {
       debug: jest.fn(),
       info: jest.fn(),
+      success: jest.fn(),
       warn: jest.fn(),
       error: jest.fn(),
       log: jest.fn(),
@@ -122,6 +123,7 @@ describe('BaseAccessory', () => {
       api: {
         updatePlatformAccessories: jest.fn().mockImplementation((accessories: PlatformAccessory[]) => {}),
       },
+      isReady: jest.fn().mockResolvedValue(undefined),
       config: {
         platform: 'TSVESync',
         name: 'TSVESync',
@@ -234,6 +236,63 @@ describe('BaseAccessory', () => {
       const updateSpy = jest.spyOn(accessory as any, 'updateDeviceSpecificStates');
       await accessory.syncDeviceState();
       expect(updateSpy).toHaveBeenCalledWith(mockDevice);
+    });
+
+    it('syncDeviceState skips detail refresh for generic offline devices', async () => {
+      mockDevice.connectionStatus = 'offline';
+      mockDevice.deviceType = 'ESW15-USA';
+      mockDevice.getDetails.mockResolvedValue(true);
+
+      await accessory.syncDeviceState();
+
+      expect(mockDevice.getDetails).not.toHaveBeenCalled();
+    });
+
+    it('syncDeviceState refreshes Vital devices even when the device list says offline', async () => {
+      mockDevice.connectionStatus = 'offline';
+      mockDevice.deviceType = 'LAP-V102S-AASR';
+      mockDevice.getDetails.mockResolvedValue(true);
+
+      await accessory.syncDeviceState();
+
+      expect(mockDevice.getDetails).toHaveBeenCalledTimes(1);
+    });
+
+    it('syncDeviceState honors device-level offline polling opt-in', async () => {
+      mockDevice.connectionStatus = 'offline';
+      mockDevice.deviceType = 'unknown';
+      mockDevice.shouldPollDetailsWhenOffline = jest.fn().mockReturnValue(true);
+      mockDevice.getDetails.mockResolvedValue(true);
+
+      await accessory.syncDeviceState();
+
+      expect(mockDevice.getDetails).toHaveBeenCalledTimes(1);
+    });
+
+    it('syncDeviceState refreshes Vital devices after an offline list update is applied', async () => {
+      mockDevice.connectionStatus = 'online';
+      mockDevice.deviceType = 'LAP-V102S-AASR';
+      mockDevice.getDetails.mockResolvedValue(true);
+
+      accessory.applyUpdatedDeviceState({
+        ...mockDevice,
+        connectionStatus: 'offline',
+        deviceStatus: 'off',
+      });
+
+      await accessory.syncDeviceState();
+
+      expect(mockDevice.getDetails).toHaveBeenCalledTimes(1);
+    });
+
+    it('initialize refreshes Everest devices even when the device list says offline', async () => {
+      mockDevice.connectionStatus = 'offline';
+      mockDevice.deviceType = 'LAP-EL551S-AUS';
+      mockDevice.getDetails.mockResolvedValue(true);
+
+      await accessory.initialize();
+
+      expect(mockDevice.getDetails).toHaveBeenCalledTimes(1);
     });
 
     it('syncDeviceState swallows update errors and logs', async () => {
