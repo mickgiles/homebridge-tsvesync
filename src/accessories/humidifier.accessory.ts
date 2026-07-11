@@ -641,7 +641,9 @@ export class HumidifierAccessory extends BaseAccessory {
     
     // First, refresh the device details to ensure we have the latest state
     try {
-      if (typeof extendedDevice.getDetails === 'function') {
+      if (this.isDeviceOffline(extendedDevice)) {
+        this.platform.log.debug(`Skipping refresh for offline humidifier: ${this.device.deviceName}`);
+      } else if (!this.hasFreshDeviceDetails() && typeof extendedDevice.getDetails === 'function') {
         await extendedDevice.getDetails();
         // Log only specific properties to avoid circular references
         this.platform.log.debug(
@@ -651,6 +653,7 @@ export class HumidifierAccessory extends BaseAccessory {
           `Humidity: ${extendedDevice.humidity}, ` +
           `MistLevel: ${extendedDevice.mistLevel}`
         );
+        this.cacheDeviceDetails(extendedDevice);
       }
     } catch (error) {
       this.platform.log.warn(`Failed to refresh device details: ${error}`);
