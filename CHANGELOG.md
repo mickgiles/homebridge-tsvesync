@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.5.0 (2026-07-18)
+
+### Added
+- **Vital Purifier Pet Mode Switch**: Exposes Pet Mode as a dedicated HomeKit switch on compatible Vital purifiers. Enabling the switch enters Pet Mode; disabling it returns to Auto mode, or Manual mode when Auto is unavailable.
+
+### Changed
+- **Pet Mode State Synchronization**: Keeps the dedicated switch synchronized with VeSync polling, reports Pet Mode as Auto on the primary air-purifier service, removes stale switches from unsupported devices, and returns write failures to HomeKit so it can restore the prior state.
+- **Continuous Integration Coverage**: Adds GitHub Actions validation across supported Node.js 18, 20, 22, and 24 releases with lint, build, and test checks.
+
+### Tests
+- **Pet Mode Regression Coverage**: Verifies capability-gated service creation, stale-service cleanup, enable and disable behavior, Auto and Manual fallback modes, state synchronization, and failed-write handling.
+
+### Dependencies
+- **tsvesync**: Updated to 1.5.0 for synchronized release versioning; the existing Pet Mode library API is unchanged.
+
 ## 1.4.11 (2026-07-08)
 
 ### Fixed
