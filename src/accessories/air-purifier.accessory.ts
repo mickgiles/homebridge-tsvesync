@@ -644,7 +644,8 @@ export class AirPurifierAccessory extends BaseAccessory {
       // Refresh characteristics so the main service and switch stay consistent
       await this.updateDeviceSpecificStates(this.device);
     } catch (error) {
-      this.handleDeviceError('set pet mode', error);
+      await this.handleDeviceError('set pet mode', error);
+      throw error;
     }
   }
 

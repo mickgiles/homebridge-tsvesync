@@ -15,6 +15,7 @@ const percentToKelvin = (percent: number): number => TEST_DEVICE_MIN_KELVIN + ((
 export const createMockLogger = (): jest.Mocked<Logger> => ({
   debug: jest.fn(),
   info: jest.fn(),
+  success: jest.fn(),
   warn: jest.fn(),
   error: jest.fn(),
   log: jest.fn(),
