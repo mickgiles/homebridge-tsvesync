@@ -9,6 +9,10 @@ export interface PluginSession {
   region: string;
   apiBaseUrl: string;
   authFlowUsed?: 'legacy' | 'new';
+  // Stable client identity. VeSync binds issued tokens to the terminal id (it appears as a claim in the
+  // token JWT), so it is reused across logins and restarts rather than regenerated.
+  terminalId?: string;
+  appId?: string;
   issuedAt?: number | null;
   expiresAt?: number | null;
   lastValidatedAt?: number | null;
@@ -74,6 +78,9 @@ export class FileSessionStore {
           ...session,
           // Preserve username from existing session if new session doesn't have it
           username: session.username || existingSession?.username,
+          // Never lose the client identity: an older library that doesn't report these must not wipe them.
+          terminalId: session.terminalId || existingSession?.terminalId,
+          appId: session.appId || existingSession?.appId,
         };
 
         const tmp = this.file + '.tmp';

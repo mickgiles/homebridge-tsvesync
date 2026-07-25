@@ -6,7 +6,7 @@ import { BaseAccessory } from './accessories/base.accessory';
 import { PluginLogger } from './utils/logger';
 import { createRateLimitedVeSync } from './utils/api-proxy';
 import { PlatformConfig as TSVESyncPlatformConfig } from './types/device.types';
-import { FileSessionStore, decodeJwtTimestampsLocal } from './utils/session-store';
+import { FileSessionStore, PluginSession, decodeJwtTimestampsLocal } from './utils/session-store';
 
 /**
  * HomebridgePlatform
@@ -119,14 +119,26 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
             if ((session as any).username && (session as any).username !== this.config.username) {
               this.logger.info('Found persisted session for a different account; ignoring persisted session.');
             } else {
-              this.hydrateSessionCompat(session);
               const ts = decodeJwtTimestampsLocal(session.token);
-              // Use actual token issuance time if available to avoid overextending lifetime
-              this.lastTokenRefresh = ts?.iat ? new Date(ts.iat * 1000) : new Date();
-              const expStr = ts?.exp ? new Date(ts.exp * 1000).toISOString() : 'unknown';
-              this.logger.info(`Reusing persisted VeSync session. Token exp: ${expStr}`);
-              // Schedule a proactive refresh before expiry
-              this.scheduleProactiveRefreshFromToken(session.token);
+              // A token whose exp has already passed can only be rejected by VeSync, so don't hand it to
+              // the client: doing so skips the login below and burns a request to be told it expired.
+              // Keep the client identity from that session so the fresh login presents the same terminal.
+              const expiredBySkewMs = 60 * 1000;
+              if (ts?.exp && ts.exp * 1000 <= Date.now() + expiredBySkewMs) {
+                this.logger.info(
+                  `Persisted VeSync session expired ${new Date(ts.exp * 1000).toISOString()}; authenticating again.`,
+                );
+                this.adoptClientIdentity(session);
+                await this.sessionStore.clear();
+              } else {
+                this.hydrateSessionCompat(session);
+                // Use actual token issuance time if available to avoid overextending lifetime
+                this.lastTokenRefresh = ts?.iat ? new Date(ts.iat * 1000) : new Date();
+                const expStr = ts?.exp ? new Date(ts.exp * 1000).toISOString() : 'unknown';
+                this.logger.info(`Reusing persisted VeSync session. Token exp: ${expStr}`);
+                // Schedule a proactive refresh before expiry
+                this.scheduleProactiveRefreshFromToken(session.token);
+              }
             }
           } catch (e: any) {
             this.logger.debug(`Failed to hydrate persisted session, will login fresh: ${e?.message || e}`);
@@ -315,6 +327,8 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
               accountId,
               region,
               apiBaseUrl,
+              terminalId: (this.client as any).terminalId ?? undefined,
+              appId: (this.client as any).appId ?? undefined,
               issuedAt: ts?.iat ?? null,
               expiresAt: ts?.exp ?? null,
               lastValidatedAt: Date.now(),
@@ -384,9 +398,23 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
   }
 
   /**
+   * Reuse the client identity from a persisted session whose credentials we are discarding.
+   *
+   * VeSync binds tokens to the terminal id, so keeping it stable stops every login looking like a new
+   * device to VeSync (which is what triggers its "new login to your account" notifications).
+   */
+  private adoptClientIdentity(session: PluginSession) {
+    if (!session.terminalId && !session.appId) return;
+    const client: any = this.client as any;
+    if (typeof client.restoreClientIdentity === 'function') {
+      client.restoreClientIdentity({ terminalId: session.terminalId, appId: session.appId });
+    }
+  }
+
+  /**
    * Backward-compatible session hydration when using older tsvesync versions
    */
-  private hydrateSessionCompat(session: { token: string; accountId: string; countryCode?: string | null; apiBaseUrl?: string; region?: string }) {
+  private hydrateSessionCompat(session: { token: string; accountId: string; countryCode?: string | null; apiBaseUrl?: string; region?: string; terminalId?: string; appId?: string }) {
     const client: any = this.client as any;
     if (typeof client.hydrateSession === 'function') {
       client.hydrateSession(session);
