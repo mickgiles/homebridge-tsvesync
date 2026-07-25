@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.5.1 (2026-07-25)
+
+### Fixed
+- **Expired Persisted Sessions No Longer Reused**: On startup the plugin now checks the persisted token's expiry (with a 60-second skew) and authenticates fresh when it has already passed, instead of hydrating a token VeSync can only reject. Reusing a dead token skipped the login path entirely and wasted a request to be told it had expired, delaying the first successful device refresh after Homebridge had been offline longer than the token's lifetime.
+- **Stable Client Identity Across Re-Logins**: When discarding an expired session, the plugin keeps that session's terminal and app id and passes them to the library via `restoreClientIdentity()`. VeSync binds tokens to the terminal id, so regenerating it made every login look like a new device and triggered VeSync's "new login to your account" notifications.
+- **Client Identity Persisted And Preserved**: The terminal and app id are now written into the stored session, and the session store keeps existing values when a newer write omits them — so an older library that does not report them cannot wipe the identity.
+
+### Dependencies
+- **tsvesync**: Updated to 1.5.1 for the matching token-refresh retry fix, `restoreClientIdentity()`, and stable terminal identity support.
+
+### Tests
+- **Session Hydration Coverage**: Adds `src/__tests__/session-hydration.test.ts` covering expired-token rejection, valid-token reuse, client-identity adoption and persistence, and store-level identity preservation.
+
 ## 1.5.0 (2026-07-18)
 
 ### Added
