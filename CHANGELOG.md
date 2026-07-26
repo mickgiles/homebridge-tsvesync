@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.5.2 (2026-07-26)
+
+### Fixed
+- **Auto Mode Honoured In Scenes And Automations** ([#42](https://github.com/mickgiles/homebridge-tsvesync/issues/42)): Setting a Vital 200S to Auto from an Apple Home automation landed in manual, sleep, or off depending purely on the slider position. HomeKit writes `Active`, `TargetAirPurifierState`, and `RotationSpeed` in a single HAP request and HAP-NodeJS dispatches them concurrently; because this accessory encodes sleep/manual/turbo into the speed slider, every speed write is implicitly a mode write and raced with the explicit Auto beside it. Writes are now buffered briefly and resolved into one intent — an explicit Auto beats the mode implied by the slider, `RotationSpeed` 0 only means "turn off" when nothing else in the batch asked for on or a mode, and an explicit `Active` 0 still wins outright.
+- **Overlapping Write Bursts No Longer Interleave**: Batches are applied one at a time. Dragging the slider produces a burst spaced beyond the coalesce window, and un-serialised those API calls interleaved so the device settled on whichever response happened to land last.
+- **Humidifier 0% Mist No Longer Cancels Power On**: The humidifier accessory had the same batching hazard — a 0% mist slider arriving alongside `Active` 1 turned the device straight back off. It now uses the same buffered-intent resolution as the air purifier.
+- **Mode Changes Reported Back Immediately**: A slider drag can move a device out of auto, but `TargetAirPurifierState` was never pushed, so the tile kept showing "Auto" until the next poll — and the poll interval has a two minute floor. Failed `manualMode()` calls were also discarded, so a speed could be sent to a device still in auto; the failure is now surfaced instead.
+- **Speed Readback No Longer Uses A Stale Cache**: The commanded speed is written through, so the slider stops snapping back to the previously reported value. Sleep was also gated on the device being off, so while running it reported the last manual speed instead of the sleep notch.
+- **Core 300S Speed Model Corrected To Three Speeds**: The library declared four fan levels for the Core 300S, but the hardware is Low/Med/High plus Sleep, so the top two slider notches were identical. The real maximum is now used, giving 0/25/50/75/100 mapped 1:1 to off/Sleep/Low/Med/High. Because that changes `minStep` and HomeKit caches characteristic metadata on the home hub, percentages are mapped by which range they fall into rather than by rounding against the new step — rounding put a stale 60% at Low instead of Medium — and the controller's own value is echoed back so the slider does not fight it. Upgrading users get correct speeds immediately; only the tick marks need the hub to catch up.
+
+### Dependencies
+- **tsvesync**: Updated to 1.5.2 for the corrected Core 200S/300S fan levels and the commanded-speed cache write-through that this accessory's readback path depends on.
+
+### Tests
+- **Batched Write Coverage**: Adds `src/__tests__/accessories/air-purifier-batch-write.test.ts` and `src/__tests__/accessories/humidifier-batch-write.test.ts` covering scene and automation write batches, explicit power off, mode readback, stale-mode override expiry, speed readback against a stale library cache, stale slider grids from a not-yet-updated hub, and burst serialisation.
+
 ## 1.5.1 (2026-07-25)
 
 ### Fixed
