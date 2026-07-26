@@ -39,7 +39,25 @@ interface ExtendedVeSyncAirPurifier extends VeSyncAirPurifier {
   };
 }
 
+/**
+ * The subset of a HomeKit write batch this accessory has to reconcile.
+ * Each field is present only if that characteristic was written.
+ */
+interface PendingWrite {
+  active?: number;
+  targetState?: number;
+  rotationSpeed?: number;
+}
+
 export class AirPurifierAccessory extends BaseAccessory {
+  /**
+   * How long to buffer characteristic writes before applying them. HAP-NodeJS
+   * dispatches every characteristic in one request within the same tick, so a
+   * short window is enough to see the whole batch; it stays far below HAP's
+   * 3s slow-write warning threshold.
+   */
+  private static readonly WRITE_COALESCE_MS = 50;
+
   private readonly capabilities: DeviceCapabilities;
   protected readonly device: VeSyncAirPurifier;
   private isAirBypassDevice: boolean;
@@ -48,6 +66,31 @@ export class AirPurifierAccessory extends BaseAccessory {
   private lastSetSpeed: number = 0; // Track the last speed we set
   private lastSetPercentage: number = 0; // Track the last percentage we set
   private skipNextUpdate: boolean = false; // Flag to skip the next update
+
+  // Coalesced write state. HomeKit scenes and automations send Active,
+  // TargetAirPurifierState and RotationSpeed in a single HAP request, and
+  // HAP-NodeJS dispatches those writes concurrently. Applying them
+  // independently makes them race and clobber each other, so they are
+  // buffered here and resolved into one intent. See resolveWrite().
+  private pendingWrite: PendingWrite | null = null;
+  private pendingWriteTimer: NodeJS.Timeout | null = null;
+  private pendingWritePromise: Promise<void> | null = null;
+  // Batches are applied one at a time. Dragging the slider produces a burst of
+  // writes spaced further apart than the coalesce window, so several batches
+  // can be in flight at once; without this their API calls interleave and the
+  // device can settle on whichever happens to land last rather than the last
+  // value the user chose.
+  private writeChain: Promise<void> = Promise.resolve();
+
+  // Tracks the last mode we commanded, to protect against stale API responses.
+  // VeSync is eventually consistent: for a few seconds after a mode change
+  // getDetails() still reports the *previous* mode, which would otherwise flip
+  // the HomeKit tile straight back (auto->manual, or manual->auto). Mirrors the
+  // guard the humidifier accessory already uses. Expires so an out-of-band
+  // change made in the VeSync app is not masked indefinitely.
+  private static readonly COMMANDED_MODE_TTL_MS = 30000;
+  private _lastCommandedMode: string | null = null;
+  private _lastCommandedModeTime = 0;
 
   constructor(
     platform: TSVESyncPlatform,
@@ -299,24 +342,67 @@ export class AirPurifierAccessory extends BaseAccessory {
     return (this.device.deviceType || '').toUpperCase().includes('CORE200S');
   }
 
+  private isCore300S(): boolean {
+    return (this.device.deviceType || '').toUpperCase().includes('CORE300S');
+  }
+
+  /**
+   * The real number of manual fan speeds, which is not always what the library
+   * advertises. tsvesync declares `levels: [1,2,3,4]` for the Core 200S and
+   * Core 300S, but both hardware families only have three manual speeds -
+   * verified against a Core300S, where changeFanSpeed(4) reports success and
+   * the device settles at 3. Trusting the declared 4 produces a dead top notch
+   * where 80% and 100% both mean speed 3.
+   */
+  private getEffectiveMaxFanSpeed(): number {
+    if (this.isCore200S() || this.isCore300S()) {
+      return 3;
+    }
+    return this.getMaxFanSpeed();
+  }
+
   /**
    * Calculate the appropriate step size for discrete speed levels
    */
   private calculateRotationSpeedStep(): number {
-    // Expose Sleep as the first notch when supported.
-    // Core 200S uses 3 manual speeds (25% step). 4-speed models use 20% step.
+    // Expose Sleep as the first notch when supported. The step is simply the
+    // width of one notch, derived from the notch count so the slider grid and
+    // the percentage->notch mapping can never disagree.
     if (this.hasFeature('sleep_mode')) {
-      if (this.hasFeature('turbo_mode')) {
-        return 20;
-      }
-      if (this.isCore200S()) return 25;
-      const max = this.getMaxFanSpeed();
-      return max >= 4 ? 20 : 25;
+      return 100 / this.getTotalNotches();
     }
     const maxSpeed = this.getMaxFanSpeed();
     if (maxSpeed === 3) return 33.33;
     if (maxSpeed === 4) return 25;
     return 1;
+  }
+
+  /**
+   * Total slider notches: sleep, each manual speed, and turbo when supported.
+   */
+  private getTotalNotches(): number {
+    const max = this.getEffectiveMaxFanSpeed();
+    return max + (this.hasFeature('turbo_mode') ? 2 : 1);
+  }
+
+  /**
+   * Map a percentage to a slider notch by which equal-width range it falls in,
+   * rather than by rounding against our own step.
+   *
+   * This has to stay correct even when the controller disagrees with us about
+   * the step. HomeKit caches characteristic metadata on the home hub, so after
+   * an upgrade that changes minStep a controller can keep sending values on the
+   * *old* grid for an unknown period. Rounding against our step maps those to
+   * the wrong speed (a 60% on an old 20% grid became Low instead of Medium);
+   * range mapping gets it right on either grid.
+   */
+  private percentageToNotch(percentage: number): number {
+    if (typeof percentage !== 'number' || isNaN(percentage) || percentage <= 0) {
+      return 0;
+    }
+    const totalNotches = this.getTotalNotches();
+    const sliceWidth = 100 / totalNotches;
+    return Math.max(1, Math.min(totalNotches, Math.ceil(percentage / sliceWidth)));
   }
 
   /**
@@ -331,7 +417,7 @@ export class AirPurifierAccessory extends BaseAccessory {
       }
       if (typeof speed !== 'number' || speed <= 0) return 0;
       const step = this.calculateRotationSpeedStep();
-      const max = this.isCore200S() ? 3 : this.getMaxFanSpeed();
+      const max = this.getEffectiveMaxFanSpeed();
       // Manual speeds occupy notches 2..(max+1)
       const notch = Math.max(2, Math.min(max + 1, speed + 1));
       return Math.min(100, notch * step);
@@ -401,11 +487,10 @@ export class AirPurifierAccessory extends BaseAccessory {
     if (this.hasFeature('sleep_mode')) {
       if (typeof percentage !== 'number') return 1;
       percentage = Math.min(100, Math.max(0, percentage));
-      const step = this.calculateRotationSpeedStep();
-      const max = this.isCore200S() ? 3 : this.getMaxFanSpeed();
+      const max = this.getEffectiveMaxFanSpeed();
       const supportsTurbo = this.hasFeature('turbo_mode');
-      const totalNotches = max + (supportsTurbo ? 2 : 1); // sleep + manual + optional turbo
-      const notch = Math.max(0, Math.min(totalNotches, Math.round(percentage / step)));
+      const totalNotches = this.getTotalNotches(); // sleep + manual + optional turbo
+      const notch = this.percentageToNotch(percentage);
       if (supportsTurbo && notch === totalNotches) {
         return max;
       }
@@ -601,7 +686,7 @@ export class AirPurifierAccessory extends BaseAccessory {
    */
   private async getPetMode(): Promise<CharacteristicValue> {
     const extendedDevice = this.device as ExtendedVeSyncAirPurifier;
-    return (extendedDevice.mode || '').toLowerCase() === 'pet';
+    return this.resolveEffectiveMode(extendedDevice.mode) === 'pet';
   }
 
   /**
@@ -640,6 +725,11 @@ export class AirPurifierAccessory extends BaseAccessory {
       if (!success) {
         throw new Error(`Failed to ${value ? 'enable' : 'disable'} pet mode`);
       }
+
+      // Hold the commanded mode against stale API reads
+      this.rememberCommandedMode(
+        value ? 'pet' : (this.hasFeature('auto_mode') ? 'auto' : 'manual')
+      );
 
       // Refresh characteristics so the main service and switch stay consistent
       await this.updateDeviceSpecificStates(this.device);
@@ -728,9 +818,11 @@ export class AirPurifierAccessory extends BaseAccessory {
    * Update device states based on the latest details
    */
   protected async updateDeviceSpecificStates(details: any): Promise<void> {
-    // Update power state (treat sleep as on for some VeSync models)
+    // Update power state (treat sleep as on for some VeSync models).
+    // Prefer the mode we last commanded - a poll that lands while VeSync is
+    // still reporting the previous mode must not flip the tile back.
     const extended = this.device as ExtendedVeSyncAirPurifier;
-    const mode = (extended.mode || details.mode || '').toLowerCase();
+    const mode = this.resolveEffectiveMode(extended.mode || details.mode || '');
     const isSleep = mode === 'sleep';
     const isTurbo = this.hasFeature('turbo_mode') && mode === 'turbo';
     const isOn = isSleep || details.enabled || details.deviceStatus === 'on';
@@ -742,21 +834,17 @@ export class AirPurifierAccessory extends BaseAccessory {
       isOn ? 2 : 0
     );
 
-    // Get the extended device to access mode information
-    const extendedDevice = this.device as ExtendedVeSyncAirPurifier;
-    
     // Update target state (MANUAL = 0, AUTO = 1)
     // Special handling for Core200S
     let targetState = 0; // Default to MANUAL
-    
+
     if (this.device.deviceType.includes('Core200S')) {
       // Core200S always reports MANUAL mode
       targetState = 0; // MANUAL
-    } else if (extendedDevice.mode) {
-      // For other devices, including Core300S, use the reported mode.
-      // Pet mode is an automatic mode, so surface it as AUTO on the main service.
-      const reportedMode = (extendedDevice.mode || '').toLowerCase();
-      targetState = (reportedMode === 'auto' || reportedMode === 'pet') ? 1 : 0;
+    } else if (mode) {
+      // For other devices, including Core300S, use the effective mode resolved
+      // above. Pet mode is an automatic mode, so surface it as AUTO.
+      targetState = this.modeToTargetState(mode);
     }
 
     this.service.updateCharacteristic(
@@ -859,6 +947,198 @@ export class AirPurifierAccessory extends BaseAccessory {
   }
 
   /**
+   * Buffer a characteristic write and return a promise that settles once the
+   * whole batch has been applied. Every characteristic in the batch shares the
+   * same promise, so HomeKit gets a success/failure per write as usual.
+   */
+  private queueWrite(key: keyof PendingWrite, value: number): Promise<void> {
+    if (!this.pendingWrite) {
+      this.pendingWrite = {};
+    }
+    this.pendingWrite[key] = value;
+
+    if (!this.pendingWritePromise) {
+      this.pendingWritePromise = new Promise<void>((resolve, reject) => {
+        this.pendingWriteTimer = setTimeout(() => {
+          const batch = this.pendingWrite ?? {};
+          this.pendingWrite = null;
+          this.pendingWritePromise = null;
+          this.pendingWriteTimer = null;
+          // Queue behind any batch still being applied so commands reach the
+          // device in the order the user made them.
+          this.writeChain = this.writeChain
+            .catch(() => undefined)
+            .then(() => this.resolveWrite(batch));
+          this.writeChain.then(resolve, reject);
+        }, AirPurifierAccessory.WRITE_COALESCE_MS);
+        // NB: deliberately not unref()'d - an unref'd timer lets the process
+        // exit before the buffered write is ever applied.
+      });
+    }
+
+    return this.pendingWritePromise;
+  }
+
+  /**
+   * Turn one buffered batch of HomeKit writes into a single device intent.
+   *
+   * The ordering rules that matter (issue #42):
+   *  - An explicit AUTO write wins over the mode implied by the speed slider.
+   *    This accessory encodes sleep/manual/turbo into RotationSpeed, so every
+   *    speed write is implicitly a mode write; without this rule an automation
+   *    that sets "on + auto + 60%" ends up in manual.
+   *  - RotationSpeed 0 only means "turn off" when the same batch didn't also
+   *    ask for the device to be on or set a mode. Otherwise "on + auto + 0%"
+   *    turns the device on and straight back off.
+   */
+  private async resolveWrite(batch: PendingWrite): Promise<void> {
+    const { active, targetState } = batch;
+    let { rotationSpeed } = batch;
+
+    this.platform.log.debug(
+      `${this.device.deviceName}: HomeKit write batch ${JSON.stringify(batch)} ` +
+      `(device reports mode=${(this.device as ExtendedVeSyncAirPurifier).mode}, ` +
+      `status=${this.device.deviceStatus}, speed=${this.device.speed})`
+    );
+
+    // An explicit power-off wins outright - nothing else in the batch matters.
+    if (active === 0) {
+      await this.applyActive(0);
+      return;
+    }
+
+    if (rotationSpeed === 0) {
+      if (active !== 1 && targetState === undefined) {
+        // Slider dragged to zero on its own - the long-standing "0% means off".
+        await this.applyActive(0);
+        return;
+      }
+      // Something else in the batch asked for the device to be on or set a
+      // mode, so the 0% slider is stale state rather than an off request.
+      this.platform.log.debug(
+        `${this.device.deviceName}: Ignoring 0% speed - batch also requested on/mode`
+      );
+      rotationSpeed = undefined;
+    }
+
+    // Power on first so the mode and speed commands land on a running device.
+    if (active === 1) {
+      await this.applyActive(1);
+    }
+
+    // Explicit AUTO beats the slider. In auto the device picks its own speed,
+    // so the requested percentage is advisory and deliberately not applied.
+    if (targetState === 1) {
+      await this.applyTargetState(1);
+      return;
+    }
+
+    // Otherwise the slider carries the mode (sleep / manual / turbo).
+    if (rotationSpeed !== undefined) {
+      await this.applyRotationSpeed(rotationSpeed);
+      return;
+    }
+
+    if (targetState === 0) {
+      await this.applyTargetState(0);
+    }
+  }
+
+  /**
+   * Write a commanded speed/mode back into the device's cached details.
+   *
+   * The bypass purifiers (Core series) don't update their own cache after a
+   * successful changeFanSpeed - unlike the bypassV2 models, which do - so
+   * device.speed stays stale until the next poll, and the poll interval has a
+   * two minute floor. That stale value makes getRotationSpeed() disagree with
+   * what we just set and snaps the slider back to the wrong notch.
+   */
+  private cacheCommandedSpeed(speed: number, mode?: string): void {
+    const device = this.device as ExtendedVeSyncAirPurifier & {
+      details?: Record<string, unknown>;
+    };
+
+    // NB: `speed` and `mode` are getter-only on VeSyncFan and read straight
+    // through to `details`. Assigning to them is a no-op in sloppy mode and a
+    // TypeError under the strict-mode build, so write to `details` instead.
+    if (device.details) {
+      device.details.speed = speed;
+      if (mode) {
+        device.details.mode = mode;
+      }
+    }
+    if (mode) {
+      this.rememberCommandedMode(mode);
+    }
+  }
+
+  /**
+   * Record a mode we just commanded so a stale API read can't undo it.
+   */
+  private rememberCommandedMode(mode: string): void {
+    this._lastCommandedMode = (mode || '').toLowerCase();
+    this._lastCommandedModeTime = Date.now();
+  }
+
+  /**
+   * Resolve the mode to report to HomeKit, preferring what we last commanded
+   * over what the device currently reports. The override is dropped as soon as
+   * the device catches up, or once it expires - so a mode changed in the VeSync
+   * app still comes through.
+   */
+  private resolveEffectiveMode(reportedMode: string): string {
+    const reported = (reportedMode || '').toLowerCase();
+
+    if (this._lastCommandedMode === null) {
+      return reported;
+    }
+
+    const elapsed = Date.now() - this._lastCommandedModeTime;
+    if (reported === this._lastCommandedMode ||
+        elapsed > AirPurifierAccessory.COMMANDED_MODE_TTL_MS) {
+      // Device caught up, or we've waited long enough - stop overriding.
+      this._lastCommandedMode = null;
+      return reported;
+    }
+
+    this.platform.log.debug(
+      `${this.device.deviceName}: Using commanded mode '${this._lastCommandedMode}' ` +
+      `instead of device-reported '${reported}'`
+    );
+    return this._lastCommandedMode;
+  }
+
+  /**
+   * Map a VeSync mode to the HomeKit TargetAirPurifierState value.
+   * Pet is an automatic mode, so it surfaces as AUTO like auto itself.
+   */
+  private modeToTargetState(mode: string): number {
+    const normalised = (mode || '').toLowerCase();
+    return (normalised === 'auto' || normalised === 'pet') ? 1 : 0;
+  }
+
+  /**
+   * Push the mode back to HomeKit immediately after we change it.
+   *
+   * The RotationSpeed slider implicitly carries a mode (sleep/manual/turbo),
+   * so dragging it can move the device out of auto. Without this the tile
+   * keeps showing the old mode until the next poll - and the poll interval has
+   * a two minute floor, so "Auto" would linger long after the device had
+   * actually switched to Manual.
+   */
+  private syncTargetStateToHomeKit(mode: string): void {
+    this.rememberCommandedMode(mode);
+    const targetState = this.modeToTargetState(mode);
+    this.service.updateCharacteristic(
+      this.platform.Characteristic.TargetAirPurifierState,
+      targetState
+    );
+    this.platform.log.debug(
+      `${this.device.deviceName}: Synced TargetAirPurifierState to ${targetState} for mode '${mode}'`
+    );
+  }
+
+  /**
    * Get target state (MANUAL = 0, AUTO = 1)
    */
   private async getTargetState(): Promise<CharacteristicValue> {
@@ -869,16 +1149,21 @@ export class AirPurifierAccessory extends BaseAccessory {
     
     const extendedDevice = this.device as ExtendedVeSyncAirPurifier;
     // Pet mode is an automatic mode, so report it as AUTO on the main service.
-    const reportedMode = (extendedDevice.mode || '').toLowerCase();
-    const targetState = (reportedMode === 'auto' || reportedMode === 'pet') ? 1 : 0;
+    // Prefer the mode we last commanded so a stale API read can't flip the tile.
+    const effectiveMode = this.resolveEffectiveMode(extendedDevice.mode);
 
-    return targetState;
+    return this.modeToTargetState(effectiveMode);
   }
 
   /**
-   * Set target state (AUTO = 0, MANUAL = 1)
+   * Set target state (MANUAL = 0, AUTO = 1). Buffered so it can be reconciled
+   * with any Active/RotationSpeed writes sent in the same HomeKit request.
    */
   private async setTargetState(value: CharacteristicValue): Promise<void> {
+    return this.queueWrite('targetState', value as number);
+  }
+
+  private async applyTargetState(value: CharacteristicValue): Promise<void> {
     try {
       const targetState = value as number;
       const extendedDevice = this.device as ExtendedVeSyncAirPurifier;
@@ -913,7 +1198,11 @@ export class AirPurifierAccessory extends BaseAccessory {
       if (!success) {
         throw new Error(`Failed to set mode to ${mode}`);
       }
-      
+
+      // Remember what we commanded so the stale-read guard holds the tile on
+      // the new mode until VeSync catches up.
+      this.rememberCommandedMode(mode);
+
       // Update device state and characteristics
       await this.updateDeviceSpecificStates(this.device);
     } catch (error) {
@@ -926,17 +1215,28 @@ export class AirPurifierAccessory extends BaseAccessory {
    */
   private async getRotationSpeed(): Promise<CharacteristicValue> {
     const extended = this.device as ExtendedVeSyncAirPurifier;
-    if (this.hasFeature('turbo_mode') && (extended.mode || '').toLowerCase() === 'turbo') {
+    const effectiveMode = this.resolveEffectiveMode(extended.mode);
+    if (this.hasFeature('turbo_mode') && effectiveMode === 'turbo') {
       return 100;
     }
-    // If device is off or speed is not defined, return 0
-    if (this.device.deviceStatus !== 'on' || 
-        this.device.speed === undefined || 
-        this.device.speed === null) {
-      // If in sleep mode, surface the first notch
-      if (this.hasFeature('sleep_mode') && (extended.mode || '').toLowerCase() === 'sleep') {
-        return this.calculateRotationSpeedStep();
+    // Sleep occupies the first notch. This has to be checked before the
+    // on/off gate below: while the device is ON the gate falls through to the
+    // speed conversion, which would report the last manual speed instead of
+    // the sleep notch.
+    if (this.hasFeature('sleep_mode') && effectiveMode === 'sleep') {
+      if (this.device.deviceStatus !== 'on') {
+        return 0;
       }
+      // Prefer the value the controller sent, so a controller on a stale grid
+      // isn't dragged to our canonical notch position.
+      return this.lastSetPercentage > 0
+        ? this.lastSetPercentage
+        : this.calculateRotationSpeedStep();
+    }
+    // If device is off or speed is not defined, return 0
+    if (this.device.deviceStatus !== 'on' ||
+        this.device.speed === undefined ||
+        this.device.speed === null) {
       return 0;
     }
     
@@ -954,35 +1254,28 @@ export class AirPurifierAccessory extends BaseAccessory {
   }
 
   /**
-   * Set rotation speed
+   * Set rotation speed. Buffered so it can be reconciled with any
+   * Active/TargetAirPurifierState writes sent in the same HomeKit request -
+   * the slider implicitly carries a mode, so it must not clobber an explicit
+   * AUTO written alongside it.
    */
   private async setRotationSpeed(value: CharacteristicValue): Promise<void> {
+    let percentage = value as number;
+    if (typeof percentage !== 'number' || isNaN(percentage)) {
+      this.platform.log.warn(`Invalid rotation speed value: ${value} for device: ${this.device.deviceName}`);
+      return;
+    }
+    percentage = Math.min(100, Math.max(0, percentage));
+    return this.queueWrite('rotationSpeed', percentage);
+  }
+
+  private async applyRotationSpeed(value: CharacteristicValue): Promise<void> {
     try {
-      // Ensure value is a valid number
-      let percentage = value as number;
-      if (isNaN(percentage) || percentage === null || percentage === undefined) {
-        this.platform.log.warn(`Invalid rotation speed value: ${value} for device: ${this.device.deviceName}`);
-        return;
-      }
-      
-      // Ensure percentage is between 0 and 100
-      percentage = Math.min(100, Math.max(0, percentage));
-      
+      // Value is already validated and clamped by setRotationSpeed()
+      const percentage = value as number;
+
       this.platform.log.debug(`Setting rotation speed to ${percentage}% for device: ${this.device.deviceName}`);
-      
-      if (percentage === 0) {
-        // Turn off the device instead of setting speed to 0
-        this.platform.log.debug(`Turning off device ${this.device.deviceName} due to 0% rotation speed`);
-        const success = await this.device.turnOff();
-        if (!success) {
-          throw new Error('Failed to turn off device');
-        }
-        // Reset tracking variables when turning off
-        this.lastSetSpeed = 0;
-        this.lastSetPercentage = 0;
-        return;
-      }
-      
+
       const extendedDevice = this.device as ExtendedVeSyncAirPurifier;
       
       // Check if device is off and turn it on first
@@ -1006,11 +1299,14 @@ export class AirPurifierAccessory extends BaseAccessory {
       
       // When using sleep-as-first-notch, map slider notches robustly by rounding
       if (this.hasFeature('sleep_mode')) {
-        const max = this.isCore200S() ? 3 : this.getMaxFanSpeed();
-        const step = this.calculateRotationSpeedStep();
+        const max = this.getEffectiveMaxFanSpeed();
         const supportsTurbo = this.hasFeature('turbo_mode');
-        const totalNotches = max + (supportsTurbo ? 2 : 1); // sleep + manual + optional turbo
-        const notch = Math.max(0, Math.min(totalNotches, Math.round(percentage / step)));
+        const totalNotches = this.getTotalNotches(); // sleep + manual + optional turbo
+        const notch = this.percentageToNotch(percentage);
+        // Echo back the value the controller actually sent rather than our own
+        // canonical notch position. If its cached step differs from ours the
+        // two are not equal, and echoing ours makes the slider visibly jump.
+        const echoPct = percentage;
         if (notch <= 1) {
           // Sleep
           this.platform.log.info(`Changing mode to sleep for device: ${this.device.deviceName}`);
@@ -1024,11 +1320,12 @@ export class AirPurifierAccessory extends BaseAccessory {
             throw new Error('Failed to set sleep mode');
           }
           // Immediate UI feedback
-          this.service.updateCharacteristic(this.platform.Characteristic.RotationSpeed, step);
+          this.service.updateCharacteristic(this.platform.Characteristic.RotationSpeed, echoPct);
           this.service.updateCharacteristic(this.platform.Characteristic.Active, 1);
           this.service.updateCharacteristic(this.platform.Characteristic.CurrentAirPurifierState, 2);
+          this.syncTargetStateToHomeKit('sleep');
           this.lastSetSpeed = 0;
-          this.lastSetPercentage = step;
+          this.lastSetPercentage = echoPct;
           this.skipNextUpdate = true;
           return;
         }
@@ -1046,6 +1343,7 @@ export class AirPurifierAccessory extends BaseAccessory {
           this.service.updateCharacteristic(this.platform.Characteristic.RotationSpeed, 100);
           this.service.updateCharacteristic(this.platform.Characteristic.Active, 1);
           this.service.updateCharacteristic(this.platform.Characteristic.CurrentAirPurifierState, 2);
+          this.syncTargetStateToHomeKit('turbo');
           this.lastSetSpeed = max;
           this.lastSetPercentage = 100;
           this.skipNextUpdate = true;
@@ -1060,17 +1358,22 @@ export class AirPurifierAccessory extends BaseAccessory {
         const modeNow = (extendedDevice.mode || '').toLowerCase();
         if (modeNow === 'auto' || modeNow === 'sleep' || (supportsTurbo && modeNow === 'turbo')) {
           this.platform.log.info(`Changing mode to manual for device: ${this.device.deviceName}`);
+          let modeOk = false;
           if (typeof extendedDevice.manualMode === 'function') {
-            await extendedDevice.manualMode();
+            modeOk = await extendedDevice.manualMode();
           } else if (typeof extendedDevice.setMode === 'function') {
-            await extendedDevice.setMode('manual');
+            modeOk = await extendedDevice.setMode('manual');
+          }
+          if (!modeOk) {
+            // Don't silently push a speed at a device still sitting in auto
+            throw new Error('Failed to set manual mode');
           }
         }
-        // Update UI early
-        const uiPct = Math.min(100, manualNotch * step);
-        this.service.updateCharacteristic(this.platform.Characteristic.RotationSpeed, uiPct);
+        // Update UI early, echoing the controller's own value
+        this.service.updateCharacteristic(this.platform.Characteristic.RotationSpeed, echoPct);
+        this.syncTargetStateToHomeKit('manual');
         this.lastSetSpeed = desiredSpeed;
-        this.lastSetPercentage = uiPct;
+        this.lastSetPercentage = echoPct;
         this.skipNextUpdate = true;
         const ok = await this.device.changeFanSpeed(desiredSpeed);
         if (!ok) {
@@ -1078,6 +1381,9 @@ export class AirPurifierAccessory extends BaseAccessory {
           this.lastSetPercentage = 0;
           throw new Error(`Failed to set speed to ${desiredSpeed}`);
         }
+        // The library leaves its cache stale for these models - fix it up so
+        // the slider doesn't snap back to the previously reported speed.
+        this.cacheCommandedSpeed(desiredSpeed, 'manual');
         return;
       }
 
@@ -1107,11 +1413,17 @@ export class AirPurifierAccessory extends BaseAccessory {
       // For devices without sleep notch, ensure manual mode if required
       const modeNow = (extendedDevice.mode || '').toLowerCase();
       if (modeNow === 'auto') {
+        let modeOk = false;
         if (typeof extendedDevice.manualMode === 'function') {
-          await extendedDevice.manualMode();
+          modeOk = await extendedDevice.manualMode();
         } else if (typeof extendedDevice.setMode === 'function') {
-          await extendedDevice.setMode('manual');
+          modeOk = await extendedDevice.setMode('manual');
         }
+        if (!modeOk) {
+          throw new Error('Failed to set manual mode');
+        }
+        // Reflect the mode change in HomeKit right away
+        this.syncTargetStateToHomeKit('manual');
       }
 
       // Convert percentage to device speed using our consistent conversion method
@@ -1140,13 +1452,15 @@ export class AirPurifierAccessory extends BaseAccessory {
       );
       
       const success = await this.device.changeFanSpeed(speed);
-      
+
       if (!success) {
         // If the API call failed, reset our tracking variables
         this.lastSetSpeed = 0;
         this.lastSetPercentage = 0;
         throw new Error(`Failed to set speed to ${speed}`);
       }
+
+      this.cacheCommandedSpeed(speed, 'manual');
       
       this.platform.log.debug(`Successfully set fan speed to ${speed} (${percentage}%) for device: ${this.device.deviceName}`);
       
@@ -1162,7 +1476,16 @@ export class AirPurifierAccessory extends BaseAccessory {
     return this.device.deviceStatus === 'on' ? 1 : 0;
   }
 
+  /**
+   * Set active state. Buffered so it can be reconciled with any
+   * RotationSpeed/TargetAirPurifierState writes sent in the same HomeKit
+   * request - notably so a 0% slider can't turn the device straight back off.
+   */
   private async setActive(value: CharacteristicValue): Promise<void> {
+    return this.queueWrite('active', value as number === 1 ? 1 : 0);
+  }
+
+  private async applyActive(value: CharacteristicValue): Promise<void> {
     try {
       const isOn = value as number === 1;
       this.platform.log.debug(`Setting device ${this.device.deviceName} to ${isOn ? 'on' : 'off'}`);

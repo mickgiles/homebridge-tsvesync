@@ -79,6 +79,16 @@ interface ExtendedVeSyncHumidifier extends VeSyncHumidifier {
   hasFeature?(feature: string): boolean;
 }
 
+/**
+ * The subset of a HomeKit write batch this accessory has to reconcile.
+ * Each field is present only if that characteristic was written.
+ */
+interface HumidifierPendingWrite {
+  active?: number;
+  targetState?: number;
+  rotationSpeed?: number;
+}
+
 export class HumidifierAccessory extends BaseAccessory {
   protected readonly device: VeSyncHumidifier;
   private capabilities: DeviceCapabilities; // Removed readonly to allow re-initialization
@@ -99,6 +109,15 @@ export class HumidifierAccessory extends BaseAccessory {
   // Expires after 30s so out-of-band changes (VeSync app) are not masked.
   private _lastCommandedMode: string | null = null;
   private _lastCommandedModeTime: number = 0;
+
+  // Coalesced write state - see queueWrite()/resolveWrite(). HomeKit scenes and
+  // automations send Active, TargetHumidifierDehumidifierState and RotationSpeed
+  // in one HAP request and HAP-NodeJS dispatches them concurrently, so applying
+  // them independently makes them race.
+  private static readonly WRITE_COALESCE_MS = 50;
+  private pendingWrite: HumidifierPendingWrite | null = null;
+  private pendingWriteTimer: NodeJS.Timeout | null = null;
+  private pendingWritePromise: Promise<void> | null = null;
 
   constructor(
     platform: TSVESyncPlatform,
@@ -880,7 +899,92 @@ export class HumidifierAccessory extends BaseAccessory {
     return isActive ? 1 : 0;
   }
 
+  /**
+   * Buffer a characteristic write and return a promise that settles once the
+   * whole batch has been applied. Every characteristic in the batch shares the
+   * same promise, so HomeKit still gets a result per write.
+   */
+  private queueWrite(key: keyof HumidifierPendingWrite, value: number): Promise<void> {
+    if (!this.pendingWrite) {
+      this.pendingWrite = {};
+    }
+    this.pendingWrite[key] = value;
+
+    if (!this.pendingWritePromise) {
+      this.pendingWritePromise = new Promise<void>((resolve, reject) => {
+        this.pendingWriteTimer = setTimeout(() => {
+          const batch = this.pendingWrite ?? {};
+          this.pendingWrite = null;
+          this.pendingWritePromise = null;
+          this.pendingWriteTimer = null;
+          this.resolveWrite(batch).then(resolve, reject);
+        }, HumidifierAccessory.WRITE_COALESCE_MS);
+        // NB: deliberately not unref()'d - an unref'd timer lets the process
+        // exit before the buffered write is ever applied.
+      });
+    }
+
+    return this.pendingWritePromise;
+  }
+
+  /**
+   * Turn one buffered batch of HomeKit writes into a single device intent.
+   * Mirrors the air purifier rules (issue #42): an explicit auto-mode write
+   * beats the mode implied by the mist slider, and a 0% slider only means
+   * "turn off" when nothing else in the batch asked for on or a mode.
+   */
+  private async resolveWrite(batch: HumidifierPendingWrite): Promise<void> {
+    const { active, targetState } = batch;
+    let { rotationSpeed } = batch;
+
+    this.platform.log.debug(
+      `${this.device.deviceName}: Applying coalesced write ${JSON.stringify(batch)}`
+    );
+
+    if (active === 0) {
+      await this.applyActive(0);
+      return;
+    }
+
+    if (rotationSpeed === 0) {
+      if (active !== 1 && targetState === undefined) {
+        await this.applyActive(0);
+        return;
+      }
+      this.platform.log.debug(
+        `${this.device.deviceName}: Ignoring 0% mist - batch also requested on/mode`
+      );
+      rotationSpeed = undefined;
+    }
+
+    if (active === 1) {
+      await this.applyActive(1);
+    }
+
+    if (targetState !== undefined) {
+      await this.applyTargetState(targetState);
+
+      // An explicit auto request wins: in auto the device picks its own mist
+      // level, so the slider value is advisory and deliberately not applied.
+      if (this.targetStateToMode(targetState) === 'auto') {
+        return;
+      }
+    }
+
+    if (rotationSpeed !== undefined) {
+      await this.applyRotationSpeed(rotationSpeed);
+    }
+  }
+
+  /**
+   * Set active state. Buffered so it can be reconciled with any
+   * RotationSpeed/TargetHumidifierDehumidifierState writes in the same request.
+   */
   private async setActive(value: CharacteristicValue): Promise<void> {
+    return this.queueWrite('active', value as number === 1 ? 1 : 0);
+  }
+
+  private async applyActive(value: CharacteristicValue): Promise<void> {
     try {
       const isOn = value as number === 1;
       this.platform.log.debug(`Setting device ${this.device.deviceName} to ${isOn ? 'on' : 'off'}`);
@@ -999,7 +1103,15 @@ export class HumidifierAccessory extends BaseAccessory {
     }
   }
 
+  /**
+   * Set target state. Buffered so it can be reconciled with any
+   * Active/RotationSpeed writes sent in the same HomeKit request.
+   */
   private async setTargetState(value: CharacteristicValue): Promise<void> {
+    return this.queueWrite('targetState', value as number);
+  }
+
+  private async applyTargetState(value: CharacteristicValue): Promise<void> {
     try {
       // HomeKit Target State: 0 = HUMIDIFIER_OR_DEHUMIDIFIER (Auto), 1 = HUMIDIFIER, 2 = DEHUMIDIFIER
       this.platform.log.debug(`Setting target state to ${value} for device: ${this.device.deviceName}`);
@@ -1088,21 +1200,19 @@ export class HumidifierAccessory extends BaseAccessory {
     }
   }
 
+  /**
+   * Set rotation speed (mist level). Buffered so it can be reconciled with any
+   * Active/TargetHumidifierDehumidifierState writes in the same request.
+   */
   private async handleSetRotationSpeed(value: CharacteristicValue): Promise<void> {
+    return this.queueWrite('rotationSpeed', value as number);
+  }
+
+  private async applyRotationSpeed(value: CharacteristicValue): Promise<void> {
     try {
       const percentage = value as number;
       this.platform.log.debug(`Setting rotation speed to ${percentage}% for device: ${this.device.deviceName}`);
-      
-      if (percentage === 0) {
-        // Turn off the device instead of setting speed to 0
-        this.platform.log.debug(`Turning off device ${this.device.deviceName} due to 0% rotation speed`);
-        const success = await this.device.turnOff();
-        if (!success) {
-          throw new Error('Failed to turn off device');
-        }
-        return;
-      }
-  
+
       // Convert percentage to mist level based on device type
       let speed: number;
       if (this.isHumidDual200S) {
