@@ -87,12 +87,10 @@ export class FanAccessory extends BaseAccessory {
       this.setRotationDirection.bind(this)
     );
 
-    // Set up child lock
-    this.setupCharacteristic(
-      this.platform.Characteristic.LockPhysicalControls,
-      this.getLockPhysicalControls.bind(this),
-      this.setLockPhysicalControls.bind(this)
-    );
+    // Set up child lock for devices that support it. LTF tower fans do not -
+    // their API neither reports nor accepts child lock, so the profile no
+    // longer advertises the feature.
+    this.setupChildLock();
 
     // Add mode control service
     const modeService = this.accessory.getService('Fan Mode') ||
@@ -285,6 +283,34 @@ export class FanAccessory extends BaseAccessory {
     }
   }
 
+  private supportsChildLock(): boolean {
+    const device = this.device as VeSyncFan & { hasFeature?(feature: string): boolean };
+    if (typeof device.setChildLock !== 'function') {
+      return false;
+    }
+    // Older tsvesync versions have no hasFeature; fall back to the setter
+    return typeof device.hasFeature === 'function' ? device.hasFeature('child_lock') : true;
+  }
+
+  private setupChildLock(): void {
+    const lockCharacteristic = this.platform.Characteristic.LockPhysicalControls;
+
+    if (!this.supportsChildLock()) {
+      // Drop a stale characteristic left behind by an older cached accessory
+      if (typeof this.service.testCharacteristic === 'function' &&
+          this.service.testCharacteristic(lockCharacteristic)) {
+        this.service.removeCharacteristic(this.service.getCharacteristic(lockCharacteristic));
+      }
+      return;
+    }
+
+    this.setupCharacteristic(
+      lockCharacteristic,
+      this.getLockPhysicalControls.bind(this),
+      this.setLockPhysicalControls.bind(this)
+    );
+  }
+
   private async getLockPhysicalControls(): Promise<CharacteristicValue> {
     return this.device.childLock ? 1 : 0;
   }
@@ -302,7 +328,7 @@ export class FanAccessory extends BaseAccessory {
         throw new Error(`Failed to ${enabled ? 'enable' : 'disable'} child lock`);
       }
       
-      await this.persistDeviceState('childLock', enabled);
+      await this.persistDeviceState('child_lock', enabled);
     } catch (error) {
       this.handleDeviceError('set child lock', error);
     }
