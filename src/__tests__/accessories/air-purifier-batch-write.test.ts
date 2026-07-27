@@ -26,8 +26,8 @@ describe('AirPurifierAccessory batched HomeKit writes', () => {
 
   const CHARACTERISTICS = [
     'Active', 'CurrentAirPurifierState', 'FilterChangeIndication', 'FilterLifeLevel',
-    'Manufacturer', 'Model', 'Name', 'On', 'RotationSpeed', 'SerialNumber',
-    'TargetAirPurifierState',
+    'LockPhysicalControls', 'Manufacturer', 'Model', 'Name', 'On', 'RotationSpeed',
+    'SerialNumber', 'TargetAirPurifierState',
   ];
 
   function createHarness(options: { deviceType?: string; deviceStatus?: string; mode?: string } = {}) {

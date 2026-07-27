@@ -227,10 +227,14 @@ export class AirPurifierAccessory extends BaseAccessory {
         this.platform.log.debug(`${this.device.deviceName}: Fallback hasFeature('${feature}') returned: false (device does not have air quality sensor per tsvesync config)`);
         return false;
         
-      case 'child_lock':
-        // Explicitly disable child lock features
-        this.platform.log.debug(`${this.device.deviceName}: Fallback hasFeature('${feature}') returned: false (explicitly disabled)`);
-        return false;
+      case 'child_lock': {
+        // Every current VeSync purifier model has a panel lock; when the
+        // library is too old to advertise features, key off whether the
+        // device class implements the setter.
+        const canSetChildLock = typeof extendedDevice.setChildLock === 'function';
+        this.platform.log.debug(`${this.device.deviceName}: Fallback hasFeature('${feature}') returned: ${canSetChildLock} (based on setChildLock availability)`);
+        return canSetChildLock;
+      }
         
       case 'display':
         // Explicitly disable display control features
@@ -637,12 +641,17 @@ export class AirPurifierAccessory extends BaseAccessory {
     // Add a Pet Mode switch for devices that support it (e.g. Vital 200S / LAP-V201S)
     this.setupPetModeSwitch();
 
+    // Expose the panel lock ("Display Lock" on the device) in the
+    // accessory's settings pane for devices that support it
+    this.setupChildLock();
+
     // Check and log important features for debugging
     const autoModeSupported = this.hasFeature('auto_mode');
     this.platform.log.debug(`${this.device.deviceName} (${this.device.deviceType}): Features detected:`);
     this.platform.log.debug(`  - auto_mode: ${autoModeSupported} (controls mode switch)`);
     this.platform.log.debug(`  - pet_mode: ${this.hasFeature('pet_mode')} (controls Pet Mode switch)`);
     this.platform.log.debug(`  - filter_life: ${this.hasFeature('filter_life')} (controls filter display)`);
+    this.platform.log.debug(`  - child_lock: ${this.hasFeature('child_lock')} (controls LockPhysicalControls)`);
   }
 
   /**
@@ -739,7 +748,66 @@ export class AirPurifierAccessory extends BaseAccessory {
     }
   }
 
+  /**
+   * The panel lock (marketed as "Display Lock" on Core-series purifiers,
+   * "Child Lock" elsewhere) maps to HomeKit's LockPhysicalControls, which
+   * the Home app shows in the accessory's settings pane rather than as a
+   * tile. Only wired when the device profile advertises the feature and the
+   * tsvesync class implements the setter.
+   */
+  private supportsChildLock(): boolean {
+    const extendedDevice = this.device as ExtendedVeSyncAirPurifier;
+    return typeof extendedDevice.setChildLock === 'function' && this.hasFeature('child_lock');
+  }
 
+  private setupChildLock(): void {
+    const lockCharacteristic = this.platform.Characteristic.LockPhysicalControls;
+
+    if (!this.supportsChildLock()) {
+      // Drop a stale characteristic left behind by an older cached accessory
+      if (typeof this.service.testCharacteristic === 'function' &&
+          this.service.testCharacteristic(lockCharacteristic)) {
+        this.platform.log.debug(`${this.device.deviceName}: Removing LockPhysicalControls - device does not support child lock`);
+        this.service.removeCharacteristic(this.service.getCharacteristic(lockCharacteristic));
+      }
+      return;
+    }
+
+    this.setupCharacteristic(
+      lockCharacteristic,
+      this.getLockPhysicalControls.bind(this),
+      this.setLockPhysicalControls.bind(this)
+    );
+
+    this.platform.log.debug(`${this.device.deviceName}: LockPhysicalControls configured`);
+  }
+
+  private async getLockPhysicalControls(): Promise<CharacteristicValue> {
+    const extendedDevice = this.device as ExtendedVeSyncAirPurifier;
+    const locked = extendedDevice.childLock ?? extendedDevice.details?.child_lock ?? false;
+    return locked ? 1 : 0;
+  }
+
+  private async setLockPhysicalControls(value: CharacteristicValue): Promise<void> {
+    try {
+      const extendedDevice = this.device as ExtendedVeSyncAirPurifier;
+      if (typeof extendedDevice.setChildLock !== 'function') {
+        throw new Error('Device does not support child lock');
+      }
+
+      const enabled = (value as number) === 1;
+      const success = await extendedDevice.setChildLock(enabled);
+
+      if (!success) {
+        throw new Error(`Failed to ${enabled ? 'enable' : 'disable'} child lock`);
+      }
+
+      await this.persistDeviceState('child_lock', enabled);
+    } catch (error) {
+      await this.handleDeviceError('set child lock', error);
+      throw error;
+    }
+  }
 
   /**
    * Extract filter life from device data in a centralized way
@@ -804,7 +872,7 @@ export class AirPurifierAccessory extends BaseAccessory {
     return {
       hasSpeed: true,
       hasAirQuality: false, // Air quality is now handled by separate accessories
-      hasChildLock: false, // Explicitly disable child lock
+      hasChildLock: true, // Panel lock, exposed via LockPhysicalControls
       hasBrightness: false,
       hasColorTemp: false,
       hasColor: false,
@@ -942,6 +1010,15 @@ export class AirPurifierAccessory extends BaseAccessory {
       this.service?.updateCharacteristic(
         this.platform.Characteristic.FilterLifeLevel,
         Math.min(100, Math.max(0, filterLife))
+      );
+    }
+
+    // Keep the panel lock in sync with the device
+    if (this.supportsChildLock()) {
+      const locked = extended.childLock ?? extended.details?.child_lock ?? false;
+      this.service.updateCharacteristic(
+        this.platform.Characteristic.LockPhysicalControls,
+        locked ? 1 : 0
       );
     }
   }

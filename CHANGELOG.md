@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.6.0 (2026-07-27)
+
+### Added
+- **Display Lock In Device Settings** ([#44](https://github.com/mickgiles/homebridge-tsvesync/issues/44)): Air purifiers now expose the panel lock (marketed as "Display Lock" on Core-series models, "Child Lock" elsewhere) through HomeKit's native `LockPhysicalControls` characteristic, so the toggle appears in the accessory's settings pane in the Home app rather than as an extra switch tile. It is registered only for devices whose profile advertises the feature and whose library class implements the setter; the polled device state is pushed on every refresh, failed writes are rejected so the Home app reverts the toggle, and a stale characteristic left by an older cached accessory is removed. Verified live against Core 200S and Core 300S hardware.
+
+### Changed
+- **tsvesync 1.6.0**: Picks up the child-lock API alignment with pyvesync — the Core-series write payload the cloud actually accepts, the `childLockSwitch` payload for Vital 100S/200S and Everest Air, immediate getter read-back after a successful set, and correct `'on'`/`'off'` string parsing for the LV-PUR131S. Without these the new control would read stale state and, on non-Core models, silently fail to write.
+- **Tower Fan Lock Control Removed**: The LTF-F422S API neither reports nor accepts child lock, so the fan accessory no longer registers `LockPhysicalControls` for devices that do not advertise the feature and removes the stale characteristic from cached accessories. Previously the toggle appeared to work but the device ignored it and the state always read unlocked.
+
 ## 1.5.2 (2026-07-26)
 
 ### Fixed
