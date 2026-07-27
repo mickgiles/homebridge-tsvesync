@@ -388,7 +388,7 @@ export class HumidifierAccessory extends BaseAccessory {
     // Add Name characteristic
     this.setupCharacteristic(
       this.platform.Characteristic.Name,
-      async () => this.device.deviceName
+      async () => this.sanitizedDeviceName
     );
 
     // CurrentRelativeHumidity getter
@@ -484,7 +484,7 @@ export class HumidifierAccessory extends BaseAccessory {
     // Set name for the temperature sensor
     this.setupCharacteristic(
       this.platform.Characteristic.Name,
-      async () => `${this.device.deviceName} Temperature`,
+      async () => `${this.sanitizedDeviceName} Temperature`,
       undefined,
       undefined,
       this.temperatureService
@@ -536,7 +536,7 @@ export class HumidifierAccessory extends BaseAccessory {
     // Set name for the filter service
     this.setupCharacteristic(
       this.platform.Characteristic.Name,
-      async () => `${this.device.deviceName} Filter`,
+      async () => `${this.sanitizedDeviceName} Filter`,
       undefined,
       undefined,
       this.filterService

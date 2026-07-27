@@ -32,7 +32,7 @@ export class AirQualitySensorAccessory extends BaseAccessory {
       this.accessory.addService(this.platform.Service.AirQualitySensor);
 
     // Set the service name
-    this.service.setCharacteristic(this.platform.Characteristic.Name, `${device.deviceName} Air Quality`);
+    this.service.setCharacteristic(this.platform.Characteristic.Name, `${this.sanitizedDeviceName} Air Quality`);
 
     // Configure the Air Quality characteristic
     this.service.getCharacteristic(this.platform.Characteristic.AirQuality)

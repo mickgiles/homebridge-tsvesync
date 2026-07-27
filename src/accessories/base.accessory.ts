@@ -3,6 +3,7 @@ import { TSVESyncPlatform } from '../platform';
 import { DeviceCapabilities, VeSyncDeviceWithPower } from '../types/device.types';
 import { RetryManager } from '../utils/retry';
 import { LogContext, PluginLogger } from '../utils/logger';
+import { sanitizeDeviceName } from '../utils/sanitize-name';
 
 export abstract class BaseAccessory {
   protected service!: Service;
@@ -79,6 +80,14 @@ export abstract class BaseAccessory {
    * Get device capabilities
    */
   protected abstract getDeviceCapabilities(): DeviceCapabilities;
+
+  /**
+   * The device name reduced to HomeKit's legal Name charset. Use this for
+   * every HomeKit-facing name; keep the raw deviceName for logs and API calls.
+   */
+  protected get sanitizedDeviceName(): string {
+    return sanitizeDeviceName(this.device.deviceName);
+  }
 
   /**
    * Get the device type for polling configuration

@@ -7,6 +7,7 @@ import { PluginLogger } from './utils/logger';
 import { createRateLimitedVeSync } from './utils/api-proxy';
 import { PlatformConfig as TSVESyncPlatformConfig } from './types/device.types';
 import { FileSessionStore, PluginSession, decodeJwtTimestampsLocal } from './utils/session-store';
+import { sanitizeDeviceName } from './utils/sanitize-name';
 
 /**
  * HomebridgePlatform
@@ -243,7 +244,28 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
    */
   configureAccessory(accessory: PlatformAccessory) {
     this.logger.info('Loading accessory from cache:', accessory.displayName);
+    this.repairAccessoryName(accessory);
     this.accessories.push(accessory);
+  }
+
+  /**
+   * Accessories cached before name sanitization existed may carry a name
+   * HomeKit rejects (e.g. "OasisMist™ 4.5L"). Rewrite the display name and
+   * the AccessoryInformation Name so HAP stops warning on every startup.
+   * The Home app keeps its own user-assigned label, so this never renames
+   * anything the user sees.
+   */
+  private repairAccessoryName(accessory: PlatformAccessory): void {
+    const sanitized = sanitizeDeviceName(accessory.displayName);
+    if (sanitized === accessory.displayName) {
+      return;
+    }
+
+    this.logger.info(`Sanitizing cached accessory name "${accessory.displayName}" -> "${sanitized}"`);
+    accessory.displayName = sanitized;
+    accessory.getService(this.Service.AccessoryInformation)
+      ?.updateCharacteristic(this.Characteristic.Name, sanitized);
+    this.api.updatePlatformAccessories([accessory]);
   }
 
   /**
@@ -651,7 +673,7 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
           
           // Create the accessory
           accessory = new this.api.platformAccessory(
-            device.deviceName,
+            sanitizeDeviceName(device.deviceName),
             uuid,
             DeviceFactory.getAccessoryCategory(device.deviceType)
           );
@@ -696,7 +718,7 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
             
             // Create the AQ sensor accessory with SENSOR category
             aqAccessory = new this.api.platformAccessory(
-              device.deviceName + ' Air Quality',
+              sanitizeDeviceName(device.deviceName) + ' Air Quality',
               aqUuid,
               this.api.hap.Categories.SENSOR
             );

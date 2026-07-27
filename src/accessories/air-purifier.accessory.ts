@@ -620,7 +620,7 @@ export class AirPurifierAccessory extends BaseAccessory {
     // Add Name characteristic
     this.setupCharacteristic(
       this.platform.Characteristic.Name,
-      async () => this.device.deviceName
+      async () => this.sanitizedDeviceName
     );
     
     // Air quality sensors are now separate accessories
