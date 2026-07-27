@@ -30,7 +30,7 @@ export class SwitchAccessory extends BaseAccessory {
     // Add Name characteristic
     this.service.setCharacteristic(
       this.platform.Characteristic.Name,
-      this.device.deviceName
+      this.sanitizedDeviceName
     );
   }
 

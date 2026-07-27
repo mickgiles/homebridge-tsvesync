@@ -104,7 +104,7 @@ export class FanAccessory extends BaseAccessory {
     // Add Name characteristic
     this.setupCharacteristic(
       this.platform.Characteristic.Name,
-      async () => this.device.deviceName
+      async () => this.sanitizedDeviceName
     );
   }
 
