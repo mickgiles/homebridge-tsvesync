@@ -5,6 +5,9 @@
 ### Fixed
 - **HomeKit Name Warnings Eliminated** ([#46](https://github.com/mickgiles/homebridge-tsvesync/issues/46)): VeSync factory device names like "OasisMist™ 4.5L" contain symbols HomeKit's Name characteristic does not allow, so HAP warned on every startup ("invalid 'Name' characteristic") and iOS could refuse to add the accessory. Every HomeKit-facing name — accessory display names, service Name characteristics, and the air-quality sensor name — is now reduced to HomeKit's legal charset (letters, numbers, spaces, apostrophes, commas, periods, hyphens, starting and ending with a letter or number), with unicode letters preserved. Existing installs are repaired automatically: cached accessories with an invalid name are rewritten on restore, no re-pairing needed. Raw device names are untouched for logs and VeSync API calls, and accessory identity comes from the device id, so rooms, scenes, and automations are unaffected. Renaming in the Home app is also unaffected — HomeKit keeps its own labels.
 
+### Dependencies
+- **tsvesync**: Repinned to 1.6.1 to keep the paired packages on the same version. This is a version-sync only — the name-sanitization fix is entirely in the plugin layer and 1.6.1 carries no functional library changes over 1.6.0.
+
 ## 1.6.0 (2026-07-27)
 
 ### Added
