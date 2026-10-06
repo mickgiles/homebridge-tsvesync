@@ -16,14 +16,22 @@
       "username": {
         "title": "VeSync Username",
         "type": "string",
-        "required": true,
         "description": "Your VeSync account email address"
       },
       "password": {
         "title": "VeSync Password",
         "type": "string",
-        "required": true,
         "description": "Your VeSync account password"
+      },
+      "usernameFile": {
+        "title": "VeSync Username File",
+        "type": "string",
+        "description": "Absolute path to a runtime username file. Takes precedence over username."
+      },
+      "passwordFile": {
+        "title": "VeSync Password File",
+        "type": "string",
+        "description": "Absolute path to a runtime password file. Takes precedence over password."
       },
       "updateInterval": {
         "title": "Update Interval",

@@ -8,6 +8,7 @@ import { createRateLimitedVeSync } from './utils/api-proxy';
 import { PlatformConfig as TSVESyncPlatformConfig } from './types/device.types';
 import { FileSessionStore, PluginSession, decodeJwtTimestampsLocal } from './utils/session-store';
 import { sanitizeDeviceName } from './utils/sanitize-name';
+import { credential } from './utils/credential';
 
 /**
  * HomebridgePlatform
@@ -46,6 +47,7 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
   private initializationResolver!: () => void;
   private isInitialized = false;
   private readonly logger!: PluginLogger;
+  private readonly username!: string;
   private readonly sessionStore!: FileSessionStore;
   // VeSync JWT tokens are valid for 30 days (verified by decoding the JWT)
   // We'll refresh at 25 days to ensure we never hit expiration
@@ -69,19 +71,29 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
     // Initialize logger
     this.logger = new PluginLogger(this.log, this.debug);
 
-    // Validate configuration
-    if (!config.username || !config.password) {
+    let username: string;
+    let password: string;
+    try {
+      username = credential(config.username, config.usernameFile);
+      password = credential(config.password, config.passwordFile);
+    } catch {
+      this.logger.error('Unable to read VeSync credential file');
+      return;
+    }
+    // Validate configuration without logging credential contents or paths.
+    if (!username || !password) {
       this.logger.error('Missing required configuration. Please check your config.json');
       return;
     }
+    this.username = username;
 
     // Prepare session store
     this.sessionStore = new FileSessionStore(this.api.user.storagePath(), this.logger);
 
     // Initialize VeSync client with all configuration
     this.client = createRateLimitedVeSync(
-      config.username,
-      config.password,
+      username,
+      password,
       Intl.DateTimeFormat().resolvedOptions().timeZone,
       this.debug,
       true, // redact sensitive info
@@ -100,7 +112,7 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
 
     this.logger.debug('Initialized platform with config:', {
       name: config.name,
-      username: config.username,
+      username: '[redacted]',
       updateInterval: this.updateInterval,
       debug: this.debug,
       apiUrl: config.apiUrl,
@@ -117,7 +129,7 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
         const session = await this.sessionStore.load();
         if (session) {
           try {
-            if ((session as any).username && (session as any).username !== this.config.username) {
+            if ((session as any).username && (session as any).username !== this.username) {
               this.logger.info('Found persisted session for a different account; ignoring persisted session.');
             } else {
               const ts = decodeJwtTimestampsLocal(session.token);
@@ -354,7 +366,7 @@ export class TSVESyncPlatform implements DynamicPlatformPlugin {
               issuedAt: ts?.iat ?? null,
               expiresAt: ts?.exp ?? null,
               lastValidatedAt: Date.now(),
-              username: this.config.username,
+              username: this.username,
             } as any);
           }
         } catch {/* ignore */}
