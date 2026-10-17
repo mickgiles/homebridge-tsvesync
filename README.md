@@ -161,8 +161,16 @@ Add the following to your Homebridge `config.json`:
 
 * `platform` (required): Must be set to "TSVESyncPlatform"
 * `name` (required): Can be anything, this is the name that will appear in your Homebridge log
-* `username` (required): Your VeSync account email
-* `password` (required): Your VeSync account password
+* `username` or `usernameFile` (required): Your VeSync account email, either inline or in a private file
+* `password` or `passwordFile` (required): Your VeSync account password, either inline or in a private file
+
+`usernameFile` and `passwordFile` are absolute paths read when Homebridge starts.
+Each file takes precedence over its inline counterpart, so you can omit the
+inline value entirely. The Homebridge service account must be able to read the
+files. Missing or unreadable files stop plugin initialization rather than
+falling back to an inline credential. A final line ending is removed from file
+contents. Keep the files outside the plugin installation directory and restrict
+their permissions to the service account.
 * `countryCode` (optional): Your country code - **IMPORTANT for international users!** (default: "US")
   * Use the dropdown in Homebridge UI to select your country
   * Must match the country where your VeSync account was created

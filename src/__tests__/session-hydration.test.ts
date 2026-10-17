@@ -1,5 +1,8 @@
 jest.mock('../utils/device-factory');
 
+import { mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import { API, Logger, Service as ServiceType, Characteristic as CharacteristicType } from 'homebridge';
 import { TSVESyncPlatform } from '../platform';
 import { PLATFORM_NAME } from '../settings';
@@ -7,6 +10,7 @@ import { DeviceFactory } from '../utils/device-factory';
 import { PluginSession } from '../utils/session-store';
 import { createMockLogger, createMockVeSync } from './utils/test-helpers';
 import { VeSync } from 'tsvesync';
+import { PlatformConfig } from '../types/device.types';
 
 const mockDeviceFactory = jest.mocked(DeviceFactory);
 
@@ -37,11 +41,37 @@ const makeSession = (overrides: Partial<PluginSession> = {}): PluginSession => (
 });
 
 describe('TSVESyncPlatform persisted session handling', () => {
-  let platform: TSVESyncPlatform;
+  let platform: TSVESyncPlatform | undefined;
+  let credentialDirectory: string | undefined;
   let mockAPI: jest.Mocked<API>;
   let mockLogger: jest.Mocked<Logger>;
   let mockVeSync: jest.Mocked<VeSync>;
   let store: { load: jest.Mock; save: jest.Mock; clear: jest.Mock };
+
+  const createPlatform = (overrides: Partial<PlatformConfig> = {}): void => {
+    platform = new TSVESyncPlatform(
+      mockLogger,
+      {
+        name: 'Test Platform',
+        username: ACCOUNT_USERNAME,
+        password: 'test-password',
+        platform: PLATFORM_NAME,
+        ...overrides,
+      },
+      mockAPI,
+    );
+
+    (platform as any).client = mockVeSync;
+
+    (platform as any).sessionStore = store;
+  };
+
+  const usernameFile = (username: string): string => {
+    credentialDirectory = mkdtempSync(join(tmpdir(), 'vesync-session-'));
+    const file = join(credentialDirectory, 'username');
+    writeFileSync(file, `${username}\n`);
+    return file;
+  };
 
   /** Run the didFinishLaunching handler the platform registered in its constructor. */
   const runStartup = async (): Promise<void> => {
@@ -52,6 +82,8 @@ describe('TSVESyncPlatform persisted session handling', () => {
   };
 
   beforeEach(() => {
+    platform = undefined;
+    credentialDirectory = undefined;
     jest.useFakeTimers({ advanceTimers: true });
 
     mockLogger = createMockLogger();
@@ -106,38 +138,26 @@ describe('TSVESyncPlatform persisted session handling', () => {
     mockDeviceFactory.getAccessoryCategory.mockReturnValue(0 as any);
     mockDeviceFactory.isAirPurifier.mockReturnValue(false);
 
-    platform = new TSVESyncPlatform(
-      mockLogger,
-      {
-        name: 'Test Platform',
-        username: ACCOUNT_USERNAME,
-        password: 'test-password',
-        platform: PLATFORM_NAME,
-      } as any,
-      mockAPI,
-    );
-
-    (platform as any).client = mockVeSync;
-
     store = {
       load: jest.fn().mockResolvedValue(null),
       save: jest.fn().mockResolvedValue(undefined),
       clear: jest.fn().mockResolvedValue(undefined),
     };
-    (platform as any).sessionStore = store;
   });
 
   afterEach(() => {
     // The startup path arms a device-poll interval and a token-refresh timer.
-    const pollInterval = (platform as any).deviceUpdateInterval;
+    const pollInterval = (platform as any)?.deviceUpdateInterval;
     if (pollInterval) clearInterval(pollInterval);
-    const refreshTimer = (platform as any).refreshTimer;
+    const refreshTimer = (platform as any)?.refreshTimer;
     if (refreshTimer) clearTimeout(refreshTimer);
     jest.clearAllTimers();
     jest.useRealTimers();
+    if (credentialDirectory) rmSync(credentialDirectory, { recursive: true, force: true });
   });
 
   it('reuses a persisted session that is still valid', async () => {
+    createPlatform();
     store.load.mockResolvedValue(makeSession());
 
     await runStartup();
@@ -149,6 +169,7 @@ describe('TSVESyncPlatform persisted session handling', () => {
   });
 
   it('does not reuse a persisted session whose token has already expired', async () => {
+    createPlatform();
     const expired = makeSession({ token: makeToken(-3600) });
     store.load.mockResolvedValue(expired);
 
@@ -163,6 +184,7 @@ describe('TSVESyncPlatform persisted session handling', () => {
   });
 
   it('keeps the client identity from an expired session so the fresh login reuses it', async () => {
+    createPlatform();
     store.load.mockResolvedValue(makeSession({ token: makeToken(-3600) }));
 
     await runStartup();
@@ -174,6 +196,7 @@ describe('TSVESyncPlatform persisted session handling', () => {
   });
 
   it('persists the client identity alongside refreshed credentials', async () => {
+    createPlatform();
     store.load.mockResolvedValue(null);
 
     await runStartup();
@@ -185,6 +208,7 @@ describe('TSVESyncPlatform persisted session handling', () => {
   });
 
   it('ignores a persisted session belonging to a different account', async () => {
+    createPlatform();
     store.load.mockResolvedValue(makeSession({ username: 'somebody-else@example.com' }));
 
     await runStartup();
@@ -193,4 +217,36 @@ describe('TSVESyncPlatform persisted session handling', () => {
     expect(mockVeSync.login).toHaveBeenCalled();
     expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('different account'));
   });
+  it('reuses the file account session when an inline username is stale', async () => {
+    createPlatform({ username: 'stale@example.com', usernameFile: usernameFile(ACCOUNT_USERNAME) });
+    store.load.mockResolvedValue(makeSession());
+
+    await runStartup();
+
+    expect((mockVeSync as any).hydrateSession).toHaveBeenCalledTimes(1);
+    expect(mockVeSync.login).not.toHaveBeenCalled();
+    expect(store.clear).not.toHaveBeenCalled();
+  });
+
+  it('rejects the inline account session when the username file selects another account', async () => {
+    const fileAccount = 'file-account@example.com';
+    createPlatform({ usernameFile: usernameFile(fileAccount) });
+    store.load.mockResolvedValue(makeSession());
+
+    await runStartup();
+
+    expect((mockVeSync as any).hydrateSession).not.toHaveBeenCalled();
+    expect(mockVeSync.login).toHaveBeenCalledTimes(1);
+    expect(store.save).toHaveBeenCalledWith(expect.objectContaining({ username: fileAccount }));
+  });
+
+  it('persists the file account username when no inline username is configured', async () => {
+    createPlatform({ username: undefined, usernameFile: usernameFile(ACCOUNT_USERNAME) });
+
+    await runStartup();
+
+    expect(mockVeSync.login).toHaveBeenCalledTimes(1);
+    expect(store.save).toHaveBeenCalledWith(expect.objectContaining({ username: ACCOUNT_USERNAME }));
+  });
+
 });

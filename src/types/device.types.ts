@@ -137,8 +137,10 @@ export interface DeviceExclusion {
 export interface PlatformConfig {
   platform: string;
   name: string;
-  username: string;
-  password: string;
+  username?: string;
+  password?: string;
+  usernameFile?: string;
+  passwordFile?: string;
   updateInterval?: number;
   debug?: boolean;
   apiUrl?: string;
