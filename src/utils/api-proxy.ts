@@ -21,7 +21,7 @@ class RateLimiter {
 
   constructor(
     private readonly logger: PluginLogger,
-    deviceCount: number = 0,
+    deviceCount = 0,
     quotaConfig?: {
       bufferPercentage?: number;
       priorityMethods?: string[];
@@ -212,7 +212,7 @@ const createRateLimitedProxy = (target: any, rateLimiter: RateLimiter, deviceId?
         // Controlled interval methods
         'update',
         // Feature detection and configuration methods (don't make API calls)
-        'hasFeature', 'getMaxFanSpeed', 'isFeatureSupportedInCurrentMode'
+        'hasFeature', 'getMaxFanSpeed', 'getSupportedModes', 'isFeatureSupportedInCurrentMode'
       ];
       
       const methodName = prop.toString();
@@ -226,6 +226,17 @@ const createRateLimitedProxy = (target: any, rateLimiter: RateLimiter, deviceId?
       
       // Return a proxied async function that applies rate limiting
       return async function(...args: any[]) {
+        // Fan controls must reach the device on every write. Reusing the cached
+        // result for on -> off -> on acknowledges the last on without sending it.
+        const fanWrite = String(target.deviceType ?? '').startsWith('LTF-F422') && [
+          'turnOn', 'turnOff', 'toggleSwitch', 'setMode', 'changeFanSpeed',
+          'setOscillation', 'setDisplay', 'setMute', 'setTimer', 'clearTimer'
+        ].includes(methodName);
+        if (fanWrite) {
+          if (!await rateLimiter.rateLimit(methodName)) return null;
+          return value.apply(target, args);
+        }
+
         // Methods that should only be rate limited (no debouncing)
         const noDebounceAPIMethods = [
           'ignored'

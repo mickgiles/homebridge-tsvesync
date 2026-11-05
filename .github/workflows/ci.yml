@@ -28,11 +28,34 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: ${{ matrix.node-version }}
+      - name: Check out companion library
+        uses: actions/checkout@v6
+        with:
+          repository: mickgiles/tsvesync
+          path: .companion-tsvesync
+      - name: Build matching companion package
+        working-directory: .companion-tsvesync
+        env:
+          COMPANION_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          if git ls-remote --exit-code --heads origin "$COMPANION_BRANCH" >/dev/null; then
+            git fetch --depth=1 origin "$COMPANION_BRANCH"
+            git checkout --detach FETCH_HEAD
+          fi
+          npm install
+          npm run build
+          npm run test:tower-fan
+          npm pack --pack-destination "$RUNNER_TEMP"
       - name: Install dependencies
-        run: npm install
+        run: |
+          version=$(node -p 'require("./package.json").dependencies.tsvesync')
+          test "$(node -p 'require("./.companion-tsvesync/package.json").version')" = "$version"
+          npm install --no-save --package-lock=false "$RUNNER_TEMP/tsvesync-$version.tgz"
       - name: Lint
         run: npm run lint
       - name: Build
         run: npm run build
       - name: Test
         run: npm test -- --runInBand
+      - name: Offline Homebridge smoke test
+        run: npm run test:fan-smoke

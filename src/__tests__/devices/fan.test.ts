@@ -1,177 +1,282 @@
-import { API } from 'homebridge';
-import { Logger } from 'homebridge';
-import { CharacteristicValue, CharacteristicSetCallback } from 'homebridge';
-import { TSVESyncPlatform } from '../../platform';
-import { VeSync } from 'tsvesync';
-import { VeSyncFan } from '../../types/device.types';
-import { RetryManager } from '../../utils/retry';
+import { Characteristic, Service, uuid } from 'hap-nodejs';
+import { PlatformAccessory } from 'homebridge/lib/platformAccessory';
+import { CharacteristicValue } from 'homebridge';
+import { VeSyncTowerFan } from 'tsvesync/dist/lib/fans/towerFan';
+import { VeSync } from 'tsvesync/dist/lib/vesync';
+import { LogLevel, setLogLevel } from 'tsvesync/dist/lib/logger';
 import { FanAccessory } from '../../accessories/fan.accessory';
-import { createMockFan } from '../utils/test-helpers';
+import { TSVESyncPlatform } from '../../platform';
+import { VeSyncFan } from '../../types/device.types';
+import { createRateLimitedVeSync } from '../../utils/api-proxy';
+import { PluginLogger } from '../../utils/logger';
+import { createMockLogger } from '../utils/test-helpers';
+import { DeviceFactory } from '../../utils/device-factory';
 
-describe('Fan Device Tests', () => {
-  let mockAPI: jest.Mocked<API>;
-  let platform: TSVESyncPlatform;
-  let logger: jest.Mocked<Logger>;
-  let api: jest.Mocked<VeSync>;
+class OfflineFan extends VeSyncTowerFan {
+  requests: { method: string; data: any }[] = [];
+  nextCode = 0;
+  failMethod?: string;
+  status = { powerSwitch: 1, workMode: 'normal', manualSpeedLevel: 3, fanSpeedLevel: 3,
+    oscillationState: 0, oscillationSwitch: 0, screenState: 1, screenSwitch: 1, temperature: 780, timerRemain: 0 };
+  constructor(model = 'LTF-F422S-WUS') {
+    super({ deviceType: model, deviceName: 'Test Fan', cid: 'offline-cid', uuid: 'offline-uuid', configModule: 'offline', connectionStatus: 'online' },
+      { accountId: 'offline', token: 'offline', timeZone: 'America/Chicago', debug: false } as unknown as VeSync);
+  }
+  protected async callApi(_endpoint: string, _httpMethod: string, body: any): Promise<[any, number]> {
+    const { method, data } = body.payload;
+    this.requests.push({ method, data });
+    let result: any = {};
+    if (method === 'getTowerFanStatus') result = { ...this.status };
+    if (method === 'setTimer') result = { id: 10 };
+    return [{ code: 0, result: { code: this.failMethod === method ? -1 : this.nextCode, result } }, 200];
+  }
+}
 
-  beforeEach(() => {
-    mockAPI = {
-      hap: {
-        Characteristic: {
-          Active: jest.fn(),
-          RotationSpeed: jest.fn(),
-          RotationDirection: jest.fn(),
-          SwingMode: jest.fn(),
-          LockPhysicalControls: jest.fn(),
-          On: 'On',
-          Name: 'Name',
-          Manufacturer: jest.fn(),
-          Model: jest.fn(),
-          SerialNumber: jest.fn(),
-        },
-        Service: {
-          Fanv2: jest.fn(),
-          AccessoryInformation: jest.fn(),
-        },
-        uuid: {
-          generate: jest.fn(),
-        },
-      },
-      platformAccessory: jest.fn(),
-    } as any;
+describe('Tower fan issue #5: real HAP services and real library requests', () => {
+  beforeAll(() => setLogLevel(LogLevel.NONE));
+  afterAll(() => setLogLevel(LogLevel.INFO));
 
-    logger = {
-      debug: jest.fn(),
-      info: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn(),
-    } as any;
+  async function harness(options: { cached?: boolean; model?: string; device?: OfflineFan } = {}) {
+    const device = options.device ?? new OfflineFan(options.model);
+    await device.getDetails();
+    device.requests = [];
+    const accessory = new PlatformAccessory('Test Fan', uuid.generate(`issue5-${options.model ?? 'fan'}`));
+    const warnings: any[] = [];
+    accessory._associatedHAPAccessory.on('characteristic-warning', warning => warnings.push(warning));
+    let legacyMode: Service | undefined;
+    if (options.cached) {
+      legacyMode = accessory.addService(Service.Switch, 'Fan Mode', 'fan-mode');
+      accessory.addService(Service.Lightbulb, 'Display', 'display');
+      const primary = accessory.addService(Service.Fanv2);
+      primary.getCharacteristic(Characteristic.LockPhysicalControls);
+    }
+    const logger = createMockLogger();
+    const platform = { Service, Characteristic, log: logger, config: { debug: false }, api: { updatePlatformAccessories: jest.fn() } } as unknown as TSVESyncPlatform;
+    const fan = new FanAccessory(platform, accessory, device as unknown as VeSyncFan);
+    const primary = accessory.getService(Service.Fanv2)!;
+    const mode = (subtype: string) => accessory.getServiceById(Service.Switch, subtype)!;
+    const write = (service: Service, characteristic: any, value: CharacteristicValue) => service.getCharacteristic(characteristic).handleSetRequest(value);
+    const read = (service: Service, characteristic: any) => service.getCharacteristic(characteristic).handleGetRequest();
+    const sync = () => (fan as any).updateDeviceSpecificStates(device);
+    return { fan, device, accessory, platform, primary, mode, write, read, sync, warnings, legacyMode };
+  }
 
-    api = {
-      login: jest.fn(),
-      getDevices: jest.fn(),
-    } as any;
-
-    platform = new TSVESyncPlatform(logger, {} as any, mockAPI);
-    (platform as any).api = api;
+  it.each(['LTF-F422S-WUS', 'LTF-F422S-WUSR', 'LTF-F422S-KEU', 'LTF-F422S-WJP', 'LTF-F422_WJP'])('routes %s to the fan accessory and exposes valid services', async model => {
+    const h = await harness({ model });
+    expect(DeviceFactory.getAccessoryCategory(model)).toBe(3); // FAN
+    expect(DeviceFactory.createAccessory(h.platform, h.accessory, h.device as any)).toBeInstanceOf(FanAccessory);
+    await h.sync();
+    expect(h.accessory.services.filter(s => s.UUID === Service.Switch.UUID)).toHaveLength(5);
+    expect(h.primary.testCharacteristic(Characteristic.LockPhysicalControls)).toBe(false);
+    expect(h.accessory.getService(Service.TemperatureSensor)).toBeDefined();
+    expect(h.warnings).toEqual([]);
   });
 
-  describe('fan state management', () => {
-    let fan: FanAccessory;
-    let mockFan: jest.Mocked<VeSyncFan>;
-    let accessory: any;
-    let handlers: { [key: string]: (value: CharacteristicValue) => Promise<void> } = {};
-    let infoService: any;
-    let fanService: any;
-
-    beforeEach(() => {
-      mockFan = createMockFan({
-        deviceName: 'Test Fan',
-        deviceType: 'LTF-F422',
-        cid: 'test-cid',
-        uuid: 'test-uuid',
-      });
-
-      const modeCharacteristic = {
-        onGet: jest.fn().mockReturnThis(),
-        onSet: jest.fn().mockReturnThis(),
-      };
-
-      const modeService = {
-        getCharacteristic: jest.fn().mockReturnValue(modeCharacteristic),
-      };
-
-      // Create mock services
-      infoService = {
-        setCharacteristic: jest.fn().mockReturnThis(),
-      };
-
-      // Create mock fan service with handler capture
-      fanService = {
-        getCharacteristic: jest.fn().mockImplementation((char) => ({
-          onSet: jest.fn((fn) => {
-            if (char === platform.Characteristic.Active) {
-              handlers.setActive = fn;
-            } else if (char === platform.Characteristic.RotationSpeed) {
-              handlers.setRotationSpeed = fn;
-            } else if (char === platform.Characteristic.RotationDirection) {
-              handlers.setRotationDirection = fn;
-            } else if (char === platform.Characteristic.SwingMode) {
-              handlers.setSwingMode = fn;
-            } else if (char === platform.Characteristic.LockPhysicalControls) {
-              handlers.setLockPhysicalControls = fn;
-            }
-            return { onGet: jest.fn() };
-          }),
-          onGet: jest.fn(),
-        })),
-      };
-
-      // Create mock accessory
-      accessory = {
-        getService: jest.fn((service) => {
-          if (service === 'Fan Mode') {
-            return modeService;
-          }
-          if (service === platform.Service.AccessoryInformation) {
-            return infoService;
-          }
-          if (service === platform.Service.Fanv2) {
-            return fanService;
-          }
-          return null;
-        }),
-        addService: jest.fn((service) => {
-          if (service === platform.Service.Fanv2) {
-            return fanService;
-          }
-          return null;
-        }),
-      };
-
-      fan = new FanAccessory(platform, accessory, mockFan);
-    });
-
-    it('should handle power state changes', async () => {
-      expect(handlers.setActive).toBeDefined();
-      await handlers.setActive(1);
-      expect(mockFan.turnOn).toHaveBeenCalled();
-
-      await handlers.setActive(0);
-      expect(mockFan.turnOff).toHaveBeenCalled();
-    });
-
-    it('should handle fan speed changes', async () => {
-      expect(handlers.setRotationSpeed).toBeDefined();
-      await handlers.setRotationSpeed(50);
-      expect(mockFan.changeFanSpeed).toHaveBeenCalledWith(3); // 50% maps to speed 3
-    });
-
-    it('should handle rotation direction changes', async () => {
-      expect(handlers.setRotationDirection).toBeDefined();
-      await handlers.setRotationDirection(1); // CLOCKWISE
-      expect(mockFan.setOscillation).toHaveBeenCalledWith(true);
-
-      await handlers.setRotationDirection(0); // COUNTER_CLOCKWISE
-      expect(mockFan.setOscillation).toHaveBeenCalledWith(false);
-    });
-
-    it('should handle swing mode changes', async () => {
-      expect(handlers.setSwingMode).toBeDefined();
-      await handlers.setSwingMode(1); // SWING_ENABLED
-      expect(mockFan.setOscillation).toHaveBeenCalledWith(true);
-
-      await handlers.setSwingMode(0); // SWING_DISABLED
-      expect(mockFan.setOscillation).toHaveBeenCalledWith(false);
-    });
-
-    it('should handle child lock changes', async () => {
-      expect(handlers.setLockPhysicalControls).toBeDefined();
-      await handlers.setLockPhysicalControls(1); // CONTROL_LOCK_ENABLED
-      expect(mockFan.setChildLock).toHaveBeenCalledWith(true);
-
-      await handlers.setLockPhysicalControls(0); // CONTROL_LOCK_DISABLED
-      expect(mockFan.setChildLock).toHaveBeenCalledWith(false);
-    });
+  it('upgrades cached display/lock controls and preserves the legacy mode service', async () => {
+    const h = await harness({ cached: true });
+    expect(h.mode('fan-mode')).toBe(h.legacyMode);
+    expect(h.mode('fan-mode').getCharacteristic(Characteristic.Name).value).toBe('Turbo Mode');
+    expect(h.accessory.getService(Service.Lightbulb)).toBeUndefined();
+    expect(h.mode('display')).toBeDefined();
+    expect(h.primary.testCharacteristic(Characteristic.LockPhysicalControls)).toBe(false);
+    // Reconstructing from cache must not create duplicate services or handlers.
+    new FanAccessory(h.platform, h.accessory, h.device as unknown as VeSyncFan);
+    expect(h.accessory.services.filter(s => s.subtype === 'fan-mode')).toHaveLength(1);
+    expect(h.accessory.services.filter(s => s.subtype === 'display')).toHaveLength(1);
   });
-}); 
+
+  it('uses the right oscillation command in both directions and synchronizes legacy direction', async () => {
+    const h = await harness();
+    await h.write(h.primary, Characteristic.SwingMode, 1);
+    expect(h.device.requests).toEqual([{ method: 'setOscillationSwitch', data: { oscillationSwitch: 1 } }]);
+    expect(await h.read(h.primary, Characteristic.RotationDirection)).toBe(Characteristic.RotationDirection.CLOCKWISE);
+    await h.write(h.primary, Characteristic.RotationDirection, Characteristic.RotationDirection.COUNTER_CLOCKWISE);
+    expect(h.device.requests[1]).toEqual({ method: 'setOscillationSwitch', data: { oscillationSwitch: 0 } });
+    expect(await h.read(h.primary, Characteristic.SwingMode)).toBe(0);
+    expect(h.primary.getCharacteristic(Characteristic.SwingMode).value).toBe(0);
+  });
+
+  it('sends binary display values and reports the configured switch even when the panel is asleep', async () => {
+    const h = await harness();
+    for (const enabled of [false, true]) {
+      await h.write(h.mode('display'), Characteristic.On, enabled);
+      expect(h.device.requests[h.device.requests.length - 1]).toEqual({ method: 'setDisplay', data: { screenSwitch: Number(enabled) } });
+      expect(await h.read(h.mode('display'), Characteristic.On)).toBe(enabled);
+    }
+    h.device.status.screenState = 0;
+    await h.device.getDetails();
+    await h.sync();
+    expect(await h.read(h.mode('display'), Characteristic.On)).toBe(true);
+    expect(h.mode('display').testCharacteristic(Characteristic.Brightness)).toBe(false);
+  });
+
+  it.each([['fan-mode', 'turbo'], ['auto-mode', 'auto'], ['sleep-mode', 'advancedSleep']])('makes %s a boolean mode switch', async (subtype, wireMode) => {
+    const h = await harness();
+    await h.write(h.mode(subtype), Characteristic.On, true);
+    expect(h.device.requests).toEqual([{ method: 'setTowerFanMode', data: { workMode: wireMode } }]);
+    for (const other of ['fan-mode', 'auto-mode', 'sleep-mode']) expect(await h.read(h.mode(other), Characteristic.On)).toBe(other === subtype);
+    await h.write(h.mode(subtype), Characteristic.On, false);
+    expect(h.device.mode).toBe('normal');
+    expect(h.device.requests[1]).toEqual({ method: 'setTowerFanMode', data: { workMode: 'normal' } });
+    expect(await h.read(h.mode(subtype), Characteristic.On)).toBe(false);
+  });
+
+  it('does not change modes when an inactive mode switch is turned off', async () => {
+    const h = await harness();
+    await h.write(h.mode('fan-mode'), Characteristic.On, true);
+    h.device.requests = [];
+    await h.write(h.mode('sleep-mode'), Characteristic.On, false);
+    expect(h.device.mode).toBe('turbo');
+    expect(h.device.requests).toEqual([]);
+  });
+
+  it('round-trips all 12 speed levels without duplicate top positions', async () => {
+    const h = await harness();
+    for (let level = 1; level <= 12; level++) {
+      const percent = Math.round(level / 12 * 100);
+      await h.write(h.primary, Characteristic.RotationSpeed, percent);
+      expect(h.device.speed).toBe(level);
+      expect(await h.read(h.primary, Characteristic.RotationSpeed)).toBe(percent);
+    }
+    await h.write(h.primary, Characteristic.RotationSpeed, 0);
+    expect(h.device.deviceStatus).toBe('off');
+    expect(await h.read(h.primary, Characteristic.RotationSpeed)).toBe(0);
+    await h.write(h.primary, Characteristic.RotationSpeed, 50);
+    expect(h.device.deviceStatus).toBe('on');
+    expect(h.device.speed).toBe(6);
+  });
+
+  it('returns manual speed changes to normal mode and reports power changes', async () => {
+    const h = await harness();
+    await h.write(h.mode('fan-mode'), Characteristic.On, true);
+    await h.write(h.primary, Characteristic.RotationSpeed, 50);
+    expect(h.device.mode).toBe('normal');
+    expect(await h.read(h.mode('fan-mode'), Characteristic.On)).toBe(false);
+    await h.write(h.primary, Characteristic.Active, 0);
+    expect(h.device.deviceStatus).toBe('off');
+    await h.write(h.primary, Characteristic.Active, 1);
+    expect(h.device.deviceStatus).toBe('on');
+  });
+
+  it('coalesces scene power/mode/speed writes with explicit mode and power-off precedence', async () => {
+    const h = await harness();
+    await h.write(h.primary, Characteristic.Active, 0);
+    h.device.requests = [];
+    await Promise.all([h.write(h.primary, Characteristic.Active, 1), h.write(h.primary, Characteristic.RotationSpeed, 0)]);
+    expect(h.device.requests).toEqual([{ method: 'setSwitch', data: { powerSwitch: 1, switchIdx: 0 } }]);
+    await Promise.all([h.write(h.mode('auto-mode'), Characteristic.On, true), h.write(h.primary, Characteristic.RotationSpeed, 75)]);
+    expect(h.device.mode).toBe('auto');
+    expect(h.device.requests.some(r => r.method === 'setLevel')).toBe(false);
+    await Promise.all([h.write(h.mode('sleep-mode'), Characteristic.On, true), h.write(h.mode('auto-mode'), Characteristic.On, false), h.write(h.mode('fan-mode'), Characteristic.On, false)]);
+    expect(h.device.mode).toBe('sleep');
+    await Promise.all([h.write(h.mode('fan-mode'), Characteristic.On, true), h.write(h.primary, Characteristic.Active, 0), h.write(h.primary, Characteristic.RotationSpeed, 100)]);
+    expect(h.device.deviceStatus).toBe('off');
+    expect(h.device.mode).toBe('sleep');
+  });
+
+  it('serializes overlapping batches so an older speed cannot win', async () => {
+    const h = await harness();
+    const transport = (h.device as any).callApi.bind(h.device);
+    (h.device as any).callApi = async (...args: any[]) => {
+      if (args[2].payload.method === 'setLevel' && args[2].payload.data.manualSpeedLevel === 3) await new Promise(resolve => setTimeout(resolve, 100));
+      return transport(...args);
+    };
+    const first = h.write(h.primary, Characteristic.RotationSpeed, 25);
+    await new Promise(resolve => setTimeout(resolve, 65));
+    const last = h.write(h.primary, Characteristic.RotationSpeed, 100);
+    await Promise.all([first, last]);
+    expect(h.device.speed).toBe(12);
+    expect(h.device.requests.filter(r => r.method === 'setLevel').map(r => r.data.manualSpeedLevel)).toEqual([3, 12]);
+  });
+
+  it('converts the issue temperature payload to Celsius and updates polling without device writes', async () => {
+    const h = await harness();
+    const temperature = h.accessory.getService(Service.TemperatureSensor)!;
+    expect(await h.read(temperature, Characteristic.CurrentTemperature)).toBeCloseTo(25.6, 1);
+    h.device.status = { ...h.device.status, temperature: 320, workMode: 'advancedSleep', oscillationSwitch: 1, screenSwitch: 0 };
+    await h.device.getDetails();
+    h.device.requests = [];
+    await h.sync();
+    expect(temperature.getCharacteristic(Characteristic.CurrentTemperature).value).toBe(0);
+    expect(await h.read(h.mode('sleep-mode'), Characteristic.On)).toBe(true);
+    expect(await h.read(h.primary, Characteristic.SwingMode)).toBe(1);
+    expect(await h.read(h.mode('display'), Characteristic.On)).toBe(false);
+    expect(h.device.requests).toEqual([]);
+    expect(h.warnings).toEqual([]);
+  });
+
+  it.each([undefined, NaN, Infinity, 99999])('reports missing or invalid temperature %s as unavailable', async temperature => {
+    const h = await harness();
+    (h.device.status as any).temperature = temperature;
+    await h.device.getDetails();
+    await expect(h.read(h.accessory.getService(Service.TemperatureSensor)!, Characteristic.CurrentTemperature)).rejects.toBeDefined();
+  });
+
+  it('arms, resizes and cancels the real timer, including scheduling power on while off', async () => {
+    const h = await harness();
+    const timer = h.mode('timer');
+    await h.write(timer, Characteristic.On, true);
+    expect(h.device.requests[0]).toEqual({ method: 'setTimer', data: { action: 'off', total: 3600 } });
+    expect(await h.read(timer, Characteristic.On)).toBe(true);
+    expect(await h.read(timer, Characteristic.RemainingDuration)).toBeGreaterThan(3590);
+    await h.write(timer, Characteristic.SetDuration, 7200);
+    expect(h.device.requests[1]).toEqual({ method: 'setTimer', data: { action: 'off', total: 7200 } });
+    await h.write(timer, Characteristic.On, false);
+    expect(h.device.requests[2]).toEqual({ method: 'clearTimer', data: { id: 10 } });
+    expect(await h.read(timer, Characteristic.On)).toBe(false);
+    await h.write(h.primary, Characteristic.Active, 0);
+    await h.write(timer, Characteristic.On, true);
+    expect(h.device.requests[h.device.requests.length - 1]).toEqual({ method: 'setTimer', data: { action: 'on', total: 7200 } });
+    expect(h.device.deviceStatus).toBe('off');
+  });
+
+  it('preserves the running timer and duration when resize or cancellation is rejected', async () => {
+    const h = await harness();
+    const timer = h.mode('timer');
+    await h.write(timer, Characteristic.On, true);
+    h.device.failMethod = 'setTimer';
+    await expect(h.write(timer, Characteristic.SetDuration, 7200)).rejects.toBeDefined();
+    expect(await h.read(timer, Characteristic.SetDuration)).toBe(3600);
+    h.device.failMethod = 'clearTimer';
+    await expect(h.write(timer, Characteristic.On, false)).rejects.toBeDefined();
+    expect(await h.read(timer, Characteristic.On)).toBe(true);
+    h.device.failMethod = undefined;
+    await h.write(timer, Characteristic.On, false);
+    expect(await h.read(timer, Characteristic.On)).toBe(false);
+  });
+
+  it.each([
+    ['swing', 'setOscillationSwitch'], ['direction', 'setOscillationSwitch'], ['display', 'setDisplay'],
+    ['power', 'setSwitch'], ['speed', 'setLevel'], ['mode', 'setTowerFanMode'], ['timer', 'setTimer']
+  ])('rejects %s device failures back through HAP and can recover', async (control, method) => {
+    const h = await harness();
+    h.device.failMethod = method;
+    const write = () => {
+      if (control === 'swing') return h.write(h.primary, Characteristic.SwingMode, 1);
+      if (control === 'direction') return h.write(h.primary, Characteristic.RotationDirection, Characteristic.RotationDirection.CLOCKWISE);
+      if (control === 'display') return h.write(h.mode('display'), Characteristic.On, false);
+      if (control === 'power') return h.write(h.primary, Characteristic.Active, 0);
+      if (control === 'speed') return h.write(h.primary, Characteristic.RotationSpeed, 100);
+      if (control === 'mode') return h.write(h.mode('fan-mode'), Characteristic.On, true);
+      return h.write(h.mode('timer'), Characteristic.On, true);
+    };
+    const state = { speed: h.device.speed, mode: h.device.mode, display: h.device.displayEnabled, oscillation: h.device.oscillationEnabled, power: h.device.deviceStatus };
+    await expect(write()).rejects.toBeDefined();
+    expect({ speed: h.device.speed, mode: h.device.mode, display: h.device.displayEnabled, oscillation: h.device.oscillationEnabled, power: h.device.deviceStatus }).toEqual(state);
+    h.device.failMethod = undefined;
+    await expect(write()).resolves.toBeUndefined();
+  });
+
+  it('keeps capability metadata synchronous and sends repeated fan writes through the production proxy', async () => {
+    const device = new OfflineFan();
+    await device.getDetails();
+    device.requests = [];
+    const client = createRateLimitedVeSync('offline', 'offline', 'America/Chicago', false, true, undefined,
+      new PluginLogger(createMockLogger(), false), undefined, { quotaManagement: { enabled: false } });
+    (client as any).fans = [device];
+    const proxied = client.fans[0] as unknown as OfflineFan;
+    expect(proxied.getSupportedModes()).toEqual(['normal', 'auto', 'sleep', 'turbo']);
+    for (const enabled of [true, false, true]) expect(await proxied.setOscillation(enabled)).toBe(true);
+    expect(device.requests.map(r => r.data)).toEqual([{ oscillationSwitch: 1 }, { oscillationSwitch: 0 }, { oscillationSwitch: 1 }]);
+  });
+});
