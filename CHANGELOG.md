@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.7.0 (2026-11-05)
+
+### Fixed
+- **Tower Fan Oscillation And Display** ([#5](https://github.com/mickgiles/homebridge-tsvesync/issues/5)): Correct the cloud requests through tsvesync 1.7.0, synchronize native Swing Mode and the legacy direction control, and use HomeKit's actual direction constants. Replace stale display Lightbulb controls with a binary Display switch.
+- **Tower Fan Mode Controls**: Reuse the existing Fan Mode service as a boolean Turbo Mode switch and add separate Auto Mode and Sleep Mode switches. Disabling the active mode returns to Normal. Polling and successful commands update every mode switch without invoking setters.
+- **Fan Speed And Power**: Round-trip all 12 levels correctly, power on for nonzero speeds or enabled modes, return manual slider changes to Normal, and coalesce scene writes so a zero-speed value does not undo an explicit power-on or mode. Explicit power-off wins.
+- **Failures Reach HomeKit**: Reject failed power, speed, mode, oscillation, display, child-lock, and timer writes instead of acknowledging them as successful.
+
+### Added
+- **Tower Fan Temperature Sensor**: Report Celsius through HomeKit's temperature service, converting the device's Fahrenheit-times-ten value. Missing readings report unavailable rather than a fabricated zero.
+- **Working Timer Switch**: Turning Timer on schedules a power change in one hour (off when running, on when stopped); turning it off cancels the actual timer ID. Controllers supporting Set Duration can select 60–43200 seconds, and Remaining Duration reports the countdown.
+- **Real HomeKit Regression Coverage**: Exercise actual HAP services and the real tsvesync request builder with an offline transport, including cached-accessory upgrades, scene batches, polling, and rejected device commands.
+
+### Dependencies
+- **tsvesync**: Pin to 1.7.0; both packages remain on the same version.
+
 ## 1.6.1 (2026-07-27)
 
 ### Fixed

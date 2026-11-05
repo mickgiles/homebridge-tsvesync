@@ -107,7 +107,15 @@ All outlets are exposed as HomeKit outlets with the following features:
   * On/Off control
   * Fan speed control (1-12)
   * Mode selection (Normal, Auto, Sleep, Turbo)
-  * Oscillation control
+  * Oscillation control (native Swing Mode and legacy direction control)
+  * Display on/off switch (no brightness slider)
+  * Room temperature sensor (automatically converted to Celsius; Home shows your preferred unit)
+  * Timer switch: defaults to one hour, schedules off while running or on while stopped
+  * Timer duration (60–43200 seconds) and countdown in controllers supporting Set Duration / Remaining Duration
+
+The existing Fan Mode switch becomes Turbo Mode and keeps its service identity. Auto Mode and Sleep Mode have separate switches. Turning off the active mode returns to Normal; moving the speed slider also selects Normal. Existing display brightness tiles are replaced with the Display switch on upgrade. LTF-F422S fans do not support a night light or child lock.
+
+Tower-fan API behavior is checked against pyvesync and offline request fixtures. Physical fan validation is still needed for firmware-specific behavior; a Homebridge installation without a tower fan cannot establish that hardware validation.
 
 ### Wall Switches
 - ESWL01

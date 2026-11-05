@@ -88,10 +88,22 @@ export interface VeSyncAirPurifier extends VeSyncDeviceWithPower, VeSyncDeviceWi
 
 export interface VeSyncHumidifier extends VeSyncDeviceWithPower, VeSyncDeviceWithSpeed, VeSyncDeviceWithHumidity, VeSyncDeviceWithControls {}
 
-export interface VeSyncFan extends VeSyncDeviceWithPower, VeSyncDeviceWithSpeed, VeSyncDeviceWithRotation {
+export interface VeSyncFan extends VeSyncDeviceWithPower, VeSyncDeviceWithSpeed {
   oscillationState: boolean;
   childLock: boolean;
-  mode: 'normal' | 'auto' | 'sleep' | 'turbo';
+  mode: 'normal' | 'auto' | 'sleep' | 'turbo' | 'advancedSleep';
+  rotationDirection?: 'clockwise' | 'counterclockwise';
+  setRotationDirection?(direction: 'clockwise' | 'counterclockwise'): Promise<boolean>;
+  oscillationEnabled?: boolean;
+  displayEnabled?: boolean;
+  temperatureCelsius?: number;
+  timerRemaining?: number;
+  hasFeature?(feature: string): boolean;
+  getMaxFanSpeed?(): number;
+  getSupportedModes?(): ReadonlyArray<string>;
+  setDisplay?(enabled: boolean): Promise<boolean>;
+  setTimer?(hours: number): Promise<boolean>;
+  clearTimer?(): Promise<boolean>;
   setOscillation(enabled: boolean): Promise<boolean>;
   setChildLock(enabled: boolean): Promise<boolean>;
   setMode(mode: 'normal' | 'auto' | 'sleep' | 'turbo'): Promise<boolean>;

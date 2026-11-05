@@ -1,374 +1,244 @@
-import { CharacteristicValue, PlatformAccessory } from 'homebridge';
+import { CharacteristicValue, PlatformAccessory, Service } from 'homebridge';
 import { BaseAccessory } from './base.accessory';
 import { TSVESyncPlatform } from '../platform';
 import { DeviceCapabilities, VeSyncFan } from '../types/device.types';
 
-// Constants for fan direction
-const CLOCKWISE = 1;
-const COUNTER_CLOCKWISE = 0;
-
-// Constants for fan modes
-const MODE_NORMAL = 0;
-const MODE_AUTO = 1;
-const MODE_SLEEP = 2;
-const MODE_TURBO = 3;
-
-// Fan speed levels for different device types
-const FAN_SPEED_LEVELS: { [key: string]: number[] } = {
-  'LTF-F422S-KEU': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-  'LTF-F422S-WUSR': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-  'LTF-F422_WJP': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-  'LTF-F422S-WUS': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-  'Core200S': [1, 2, 3],
-  'Core300S': [1, 2, 3, 4],
-  'Core400S': [1, 2, 3, 4],
-  'Core600S': [1, 2, 3, 4],
-  'LAP-C201S-AUSR': [1, 2, 3],
-  'LAP-C202S-WUSR': [1, 2, 3],
-  'LAP-C301S-WJP': [1, 2, 3, 4],
-  'LAP-C302S-WUSB': [1, 2, 3, 4],
-  'LAP-C301S-WAAA': [1, 2, 3, 4],
-  'LAP-C401S-WJP': [1, 2, 3, 4],
-  'LAP-C401S-WUSR': [1, 2, 3, 4],
-  'LAP-C401S-WAAA': [1, 2, 3, 4],
-  'LAP-C601S-WUS': [1, 2, 3, 4],
-  'LAP-C601S-WUSR': [1, 2, 3, 4],
-  'LAP-C601S-WEU': [1, 2, 3, 4],
-  'LV-PUR131S': [1, 2, 3],
-  'LV-RH131S': [1, 2, 3]
-};
+type FanMode = 'normal' | 'auto' | 'sleep' | 'turbo';
+interface FanWrite {
+  active?: number;
+  speed?: number;
+  modes?: Partial<Record<FanMode, boolean>>;
+}
+const MODES: { mode: FanMode; name: string; subtype: string }[] = [
+  // Reuse the old Fan Mode service identity so existing automations survive.
+  { mode: 'turbo', name: 'Turbo Mode', subtype: 'fan-mode' },
+  { mode: 'auto', name: 'Auto Mode', subtype: 'auto-mode' },
+  { mode: 'sleep', name: 'Sleep Mode', subtype: 'sleep-mode' },
+];
 
 export class FanAccessory extends BaseAccessory {
   protected readonly device: VeSyncFan;
-  private readonly capabilities: DeviceCapabilities;
-  private readonly speedLevels: number[];
+  private writeChain: Promise<void> = Promise.resolve();
+  private pendingWrite: FanWrite | null = null;
+  private pendingPromise: Promise<void> | null = null;
 
-  constructor(
-    platform: TSVESyncPlatform,
-    accessory: PlatformAccessory,
-    device: VeSyncFan
-  ) {
+  constructor(platform: TSVESyncPlatform, accessory: PlatformAccessory, device: VeSyncFan) {
     super(platform, accessory, device);
     this.device = device;
-    this.capabilities = this.getDeviceCapabilities();
-    this.speedLevels = FAN_SPEED_LEVELS[this.device.deviceType] || [1, 2, 3, 4];
+  }
+
+  private get maxSpeed(): number {
+    return this.device.getMaxFanSpeed?.() ?? (this.device.deviceType.startsWith('LTF-F422') ? 12 : 4);
+  }
+
+  private get currentMode(): FanMode {
+    return this.device.mode === 'advancedSleep' ? 'sleep' : this.device.mode || 'normal';
+  }
+
+  private get oscillationEnabled(): boolean {
+    return this.device.oscillationEnabled ?? this.device.oscillationState;
+  }
+
+  private supports(feature: string): boolean {
+    return this.device.hasFeature?.(feature) ?? this.device.deviceType.startsWith('LTF-F422');
+  }
+
+  private supportsMode(mode: FanMode): boolean {
+    return this.device.getSupportedModes?.().includes(mode) ?? true;
+  }
+
+  private findSwitch(name: string, subtype: string): Service | undefined {
+    return this.accessory.getServiceById(this.platform.Service.Switch, subtype) ||
+      this.accessory.getService(name) ||
+      (subtype === 'fan-mode' ? this.accessory.getService('Fan Mode') : undefined);
+  }
+
+  private setupSwitch(name: string, subtype: string, get: () => Promise<CharacteristicValue>, set: (value: CharacteristicValue) => Promise<void>): Service {
+    const service = this.findSwitch(name, subtype) || this.accessory.addService(this.platform.Service.Switch, name, subtype);
+    service.displayName = name;
+    service.setCharacteristic(this.platform.Characteristic.Name, name);
+    this.setupCharacteristic(this.platform.Characteristic.On, get, set, undefined, service);
+    return service;
   }
 
   protected setupService(): void {
-    // Get or create the fan service
-    this.service = this.accessory.getService(this.platform.Service.Fanv2) ||
-      this.accessory.addService(this.platform.Service.Fanv2);
-
-    // Set up required characteristics
-    this.setupCharacteristic(
-      this.platform.Characteristic.Active,
-      this.getActive.bind(this),
-      this.setActive.bind(this)
-    );
-
-    // Set up speed control
-    this.setupCharacteristic(
-      this.platform.Characteristic.RotationSpeed,
-      this.getRotationSpeed.bind(this),
-      this.handleSetRotationSpeed.bind(this)
-    );
-
-    // Set up mode control
-    this.setupCharacteristic(
-      this.platform.Characteristic.SwingMode,
-      this.getSwingMode.bind(this),
-      this.setSwingMode.bind(this)
-    );
-
-    // Set up rotation direction
-    this.setupCharacteristic(
-      this.platform.Characteristic.RotationDirection,
-      this.getRotationDirection.bind(this),
-      this.setRotationDirection.bind(this)
-    );
-
-    // Set up child lock for devices that support it. LTF tower fans do not -
-    // their API neither reports nor accepts child lock, so the profile no
-    // longer advertises the feature.
+    this.service = this.accessory.getService(this.platform.Service.Fanv2) || this.accessory.addService(this.platform.Service.Fanv2);
+    this.setupCharacteristic(this.platform.Characteristic.Active, async () => this.device.deviceStatus === 'on' ? 1 : 0,
+      value => this.queueWrite('active', Number(value)));
+    this.setupCharacteristic(this.platform.Characteristic.RotationSpeed, async () => this.rotationSpeed,
+      value => this.queueWrite('speed', Number(value)), { minValue: 0, maxValue: 100, minStep: 1 });
+    this.setupCharacteristic(this.platform.Characteristic.SwingMode, async () => Number(this.oscillationEnabled),
+      value => this.setOscillation(Number(value) === 1));
+    // Legacy clients used direction to toggle oscillation. Keep both controls in sync.
+    this.setupCharacteristic(this.platform.Characteristic.RotationDirection,
+      async () => this.oscillationEnabled ? this.platform.Characteristic.RotationDirection.CLOCKWISE : this.platform.Characteristic.RotationDirection.COUNTER_CLOCKWISE,
+      value => this.setOscillation(value === this.platform.Characteristic.RotationDirection.CLOCKWISE));
+    this.setupCharacteristic(this.platform.Characteristic.Name, async () => this.sanitizedDeviceName);
     this.setupChildLock();
 
-    // Add mode control service
-    const modeService = this.accessory.getService('Fan Mode') ||
-      this.accessory.addService(this.platform.Service.Switch, 'Fan Mode', 'fan-mode');
+    for (const { mode, name, subtype } of MODES) {
+      if (!this.supportsMode(mode)) continue;
+      this.setupSwitch(name, subtype, async () => this.device.deviceStatus === 'on' && this.currentMode === mode,
+        value => this.queueWrite('modes', { [mode]: Boolean(value) }));
+    }
 
-    // Set up mode characteristics
-    modeService.getCharacteristic(this.platform.Characteristic.On)
-      .onGet(() => this.getMode())
-      .onSet((value) => this.setMode(value));
+    if (this.supports('display') && this.device.setDisplay) {
+      // Old cached Lightbulb/brightness controls cannot represent a binary display.
+      for (const service of [...this.accessory.services]) {
+        if (service.UUID === this.platform.Service.Lightbulb.UUID &&
+            (service.subtype === 'display' || /^(display|night light)$/i.test(service.displayName))) {
+          this.accessory.removeService(service);
+        }
+      }
+      this.setupSwitch('Display', 'display', async () => Boolean(this.device.displayEnabled), value => this.enqueue(async () => {
+        this.requireSuccess(await this.device.setDisplay!(Boolean(value)), 'set display');
+      }));
+    }
 
-    // Add Name characteristic
-    this.setupCharacteristic(
-      this.platform.Characteristic.Name,
-      async () => this.sanitizedDeviceName
-    );
+    if (this.supports('timer') && this.device.setTimer && this.device.clearTimer) {
+      const timer = this.setupSwitch('Timer', 'timer', async () => (this.device.timerRemaining ?? 0) > 0,
+        value => this.enqueue(async () => {
+          this.requireSuccess(value ? await this.device.setTimer!(this.timerDuration / 3600) : await this.device.clearTimer!(), 'set timer');
+        }));
+      timer.addOptionalCharacteristic(this.platform.Characteristic.SetDuration);
+      timer.addOptionalCharacteristic(this.platform.Characteristic.RemainingDuration);
+      timer.getCharacteristic(this.platform.Characteristic.SetDuration).updateValue(this.timerDuration);
+      // Home shows the on/off switch; controllers such as Eve can also set the duration.
+      this.setupCharacteristic(this.platform.Characteristic.SetDuration, async () => this.timerDuration, value => this.enqueue(async () => {
+        const seconds = Number(value);
+        if (!Number.isInteger(seconds) || seconds < 60 || seconds > 43200) throw new Error('Timer duration must be 60–43200 seconds');
+        if ((this.device.timerRemaining ?? 0) > 0) this.requireSuccess(await this.device.setTimer!(seconds / 3600), 'set timer duration');
+        this.accessory.context.fanTimerDuration = seconds;
+      }), { minValue: 60, maxValue: 43200, minStep: 1 }, timer);
+      this.setupCharacteristic(this.platform.Characteristic.RemainingDuration, async () => this.device.timerRemaining ?? 0,
+        undefined, { minValue: 0, maxValue: 43200, minStep: 1 }, timer);
+    }
+
+    if (this.supports('temperature') && 'temperatureCelsius' in this.device) {
+      const temperature = this.accessory.getService(this.platform.Service.TemperatureSensor) ||
+        this.accessory.addService(this.platform.Service.TemperatureSensor, 'Temperature', 'temperature');
+      this.setupCharacteristic(this.platform.Characteristic.CurrentTemperature, async () => {
+        const value = this.currentTemperature;
+        if (value === undefined) throw new Error('Temperature is not available');
+        return value;
+      }, undefined, { minValue: -50, maxValue: 100, minStep: 0.1 }, temperature);
+    }
   }
 
-  /**
-   * Update device states based on the latest details
-   */
-  protected async updateDeviceSpecificStates(details: any): Promise<void> {
-    const fanDetails = details as {
-      deviceStatus: string;
-      speed: number;
-      mode: 'normal' | 'auto' | 'sleep' | 'turbo';
-      oscillationState: boolean;
-    };
+  private get timerDuration(): number {
+    const value = this.accessory.context.fanTimerDuration;
+    return Number.isInteger(value) && value >= 60 && value <= 43200 ? value : 3600;
+  }
 
-    // Update active state
-    const isActive = fanDetails.deviceStatus === 'on';
-    this.updateCharacteristicValue(
-      this.platform.Characteristic.Active,
-      isActive ? 1 : 0
-    );
+  private get currentTemperature(): number | undefined {
+    const value = this.device.temperatureCelsius;
+    return value !== undefined && Number.isFinite(value) && value >= -50 && value <= 100 ? value : undefined;
+  }
 
-    // Update current state (INACTIVE = 0, IDLE = 1, BLOWING_AIR = 2)
-    this.updateCharacteristicValue(
-      this.platform.Characteristic.CurrentFanState,
-      isActive ? 2 : 0
-    );
+  private get rotationSpeed(): number {
+    return this.device.deviceStatus === 'on' ? Math.round(Math.max(0, Math.min(this.maxSpeed, this.device.speed ?? 0)) / this.maxSpeed * 100) : 0;
+  }
 
-    // Update rotation speed
-    let rotationSpeed = 0;
-    if (isActive && fanDetails.speed !== undefined) {
-      const speedIndex = this.speedLevels.indexOf(fanDetails.speed);
-      if (speedIndex !== -1) {
-        const maxLevel = this.speedLevels.length;
-        const levelSize = 100 / maxLevel;
-        rotationSpeed = Math.round((speedIndex + 1) * levelSize);
-      }
+  protected async updateDeviceSpecificStates(_details: any): Promise<void> {
+    const c = this.platform.Characteristic;
+    this.updateCharacteristicValue(c.Active, this.device.deviceStatus === 'on' ? 1 : 0);
+    this.updateCharacteristicValue(c.CurrentFanState, this.device.deviceStatus === 'on' ? 2 : 0);
+    this.updateCharacteristicValue(c.RotationSpeed, this.rotationSpeed);
+    this.updateCharacteristicValue(c.SwingMode, Number(this.oscillationEnabled));
+    this.updateCharacteristicValue(c.RotationDirection, this.oscillationEnabled ? c.RotationDirection.CLOCKWISE : c.RotationDirection.COUNTER_CLOCKWISE);
+    if (this.supportsChildLock()) this.updateCharacteristicValue(c.LockPhysicalControls, this.device.childLock ? 1 : 0);
+    for (const { mode, name, subtype } of MODES) {
+      this.findSwitch(name, subtype)?.updateCharacteristic(c.On, this.device.deviceStatus === 'on' && this.currentMode === mode);
     }
-    this.updateCharacteristicValue(
-      this.platform.Characteristic.RotationSpeed,
-      rotationSpeed
-    );
-
-    // Update oscillation status
-    if ('oscillationState' in fanDetails) {
-      this.updateCharacteristicValue(
-        this.platform.Characteristic.SwingMode,
-        fanDetails.oscillationState ? 1 : 0
-      );
-    }
-
-    // Update mode
-    const modeService = this.accessory.getService('Fan Mode');
-    if (modeService && fanDetails.mode) {
-      modeService.setCharacteristic(
-        this.platform.Characteristic.On,
-        this.getModeValue(fanDetails.mode)
-      );
+    this.findSwitch('Display', 'display')?.updateCharacteristic(c.On, Boolean(this.device.displayEnabled));
+    const timer = this.findSwitch('Timer', 'timer');
+    timer?.updateCharacteristic(c.On, (this.device.timerRemaining ?? 0) > 0);
+    timer?.updateCharacteristic(c.RemainingDuration, this.device.timerRemaining ?? 0);
+    const temperature = this.currentTemperature;
+    if (temperature !== undefined) {
+      this.accessory.getService(this.platform.Service.TemperatureSensor)?.updateCharacteristic(c.CurrentTemperature, temperature);
     }
   }
 
   protected getDeviceCapabilities(): DeviceCapabilities {
-    return {
-      hasBrightness: false,
-      hasColorTemp: false,
-      hasColor: false,
-      hasSpeed: true,
-      hasHumidity: false,
-      hasAirQuality: false,
-      hasWaterLevel: false,
-      hasChildLock: true,
-      hasSwingMode: true,
-    };
+    return { hasBrightness: false, hasColorTemp: false, hasColor: false, hasSpeed: true, hasHumidity: false,
+      hasAirQuality: false, hasWaterLevel: false, hasChildLock: this.supportsChildLock(), hasSwingMode: true };
   }
 
-  private async getActive(): Promise<CharacteristicValue> {
-    return this.device.deviceStatus === 'on' ? 1 : 0;
+  private requireSuccess(success: boolean, action: string): void {
+    if (!success) throw new Error(`Failed to ${action}`);
   }
 
-  private async setActive(value: CharacteristicValue): Promise<void> {
-    try {
-      const isOn = value as number === 1;
-      const success = isOn ? await this.device.turnOn() : await this.device.turnOff();
-      
-      if (!success) {
-        throw new Error(`Failed to turn ${isOn ? 'on' : 'off'} device`);
+  private enqueue(action: () => Promise<void>): Promise<void> {
+    const write = this.writeChain.catch(() => undefined).then(async () => {
+      try {
+        await action();
+        await this.updateDeviceSpecificStates(this.device);
+        this.cacheDeviceDetails(this.device);
+        await this.persistDeviceState('mode', this.currentMode);
+      } catch (error) {
+        await this.handleDeviceError('set fan state', error);
+        throw error;
       }
-      
-      // Update device state and characteristics
-      await this.updateDeviceSpecificStates(this.device);
-      await this.persistDeviceState('deviceStatus', isOn ? 'on' : 'off');
-    } catch (error) {
-      this.handleDeviceError('set active state', error);
-    }
+    });
+    this.writeChain = write;
+    return write;
   }
 
-  private async handleSetRotationSpeed(value: CharacteristicValue): Promise<void> {
-    const percentage = value as number;
-    
-    if (percentage === 0) {
-      // Turn off the device instead of setting speed to 0
-      await this.device.turnOff();
+  /** Coalesce scene writes so an explicit mode/on is not undone by a 0% slider. */
+  private queueWrite<K extends keyof FanWrite>(key: K, value: FanWrite[K]): Promise<void> {
+    if (!this.pendingWrite) this.pendingWrite = {};
+    if (key === 'modes') {
+      this.pendingWrite.modes = { ...this.pendingWrite.modes, ...value as FanWrite['modes'] };
+    } else {
+      this.pendingWrite[key] = value;
+    }
+    if (!this.pendingPromise) {
+      this.pendingPromise = new Promise<void>((resolve, reject) => {
+        setTimeout(() => {
+          const batch = this.pendingWrite ?? {};
+          this.pendingWrite = null;
+          this.pendingPromise = null;
+          this.enqueue(() => this.applyWrite(batch)).then(resolve, reject);
+        }, 50);
+      });
+    }
+    return this.pendingPromise;
+  }
+
+  private async applyWrite({ active, speed, modes }: FanWrite): Promise<void> {
+    const enabledMode = (Object.keys(modes ?? {}) as FanMode[]).reverse().find(mode => modes![mode]);
+    if (active === 0 || (speed === 0 && active !== 1 && !enabledMode)) {
+      this.requireSuccess(await this.device.turnOff(), 'turn off fan');
       return;
     }
-
-    // Convert HomeKit percentage to device speed level
-    const maxLevel = this.speedLevels.length;
-    const levelSize = 100 / maxLevel;
-    const levelIndex = Math.min(Math.floor(percentage / levelSize), maxLevel - 1);
-    const speed = this.speedLevels[levelIndex];
-
-    await this.device.changeFanSpeed(speed);
-  }
-
-  private async getRotationSpeed(): Promise<CharacteristicValue> {
-    if (this.device.speed === undefined || this.device.speed === null) {
-      return 0;
-    }
-
-    // Convert device speed to HomeKit percentage
-    const currentSpeed = this.device.speed;
-    const speedIndex = this.speedLevels.indexOf(currentSpeed);
-    if (speedIndex === -1) {
-      return 0;
-    }
-
-    const maxLevel = this.speedLevels.length;
-    const levelSize = 100 / maxLevel;
-    return Math.round((speedIndex + 1) * levelSize);
-  }
-
-  private async getRotationDirection(): Promise<CharacteristicValue> {
-    return 'oscillation' in this.device && this.device.oscillation
-      ? CLOCKWISE 
-      : COUNTER_CLOCKWISE;
-  }
-
-  private async setRotationDirection(value: CharacteristicValue): Promise<void> {
-    try {
-      if (!('setOscillation' in this.device)) {
-        throw new Error('Device does not support oscillation');
-      }
-
-      // Map CLOCKWISE to oscillation ON, COUNTER_CLOCKWISE to oscillation OFF
-      const shouldOscillate = value === CLOCKWISE;
-      const success = await (this.device as any).setOscillation(shouldOscillate);
-      
-      if (!success) {
-        throw new Error(`Failed to ${shouldOscillate ? 'enable' : 'disable'} oscillation`);
-      }
-    } catch (error) {
-      this.handleDeviceError('set rotation direction', error);
-      throw error;
+    const selectedMode = enabledMode ?? (modes?.[this.currentMode] === false ? 'normal' : undefined) ??
+      (speed !== undefined && speed > 0 ? 'normal' : undefined);
+    const shouldPowerOn = active === 1 || enabledMode !== undefined || (speed !== undefined && speed > 0);
+    if (shouldPowerOn && this.device.deviceStatus !== 'on') this.requireSuccess(await this.device.turnOn(), 'turn on fan');
+    if (selectedMode && selectedMode !== this.currentMode) this.requireSuccess(await this.device.setMode(selectedMode), `set ${selectedMode} mode`);
+    if (speed !== undefined && speed > 0 && !enabledMode) {
+      const level = Math.max(1, Math.min(this.maxSpeed, Math.round(speed / 100 * this.maxSpeed)));
+      this.requireSuccess(await this.device.changeFanSpeed(level), 'set fan speed');
     }
   }
 
-  private async getSwingMode(): Promise<CharacteristicValue> {
-    return this.device.oscillationState ? 1 : 0;
-  }
-
-  private async setSwingMode(value: CharacteristicValue): Promise<void> {
-    try {
-      if (!this.device.setOscillation) {
-        throw new Error('Device does not support oscillation');
-      }
-      
-      const enabled = value as number === 1;
-      const success = await this.device.setOscillation(enabled);
-      
-      if (!success) {
-        throw new Error(`Failed to ${enabled ? 'enable' : 'disable'} oscillation`);
-      }
-      
-      await this.persistDeviceState('oscillationState', enabled);
-    } catch (error) {
-      this.handleDeviceError('set oscillation', error);
-    }
+  private setOscillation(enabled: boolean): Promise<void> {
+    return this.enqueue(async () => this.requireSuccess(await this.device.setOscillation(enabled), 'set oscillation'));
   }
 
   private supportsChildLock(): boolean {
-    const device = this.device as VeSyncFan & { hasFeature?(feature: string): boolean };
-    if (typeof device.setChildLock !== 'function') {
-      return false;
-    }
-    // Older tsvesync versions have no hasFeature; fall back to the setter
-    return typeof device.hasFeature === 'function' ? device.hasFeature('child_lock') : true;
+    return typeof this.device.setChildLock === 'function' && (this.device.hasFeature?.('child_lock') ?? true);
   }
 
   private setupChildLock(): void {
-    const lockCharacteristic = this.platform.Characteristic.LockPhysicalControls;
-
+    const characteristic = this.platform.Characteristic.LockPhysicalControls;
     if (!this.supportsChildLock()) {
-      // Drop a stale characteristic left behind by an older cached accessory
-      if (typeof this.service.testCharacteristic === 'function' &&
-          this.service.testCharacteristic(lockCharacteristic)) {
-        this.service.removeCharacteristic(this.service.getCharacteristic(lockCharacteristic));
-      }
+      if (this.service.testCharacteristic(characteristic)) this.service.removeCharacteristic(this.service.getCharacteristic(characteristic));
       return;
     }
-
-    this.setupCharacteristic(
-      lockCharacteristic,
-      this.getLockPhysicalControls.bind(this),
-      this.setLockPhysicalControls.bind(this)
-    );
+    this.setupCharacteristic(characteristic, async () => this.device.childLock ? 1 : 0, value => this.enqueue(async () => {
+      this.requireSuccess(await this.device.setChildLock(Number(value) === 1), 'set child lock');
+    }));
   }
-
-  private async getLockPhysicalControls(): Promise<CharacteristicValue> {
-    return this.device.childLock ? 1 : 0;
-  }
-
-  private async setLockPhysicalControls(value: CharacteristicValue): Promise<void> {
-    try {
-      if (!this.device.setChildLock) {
-        throw new Error('Device does not support child lock');
-      }
-      
-      const enabled = value as number === 1;
-      const success = await this.device.setChildLock(enabled);
-      
-      if (!success) {
-        throw new Error(`Failed to ${enabled ? 'enable' : 'disable'} child lock`);
-      }
-      
-      await this.persistDeviceState('child_lock', enabled);
-    } catch (error) {
-      this.handleDeviceError('set child lock', error);
-    }
-  }
-
-  private getModeValue(mode: 'normal' | 'auto' | 'sleep' | 'turbo'): number {
-    switch (mode) {
-      case 'normal': return MODE_NORMAL;
-      case 'auto': return MODE_AUTO;
-      case 'sleep': return MODE_SLEEP;
-      case 'turbo': return MODE_TURBO;
-      default: return MODE_NORMAL;
-    }
-  }
-
-  private getModeString(value: number): 'normal' | 'auto' | 'sleep' | 'turbo' {
-    switch (value) {
-      case MODE_AUTO: return 'auto';
-      case MODE_SLEEP: return 'sleep';
-      case MODE_TURBO: return 'turbo';
-      default: return 'normal';
-    }
-  }
-
-  private async getMode(): Promise<CharacteristicValue> {
-    return this.getModeValue(this.device.mode || 'normal');
-  }
-
-  private async setMode(value: CharacteristicValue): Promise<void> {
-    try {
-      const mode = this.getModeString(value as number);
-      const success = await this.device.setMode(mode);
-      
-      if (!success) {
-        throw new Error(`Failed to set mode to ${mode}`);
-      }
-      
-      await this.persistDeviceState('mode', mode);
-    } catch (error) {
-      this.handleDeviceError('set mode', error);
-    }
-  }
-} 
+}
