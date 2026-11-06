@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.7.1 (2026-11-06)
+
+### Fixed
+- **VeSync Login Failure** ([#50](https://github.com/mickgiles/homebridge-tsvesync/issues/50)): Update tsvesync to use VeSync's official app ID. This addresses the temporary authorization-code error that triggers a legacy fallback reporting "app version is too low". Existing saved sessions migrate automatically while preserving the installation's terminal ID.
+- **Authentication Diagnostic**: Use the same official app ID in the standalone authentication script.
+
+### Dependencies
+- **tsvesync**: Pin to 1.7.1; both packages remain on the same version.
+
 ## 1.7.0 (2026-11-05)
 
 ### Fixed
