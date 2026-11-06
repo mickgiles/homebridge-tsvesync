@@ -120,13 +120,8 @@ redact_pii() {
 
 # Function to generate unique identifiers
 generate_app_id() {
-    if command -v openssl >/dev/null 2>&1; then
-        openssl rand -hex 4
-    elif [[ -r /dev/urandom ]]; then
-        cat /dev/urandom | LC_ALL=C tr -dc 'a-z0-9' | fold -w 8 | head -n 1
-    else
-        echo "app$(date +%s | tail -c 5)"
-    fi
+    # VeSync restricts login to the official app identity (webdjoe/pyvesync#466).
+    echo 'eldodkfj'
 }
 
 generate_terminal_id() {
