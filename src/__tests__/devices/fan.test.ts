@@ -1,4 +1,5 @@
-import { Characteristic, Service, uuid } from 'hap-nodejs';
+import { Characteristic, HAPStatus, Service, uuid } from 'hap-nodejs';
+import * as hap from 'hap-nodejs';
 import { PlatformAccessory } from 'homebridge/lib/platformAccessory';
 import { CharacteristicValue } from 'homebridge';
 import { VeSyncTowerFan } from 'tsvesync/dist/lib/fans/towerFan';
@@ -36,9 +37,9 @@ describe('Tower fan issue #5: real HAP services and real library requests', () =
   beforeAll(() => setLogLevel(LogLevel.NONE));
   afterAll(() => setLogLevel(LogLevel.INFO));
 
-  async function harness(options: { cached?: boolean; model?: string; device?: OfflineFan } = {}) {
+  async function harness(options: { cached?: boolean; initialRefresh?: boolean; model?: string; device?: OfflineFan } = {}) {
     const device = options.device ?? new OfflineFan(options.model);
-    await device.getDetails();
+    if (options.initialRefresh !== false) await device.getDetails();
     device.requests = [];
     const accessory = new PlatformAccessory('Test Fan', uuid.generate(`issue5-${options.model ?? 'fan'}`));
     const warnings: any[] = [];
@@ -49,9 +50,12 @@ describe('Tower fan issue #5: real HAP services and real library requests', () =
       accessory.addService(Service.Lightbulb, 'Display', 'display');
       const primary = accessory.addService(Service.Fanv2);
       primary.getCharacteristic(Characteristic.LockPhysicalControls);
+      accessory.addService(Service.TemperatureSensor, 'Temperature', 'temperature')
+        .updateCharacteristic(Characteristic.CurrentTemperature, 22);
     }
     const logger = createMockLogger();
-    const platform = { Service, Characteristic, log: logger, config: { debug: false }, api: { updatePlatformAccessories: jest.fn() } } as unknown as TSVESyncPlatform;
+    const platform = { Service, Characteristic, log: logger, config: { debug: false },
+      api: { hap, updatePlatformAccessories: jest.fn() } } as unknown as TSVESyncPlatform;
     const fan = new FanAccessory(platform, accessory, device as unknown as VeSyncFan);
     const primary = accessory.getService(Service.Fanv2)!;
     const mode = (subtype: string) => accessory.getServiceById(Service.Switch, subtype)!;
@@ -205,11 +209,103 @@ describe('Tower fan issue #5: real HAP services and real library requests', () =
     expect(h.warnings).toEqual([]);
   });
 
-  it.each([undefined, NaN, Infinity, 99999])('reports missing or invalid temperature %s as unavailable', async temperature => {
+  it.each([undefined, null, '780extra', NaN, Infinity, 99999])('reports missing or invalid temperature %s without unhandled errors and recovers', async temperature => {
     const h = await harness();
+    const sensor = h.accessory.getService(Service.TemperatureSensor)!;
+    const reading = sensor.getCharacteristic(Characteristic.CurrentTemperature);
+    await h.sync();
     (h.device.status as any).temperature = temperature;
     await h.device.getDetails();
-    await expect(h.read(h.accessory.getService(Service.TemperatureSensor)!, Characteristic.CurrentTemperature)).rejects.toBeDefined();
+    await h.sync();
+    expect(reading.statusCode).toBe(HAPStatus.SERVICE_COMMUNICATION_FAILURE);
+    await expect(h.read(sensor, Characteristic.CurrentTemperature)).rejects.toBe(HAPStatus.SERVICE_COMMUNICATION_FAILURE);
+    expect(await h.read(h.primary, Characteristic.Active)).toBe(1);
+    expect(h.platform.log.error).not.toHaveBeenCalled();
+    expect(h.warnings).toEqual([]);
+
+    h.device.status.temperature = 320;
+    await h.device.getDetails();
+    await h.sync();
+    expect(h.accessory.getService(Service.TemperatureSensor)).toBe(sensor);
+    expect(reading.statusCode).toBe(HAPStatus.SUCCESS);
+    expect(reading.value).toBe(0);
+    expect(await h.read(sensor, Characteristic.CurrentTemperature)).toBe(0);
+    expect(h.warnings).toEqual([]);
+  });
+
+  it('accepts integer-string temperature readings like the latest pyvesync model', async () => {
+    const device = new OfflineFan();
+    (device.status as any).temperature = '780';
+    const h = await harness({ device });
+    await h.sync();
+    expect(await h.read(h.accessory.getService(Service.TemperatureSensor)!, Characteristic.CurrentTemperature)).toBeCloseTo(25.6, 1);
+    expect(h.platform.log.warn).not.toHaveBeenCalled();
+    expect(h.warnings).toEqual([]);
+  });
+
+  it('logs safe model diagnostics once per outage, survives device replacement, and logs recovery', async () => {
+    const h = await harness();
+    delete (h.device.status as any).temperature;
+    await h.device.getDetails();
+    await h.sync();
+    expect(h.platform.log.warn).toHaveBeenCalledTimes(1);
+    expect(h.platform.log.warn).toHaveBeenCalledWith('Tower fan temperature unavailable', {
+      model: 'LTF-F422S-WUS', connectionStatus: 'online', method: 'getTowerFanStatus',
+      reason: 'missing-field', statusReceived: true, fieldPresent: false, rawType: 'undefined', numericValue: undefined,
+    });
+    const sensor = h.accessory.getService(Service.TemperatureSensor)!;
+    await expect(h.read(sensor, Characteristic.CurrentTemperature)).rejects.toBe(HAPStatus.SERVICE_COMMUNICATION_FAILURE);
+    await h.sync();
+    const updated = new OfflineFan();
+    delete (updated.status as any).temperature;
+    await updated.getDetails();
+    h.fan.applyUpdatedDeviceState(updated as unknown as VeSyncFan);
+    await h.sync();
+    expect(h.platform.log.warn).toHaveBeenCalledTimes(1);
+
+    h.device.status.temperature = 320;
+    await h.device.getDetails();
+    await h.sync();
+    expect(h.platform.log.info).toHaveBeenCalledWith('Tower fan temperature readings restored', {
+      model: 'LTF-F422S-WUS', temperatureCelsius: 0,
+    });
+    await h.sync();
+    expect(h.platform.log.info).toHaveBeenCalledTimes(1);
+    (h.device.status as any).temperature = { token: 'do-not-log-this' };
+    await h.device.getDetails();
+    await h.sync();
+    expect(h.platform.log.warn).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify((h.platform.log.warn as jest.Mock).mock.calls)).not.toMatch(/do-not-log-this|offline-token|offline-cid|offline-uuid/);
+  });
+
+  it.each([
+    [null, 'invalid-value', 'null'], ['do-not-log-this', 'invalid-value', 'string'],
+    [99999, 'out-of-range', 'number'],
+  ])('diagnoses unavailable temperature %s without dumping response data', async (temperature, reason, rawType) => {
+    const device = new OfflineFan();
+    (device.status as any).temperature = temperature;
+    (device.status as any).token = 'do-not-log-this';
+    const h = await harness({ device });
+    await h.sync();
+    expect(h.platform.log.warn).toHaveBeenCalledWith('Tower fan temperature unavailable', expect.objectContaining({
+      model: 'LTF-F422S-WUS', reason, rawType, fieldPresent: true,
+    }));
+    expect(JSON.stringify((h.platform.log.warn as jest.Mock).mock.calls)).not.toContain('do-not-log-this');
+  });
+
+  it.each([false, true])('handles temperature reads before the first refresh (cached: %s)', async cached => {
+    const h = await harness({ cached, initialRefresh: false });
+    const sensor = h.accessory.getService(Service.TemperatureSensor)!;
+    await expect(h.read(sensor, Characteristic.CurrentTemperature)).rejects.toBe(HAPStatus.SERVICE_COMMUNICATION_FAILURE);
+    expect(h.device.requests).toEqual([]);
+    expect(h.platform.log.error).not.toHaveBeenCalled();
+    expect(h.warnings).toEqual([]);
+
+    await h.device.getDetails();
+    await h.sync();
+    expect(h.accessory.services.filter(s => s.UUID === Service.TemperatureSensor.UUID)).toHaveLength(1);
+    expect(await h.read(sensor, Characteristic.CurrentTemperature)).toBeCloseTo(25.6, 1);
+    expect(h.warnings).toEqual([]);
   });
 
   it('arms, resizes and cancels the real timer, including scheduling power on while off', async () => {

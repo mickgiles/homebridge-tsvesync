@@ -21,6 +21,7 @@ export class FanAccessory extends BaseAccessory {
   private writeChain: Promise<void> = Promise.resolve();
   private pendingWrite: FanWrite | null = null;
   private pendingPromise: Promise<void> | null = null;
+  private temperatureUnavailableReported = false;
 
   constructor(platform: TSVESyncPlatform, accessory: PlatformAccessory, device: VeSyncFan) {
     super(platform, accessory, device);
@@ -119,7 +120,10 @@ export class FanAccessory extends BaseAccessory {
         this.accessory.addService(this.platform.Service.TemperatureSensor, 'Temperature', 'temperature');
       this.setupCharacteristic(this.platform.Characteristic.CurrentTemperature, async () => {
         const value = this.currentTemperature;
-        if (value === undefined) throw new Error('Temperature is not available');
+        if (value === undefined) {
+          const hap = this.platform.api.hap;
+          throw new hap.HapStatusError(hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
+        }
         return value;
       }, undefined, { minValue: -50, maxValue: 100, minStep: 0.1 }, temperature);
     }
@@ -133,6 +137,31 @@ export class FanAccessory extends BaseAccessory {
   private get currentTemperature(): number | undefined {
     const value = this.device.temperatureCelsius;
     return value !== undefined && Number.isFinite(value) && value >= -50 && value <= 100 ? value : undefined;
+  }
+
+  private reportTemperatureAvailability(temperature: number | undefined): void {
+    if (temperature !== undefined) {
+      if (this.temperatureUnavailableReported) {
+        this.platform.log.info('Tower fan temperature readings restored', {
+          model: this.device.deviceType, temperatureCelsius: temperature,
+        });
+        this.temperatureUnavailableReported = false;
+      }
+      return;
+    }
+    if (this.temperatureUnavailableReported) return;
+    this.temperatureUnavailableReported = true;
+    const diagnostic = this.device.temperatureDiagnostics;
+    const reason = !diagnostic ? 'unknown' : !diagnostic.statusReceived ? 'status-not-received' :
+      !diagnostic.fieldPresent || diagnostic.rawType === 'undefined' ? 'missing-field' :
+        diagnostic.numericValue === undefined ? 'invalid-value' : 'out-of-range';
+    this.platform.log.warn('Tower fan temperature unavailable', {
+      model: this.device.deviceType,
+      connectionStatus: this.device.connectionStatus,
+      method: 'getTowerFanStatus',
+      reason,
+      ...diagnostic,
+    });
   }
 
   private get rotationSpeed(): number {
@@ -155,8 +184,12 @@ export class FanAccessory extends BaseAccessory {
     timer?.updateCharacteristic(c.On, (this.device.timerRemaining ?? 0) > 0);
     timer?.updateCharacteristic(c.RemainingDuration, this.device.timerRemaining ?? 0);
     const temperature = this.currentTemperature;
-    if (temperature !== undefined) {
-      this.accessory.getService(this.platform.Service.TemperatureSensor)?.updateCharacteristic(c.CurrentTemperature, temperature);
+    const sensor = this.accessory.getService(this.platform.Service.TemperatureSensor);
+    if (sensor) {
+      this.reportTemperatureAvailability(temperature);
+      const hap = this.platform.api.hap;
+      sensor.getCharacteristic(c.CurrentTemperature)
+        .updateValue(temperature ?? new hap.HapStatusError(hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE));
     }
   }
 

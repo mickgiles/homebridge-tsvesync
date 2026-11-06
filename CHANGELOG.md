@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.7.2 (2026-11-06)
+
+### Fixed
+- **Tower Fan Temperature Availability** ([#52](https://github.com/mickgiles/homebridge-tsvesync/issues/52)): Report missing or invalid temperature readings as a handled HomeKit unavailable status, avoiding unhandled read-handler warnings and repeated error logs. Polling marks unavailable readings and clears the status automatically when a valid Celsius reading returns, including after startup and cached-accessory restoration.
+- **Tower Fan Diagnostics**: Warn once per temperature outage with the actual model, connection status, whether a status response and temperature field were received, the field's type, and its finite numeric value when available. Log recovery when readings resume; never dump the API response or invalid raw values. Numeric-string readings are accepted through the matching tsvesync parsing fix.
+
+### Dependencies
+- **tsvesync**: Pin to 1.7.2 for numeric-string temperature parsing and safe sensor diagnostics.
+
 ## 1.7.1 (2026-11-06)
 
 ### Fixed
