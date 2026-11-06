@@ -329,6 +329,12 @@ export abstract class BaseAccessory {
           this.logger.stateChange({ ...context, value } as LogContext);
           return value;
         } catch (error) {
+          const HapStatusError = this.platform.api.hap?.HapStatusError;
+          if (HapStatusError && error instanceof HapStatusError) {
+            // HAP handles intentional unavailable/error statuses without an unhandled-error warning.
+            this.logger.debug('Characteristic read returned a HomeKit error status', context, error);
+            throw error;
+          }
           this.logger.error(
             'Failed to get characteristic value',
             context,

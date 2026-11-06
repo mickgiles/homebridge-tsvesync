@@ -1,4 +1,4 @@
-import { VeSyncBaseDevice } from 'tsvesync';
+import { VeSyncBaseDevice, TowerFanTemperatureDiagnostics } from 'tsvesync';
 
 export interface FanConfig {
   module: 'VeSyncAirBypass' | 'VeSyncHumidifier' | 'VeSyncWarmHumidifier' | 'VeSyncTowerFan' | 'VeSyncAirBaseV2';
@@ -97,6 +97,7 @@ export interface VeSyncFan extends VeSyncDeviceWithPower, VeSyncDeviceWithSpeed 
   oscillationEnabled?: boolean;
   displayEnabled?: boolean;
   temperatureCelsius?: number;
+  temperatureDiagnostics?: TowerFanTemperatureDiagnostics;
   timerRemaining?: number;
   hasFeature?(feature: string): boolean;
   getMaxFanSpeed?(): number;

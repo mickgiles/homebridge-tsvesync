@@ -3,6 +3,8 @@ declare module 'tsvesync/src/lib/helpers' {
 }
 
 declare module 'tsvesync' {
+  export type TowerFanTemperatureDiagnostics = import('tsvesync/dist/lib/fans/towerFan').TowerFanTemperatureDiagnostics;
+
   export interface VeSyncDeviceWithPower {
     deviceName: string;
     deviceType: string;
@@ -11,6 +13,7 @@ declare module 'tsvesync' {
     subDeviceNo: number;
     isSubDevice: boolean;
     deviceStatus: string;
+    connectionStatus: string;
     setApiBaseUrl(url: string): void;
     turnOn(): Promise<boolean>;
     turnOff(): Promise<boolean>;
@@ -23,6 +26,7 @@ declare module 'tsvesync' {
     cid: string;
     subDeviceNo: number;
     deviceStatus: string;
+    connectionStatus: string;
     isSubDevice: boolean;
     setApiBaseUrl(url: string): void;
     turnOn(): Promise<boolean>;
@@ -57,4 +61,4 @@ declare module 'tsvesync' {
     login(): Promise<boolean>;
     update(): Promise<void>;
   }
-} 
+}

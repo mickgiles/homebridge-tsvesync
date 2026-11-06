@@ -16,12 +16,13 @@ class OfflineFan extends VeSyncTowerFan {
       { accountId: 'offline', token: 'offline', timeZone: 'America/Chicago', debug: false });
     this.requests = [];
     this.reject = false;
+    this.rawTemperature = 780;
   }
   async callApi(_url, _method, body) {
     this.requests.push(body.payload);
     const result = body.payload.method === 'getTowerFanStatus' ? {
       powerSwitch: 1, workMode: 'normal', manualSpeedLevel: 3, fanSpeedLevel: 3,
-      oscillationState: 0, oscillationSwitch: 0, screenState: 1, screenSwitch: 1, temperature: 780, timerRemain: 0,
+      oscillationState: 0, oscillationSwitch: 0, screenState: 1, screenSwitch: 1, temperature: this.rawTemperature, timerRemain: 0,
     } : body.payload.method === 'setTimer' ? { id: 9 } : {};
     return [{ code: 0, result: { code: this.reject ? -1 : 0, result } }, 200];
   }
@@ -39,7 +40,7 @@ async function main() {
   device.requests = [];
   const noop = () => undefined;
   const log = { debug: noop, info: noop, warn: noop, error: noop };
-  const platform = { Characteristic: C, Service: S, log, config: {}, api: { updatePlatformAccessories: noop } };
+  const platform = { Characteristic: C, Service: S, log, config: {}, api: { hap, updatePlatformAccessories: noop } };
   const fan = new FanAccessory(platform, accessory, device);
   const primary = accessory.getService(S.Fanv2);
   const control = subtype => accessory.getServiceById(S.Switch, subtype);
@@ -72,10 +73,25 @@ async function main() {
   await assert.rejects(write(primary, C.SwingMode, 1));
   device.reject = false;
   await fan.updateDeviceSpecificStates(device);
+  // The rejected write above may warn; temperature availability must add no warnings.
+  const warningsBeforeTemperature = [...warnings];
+  const reading = accessory.getService(S.TemperatureSensor).getCharacteristic(C.CurrentTemperature);
+  device.rawTemperature = undefined;
+  await device.getDetails();
+  await fan.updateDeviceSpecificStates(device);
+  assert.equal(reading.statusCode, hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
+  await assert.rejects(reading.handleGetRequest(), error => error === hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
+  assert.deepEqual(warnings, warningsBeforeTemperature);
+  device.rawTemperature = '320';
+  await device.getDetails();
+  await fan.updateDeviceSpecificStates(device);
+  assert.equal(reading.statusCode, hap.HAPStatus.SUCCESS);
+  assert.equal(await reading.handleGetRequest(), 0);
+  assert.deepEqual(warnings, warningsBeforeTemperature);
   console.log(JSON.stringify({ result: 'PASS', node: process.version, homebridge: runtimePackage.version,
     plugin: require('../package.json').version, library: require('tsvesync/package.json').version,
     services: accessory.services.map(s => ({ name: s.displayName, subtype: s.subtype })),
-    verified: ['cached service migration', 'oscillation', 'legacy direction', 'display', 'all modes', 'speed', 'timer', 'temperature', 'device failure'],
+    verified: ['cached service migration', 'oscillation', 'legacy direction', 'display', 'all modes', 'speed', 'timer', 'temperature', 'device failure', 'temperature unavailable without warnings', 'integer-string temperature recovery'],
     networkRequests: 0, publishedBridges: 0 }, null, 2));
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

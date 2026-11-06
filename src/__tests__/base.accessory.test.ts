@@ -1,4 +1,5 @@
 import { PlatformAccessory, Logger } from 'homebridge';
+import * as hap from 'hap-nodejs';
 import { BaseAccessory } from '../accessories/base.accessory';
 import { TSVESyncPlatform } from '../platform';
 import { DeviceCapabilities } from '../types/device.types';
@@ -121,7 +122,8 @@ describe('BaseAccessory', () => {
         FirmwareRevision: 'FirmwareRevision',
       },
       api: {
-        updatePlatformAccessories: jest.fn().mockImplementation((accessories: PlatformAccessory[]) => {}),
+        hap,
+        updatePlatformAccessories: jest.fn(),
       },
       isReady: jest.fn().mockResolvedValue(undefined),
       config: {
@@ -170,6 +172,31 @@ describe('BaseAccessory', () => {
     jest.clearAllTimers();
     jest.useRealTimers();
     jest.clearAllMocks();
+  });
+
+  describe('characteristic read errors', () => {
+    function readWithError(error: Error): Promise<unknown> {
+      const characteristic = (accessory as any).service.getCharacteristic('CurrentTemperature');
+      (accessory as any).setupCharacteristic({ name: 'CurrentTemperature' }, async () => { throw error; });
+      return characteristic.onGet.mock.calls[0][0]();
+    }
+
+    it('passes intentional HomeKit errors through without logging a plugin failure', async () => {
+      const error = new hap.HapStatusError(hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
+      await expect(readWithError(error)).rejects.toBe(error);
+      expect(mockPluginLogger.error).not.toHaveBeenCalled();
+      expect(mockPluginLogger.debug).toHaveBeenCalledWith(
+        'Characteristic read returned a HomeKit error status', expect.any(Object), error
+      );
+    });
+
+    it('still logs and rethrows unexpected read failures', async () => {
+      const error = new Error('Unexpected read failure');
+      await expect(readWithError(error)).rejects.toBe(error);
+      expect(mockPluginLogger.error).toHaveBeenCalledWith(
+        'Failed to get characteristic value', expect.any(Object), error
+      );
+    });
   });
 
   describe('error handling', () => {
